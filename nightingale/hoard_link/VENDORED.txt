@@ -1,0 +1,4 @@
+Vendored from HoardLink (https://github.com/Luissalet/HoardLink), version 0.1.1.
+
+Byte-identical copy of the upstream package. Do not edit; replace the
+whole folder to update to a newer version.
