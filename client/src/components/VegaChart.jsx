@@ -29,5 +29,9 @@ export default function VegaChart({ spec, height = 260 }) {
     };
   }, [spec]);
 
-  return <div ref={ref} style={{ minHeight: height }} data-testid="vega-chart" />;
+  // vega-embed's own injected class defaults the container to
+  // `display: inline-block`, which — combined with the spec's
+  // "width": "container" — sizes to content with no content yet, landing on
+  // a 0px chart. Force block + 100% width so it measures the real container.
+  return <div ref={ref} style={{ minHeight: height, display: "block", width: "100%" }} data-testid="vega-chart" />;
 }

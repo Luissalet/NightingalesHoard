@@ -150,8 +150,14 @@ def to_vega_lite(spec: ChartSpec, data: dict) -> dict:
                              "color": {"field": "label", "type": "nominal", "sort": None}}
     else:
         mark = {"bar": "bar", "grouped_bar": "bar", "stacked_bar": "bar", "line": "line", "area": "area"}[spec.kind]
-        enc: dict[str, Any] = {"x": {"field": "x", "type": "nominal", "sort": None, "title": spec.x},
-                                "y": {"field": "y", "type": "quantitative", "title": spec.y or "count"}}
+        x_col = next((c for c in data.get("columns", []) if c["name"] == "x"), None)
+        if x_col is not None and is_temporal_type(x_col["type"]):
+            # a real date/timestamp axis: let Vega-Lite pick readable ticks
+            # instead of drawing one nominal category per distinct date.
+            x_enc: dict[str, Any] = {"field": "x", "type": "temporal", "title": spec.x}
+        else:
+            x_enc = {"field": "x", "type": "nominal", "sort": None, "title": spec.x}
+        enc: dict[str, Any] = {"x": x_enc, "y": {"field": "y", "type": "quantitative", "title": spec.y or "count"}}
         if "series" in (values[0] if values else {}):
             enc["color"] = {"field": "series", "type": "nominal"}
             if spec.kind == "grouped_bar":
@@ -178,6 +184,17 @@ def render_png(spec: ChartSpec, data: dict, out_path=None) -> bytes:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(png_bytes)
     return png_bytes
+
+
+def _thin_labels(labels: list[str], max_labels: int = 15) -> list[str]:
+    """Blank most of a long category axis's labels so they don't overlap into
+    an unreadable smear — matplotlib has no auto tick-thinning for a purely
+    categorical axis the way Vega-Lite does for a temporal one."""
+    n = len(labels)
+    if n <= max_labels:
+        return labels
+    step = max(1, round(n / max_labels))
+    return [lab if i % step == 0 else "" for i, lab in enumerate(labels)]
 
 
 def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
@@ -254,7 +271,7 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
                 else:
                     ax.bar(pos + i * width, ys, width=width, label=str(s), color=PALETTE[i % len(PALETTE)])
             ax.set_xticks(np.arange(len(xcats)))
-            ax.set_xticklabels([str(x) for x in xcats], rotation=30, ha="right", fontsize=7)
+            ax.set_xticklabels(_thin_labels([str(x) for x in xcats]), rotation=30, ha="right", fontsize=7)
             ax.legend(fontsize=7)
         else:
             ys = [r["y"] or 0 for r in rows]
@@ -265,5 +282,5 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
             else:
                 ax.bar(range(len(xs)), ys, color=ACCENT)
             ax.set_xticks(range(len(xs)))
-            ax.set_xticklabels(xs, rotation=30, ha="right", fontsize=7)
+            ax.set_xticklabels(_thin_labels(xs), rotation=30, ha="right", fontsize=7)
         ax.set_ylabel(spec.y or "count")

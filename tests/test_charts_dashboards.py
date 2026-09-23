@@ -4,7 +4,7 @@ import base64
 
 import pytest
 
-from nightingale.workbench.charts import CHART_KINDS
+from nightingale.workbench.charts import CHART_KINDS, _thin_labels
 
 
 @pytest.fixture
@@ -51,6 +51,28 @@ def test_chart_get_and_list_and_delete(services, ds):
     assert len(services.chart_list()["charts"]) == 1
     services.chart_delete(created["chart_id"])
     assert len(services.chart_list()["charts"]) == 0
+
+
+def test_line_chart_on_a_date_column_uses_a_temporal_axis(services, tmp_path):
+    """A date x-axis with many distinct values must be encoded as Vega-Lite
+    `temporal` (so the client thins its own ticks), not `nominal` — the
+    naive nominal encoding drew one unreadable label per distinct date."""
+    path = tmp_path / "series.csv"
+    lines = ["order_date,amount"] + [f"2024-{(i % 12) + 1:02d}-{(i % 28) + 1:02d},{i}" for i in range(200)]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    services.ingest_file(str(path), "series")
+    result = services.chart_create("series", "line", x="order_date", y="amount")
+    assert result["vega_lite"]["encoding"]["x"]["type"] == "temporal"
+
+
+def test_thin_labels_keeps_all_when_short_and_blanks_most_when_long():
+    short = [str(i) for i in range(10)]
+    assert _thin_labels(short) == short
+    long_ = [str(i) for i in range(200)]
+    thinned = _thin_labels(long_, max_labels=15)
+    assert len(thinned) == len(long_)
+    assert sum(1 for v in thinned if v) <= 20
+    assert thinned[0] == "0"
 
 
 def test_dashboard_with_chart_and_kpi(services, ds):
