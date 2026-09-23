@@ -342,6 +342,7 @@ class ForecastBody(BaseModel):
     seasonal_period: Optional[int] = None
     name: Optional[str] = None
     write_dataset: bool = True
+    freq: str = "auto"
 
 
 @router.post("/models/forecast")
@@ -349,7 +350,7 @@ class ForecastBody(BaseModel):
 def model_forecast(request: Request, body: ForecastBody):
     svc = services(request)
     return svc.model_forecast(body.dataset, body.date_col, body.value_col, body.horizon, body.seasonal_period,
-                               body.name, body.write_dataset)
+                               body.name, body.write_dataset, freq=body.freq)
 
 
 @router.get("/models")

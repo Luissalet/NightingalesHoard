@@ -128,3 +128,69 @@ def test_run_forecast_aggregates_duplicate_dates_and_advances_them():
     forecast_dates = [row["date"] for row in result["forecast"]]
     assert len(set(forecast_dates)) == len(forecast_dates)  # every date distinct, strictly advancing
     assert forecast_dates == sorted(forecast_dates)
+    assert result["resampled_to"] == "day"
+    assert result["why"] is None
+
+
+# ---- freq: resampling irregular data onto a regular grain ------------------
+
+
+def _irregular_daily_df(rng, n_days=18 * 30, hit_rate=0.6, max_per_day=4):
+    """~18 months of gappy daily transactions: only `hit_rate` of days have
+    any rows at all, and the days that do have 1..max_per_day of them — the
+    real shape reported from a live MCP walk that used to fall back to
+    seasonal_naive instead of Holt-Winters."""
+    start = pd.Timestamp("2023-01-01")
+    rows = []
+    for day_offset in range(n_days):
+        if rng.random() < hit_rate:
+            for _ in range(rng.integers(1, max_per_day)):
+                rows.append({"d": start + pd.Timedelta(days=day_offset), "v": rng.uniform(50, 200)})
+    return pd.DataFrame(rows)
+
+
+def test_irregular_daily_data_auto_resamples_to_month_and_uses_holt_winters():
+    rng = np.random.default_rng(3)
+    df = _irregular_daily_df(rng)
+    result = m.run_forecast(df, "d", "v", horizon=3, freq="auto")
+    assert result["resampled_to"] == "month"
+    assert result["seasonal_period"] == 12
+    if m.HAVE_STATSMODELS:
+        assert result["method"] == "holt_winters"
+        assert result["why"] is None
+    assert len(result["forecast"]) == 3
+
+
+def test_freq_explicit_value_is_honored_even_when_auto_would_pick_differently():
+    rng = np.random.default_rng(3)
+    df = _irregular_daily_df(rng)
+    result = m.run_forecast(df, "d", "v", horizon=2, freq="week")
+    assert result["resampled_to"] == "week"
+    assert result["freq"] == "week"
+
+
+def test_freq_day_zero_fills_gaps_instead_of_dropping_them():
+    df = pd.DataFrame({
+        "d": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-05"]),  # gaps on the 3rd and 4th
+        "v": [10.0, 20.0, 40.0],
+    })
+    result = m.run_forecast(df, "d", "v", horizon=2, freq="day")
+    history = {h["date"]: h["value"] for h in result["history"]}
+    assert history["2024-01-03"] == 0.0
+    assert history["2024-01-04"] == 0.0
+    assert len(result["history"]) == 5  # 1st..5th, no gaps
+
+
+def test_unknown_freq_raises():
+    dates = pd.date_range("2023-01-01", periods=30, freq="D")
+    df = pd.DataFrame({"d": dates, "v": range(30)})
+    with pytest.raises(m.ModelError):
+        m.run_forecast(df, "d", "v", freq="fortnight")
+
+
+def test_forecast_reports_why_on_seasonal_naive_fallback():
+    dates = pd.date_range("2023-01-01", periods=6, freq="D")
+    df = pd.DataFrame({"d": dates, "v": [1, 2, 3, 4, 5, 6]})
+    result = m.run_forecast(df, "d", "v", horizon=3)
+    assert result["method"].startswith("seasonal_naive")
+    assert result["why"]  # a human-readable reason is always given on fallback

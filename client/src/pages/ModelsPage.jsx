@@ -45,6 +45,7 @@ export default function ModelsPage() {
   const [dateCol, setDateCol] = useState("");
   const [valueCol, setValueCol] = useState("");
   const [horizon, setHorizon] = useState(12);
+  const [freq, setFreq] = useState("auto");
   const [result, setResult] = useState(null);
   const [models, setModels] = useState([]);
   const [error, setError] = useState(null);
@@ -85,7 +86,7 @@ export default function ModelsPage() {
       } else if (tab === "anomaly") {
         r = await api.modelAnomaly({ dataset: active, features, contamination: Number(contamination) });
       } else {
-        r = await api.modelForecast({ dataset: active, date_col: dateCol, value_col: valueCol, horizon: Number(horizon) });
+        r = await api.modelForecast({ dataset: active, date_col: dateCol, value_col: valueCol, horizon: Number(horizon), freq });
       }
       setResult(r);
       notify(t("common_train"));
@@ -175,6 +176,17 @@ export default function ModelsPage() {
               <label className="label">Horizon (periods)</label>
               <input className="field" type="number" value={horizon} onChange={(e) => setHorizon(e.target.value)} />
             </div>
+            <div>
+              <label className="label">Resample to</label>
+              <select className="field" value={freq} onChange={(e) => setFreq(e.target.value)}>
+                <option value="auto">auto</option>
+                <option value="day">day</option>
+                <option value="week">week</option>
+                <option value="month">month</option>
+                <option value="quarter">quarter</option>
+              </select>
+              <div className="help">auto picks a grain from how far the dates span and how densely they fill it.</div>
+            </div>
           </div>
         )}
         <div>
@@ -253,7 +265,9 @@ function ModelResult({ tab, result }) {
   }
   return (
     <div className="panel-white" data-testid="model-result">
-      <div>Method: <span className="chip">{result.method}</span> · seasonal period {result.seasonal_period}</div>
+      <div>Method: <span className="chip">{result.method}</span> · seasonal period {result.seasonal_period} ·
+           resampled to <span className="chip">{result.resampled_to}</span></div>
+      {result.why && <div className="help mt-1">{result.why}</div>}
       <div className="mt-2 overflow-auto">
         <table className="w-full border-collapse text-[12.5px]">
           <thead>

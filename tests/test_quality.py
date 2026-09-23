@@ -88,3 +88,36 @@ def test_report_and_delete(services, ds):
 def test_run_with_no_rules_raises(services, ds):
     with pytest.raises(Exception):
         services.quality_run(ds)
+
+
+# ---- 'column'/'columns' accepted interchangeably on every rule kind -------
+
+
+def test_unique_accepts_singular_column_alias(services, ds):
+    # the real-world failure this guards against: a caller reaches for the
+    # natural singular word even though 'columns' is unique's own key.
+    services.quality_define(ds, "id unique (alias)", "unique", {"column": "id"})
+    result = services.quality_run(ds)
+    assert result["results"][0]["passed"] is True
+
+
+def test_not_null_accepts_plural_columns_alias(services, ds):
+    services.quality_define(ds, "email present (alias)", "not_null", {"columns": "email"})
+    result = services.quality_run(ds)
+    assert result["results"][0]["failed"] == 1
+
+
+def test_not_null_accepts_single_item_list(services, ds):
+    services.quality_define(ds, "email present (list)", "not_null", {"column": ["email"]})
+    result = services.quality_run(ds)
+    assert result["results"][0]["failed"] == 1
+
+
+def test_single_column_rule_rejects_multiple_columns(services, ds):
+    with pytest.raises(Exception):
+        services.quality_define(ds, "bad", "range", {"columns": ["age", "id"], "min": 0})
+
+
+def test_missing_column_and_columns_raises(services, ds):
+    with pytest.raises(Exception):
+        services.quality_define(ds, "bad", "not_null", {})

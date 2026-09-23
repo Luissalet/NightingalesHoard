@@ -45,13 +45,37 @@ def _require(p: dict, key: str) -> Any:
     return p[key]
 
 
+def _col_list(p: dict) -> list[str]:
+    """Every rule kind names the column(s) it checks — `unique` naturally
+    takes several, the rest just one — but callers reach for either word
+    regardless (a single-column `unique` rule reads just as naturally as
+    "column": "pedido" as "columns": ["pedido"]). `columns` is canonical;
+    `column` is accepted the same way, and either may be a single name or a
+    list, so every rule kind takes both uniformly."""
+    raw = p.get("columns", p.get("column"))
+    if raw in (None, "", []):
+        raise QualityError("'columns' (or 'column') is required")
+    cols = [str(c) for c in raw] if isinstance(raw, (list, tuple)) else [str(raw)]
+    cols = [c for c in cols if c]
+    if not cols:
+        raise QualityError("'columns' (or 'column') is required")
+    return cols
+
+
+def _one_col(p: dict) -> str:
+    cols = _col_list(p)
+    if len(cols) != 1:
+        raise QualityError("this rule checks exactly one column; got more than one in 'column'/'columns'")
+    return cols[0]
+
+
 def _not_null(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col = q(_one_col(p))
     return RuleCheck(failing_sql=f"SELECT * FROM {q(table)} WHERE {col} IS NULL")
 
 
 def _unique(table: str, p: dict) -> RuleCheck:
-    cols = _require(p, "columns")
+    cols = _col_list(p)
     part = ", ".join(q(c) for c in cols)
     return RuleCheck(
         failing_sql=(
@@ -62,14 +86,14 @@ def _unique(table: str, p: dict) -> RuleCheck:
 
 
 def _accepted_values(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col = q(_one_col(p))
     values = _require(p, "values")
     in_list = ", ".join(lit(v) for v in values)
     return RuleCheck(failing_sql=f"SELECT * FROM {q(table)} WHERE {col} IS NOT NULL AND {col} NOT IN ({in_list})")
 
 
 def _range(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col = q(_one_col(p))
     conds = []
     if p.get("min") is not None:
         conds.append(f"{col} < {lit(p['min'])}")
@@ -81,7 +105,7 @@ def _range(table: str, p: dict) -> RuleCheck:
 
 
 def _regex(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col = q(_one_col(p))
     pattern = _require(p, "pattern")
     return RuleCheck(
         failing_sql=f"SELECT * FROM {q(table)} WHERE {col} IS NOT NULL AND NOT regexp_matches({col}, {lit(pattern)})"
@@ -104,7 +128,7 @@ def _row_count(table: str, p: dict) -> RuleCheck:
 
 
 def _freshness(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col = q(_one_col(p))
     max_age_days = _require(p, "max_age_days")
     return RuleCheck(
         scalar_sql=f"SELECT DATE_DIFF('day', MAX({col}), CURRENT_DATE) FROM {q(table)}",
@@ -113,9 +137,10 @@ def _freshness(table: str, p: dict) -> RuleCheck:
 
 
 def _referential(table: str, p: dict) -> RuleCheck:
-    col = q(_require(p, "column"))
+    col_name = _one_col(p)
+    col = q(col_name)
     ref_table = _require(p, "ref_table")
-    ref_col = q(p.get("ref_column", p.get("column")))
+    ref_col = q(p.get("ref_column") or col_name)
     return RuleCheck(
         failing_sql=(
             f"SELECT t.* FROM {q(table)} t WHERE t.{col} IS NOT NULL "
