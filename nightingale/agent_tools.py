@@ -68,6 +68,15 @@ class DatasetArgs(BaseModel):
 class ProfileArgs(BaseModel):
     dataset: str
     version: Optional[int] = None
+    mode: Literal["profile", "eda", "quality_score", "drift"] = Field(
+        "profile", description="'profile' (default): the original per-column profile. 'eda': correlation "
+                                 "(Pearson+Spearman), null co-occurrence, outliers (IQR+z-score), and encoding "
+                                 "suggestions, plus the quality score. 'quality_score': just the 0-100 score and its "
+                                 "components. 'drift': compare numeric-column distributions against `other_dataset` "
+                                 "(KS test, PSI, Wasserstein distance, mean/sd shift).")
+    other_dataset: Optional[str] = Field(None, description="mode='drift' only: the dataset (or slice, as its own "
+                                          "dataset) to compare distributions against.")
+    columns: Optional[list[str]] = Field(None, description="mode='drift' only: restrict to these shared columns.")
 
 
 class PreviewArgs(BaseModel):
@@ -136,20 +145,57 @@ class DashboardArgs(BaseModel):
 
 
 class ModelTrainArgs(BaseModel):
-    action: Literal["train", "list"] = "train"
+    action: Literal["train", "list", "backends", "registry", "evaluate", "tune", "explain", "optimize",
+                     "pareto", "compare", "report"] = Field(
+        "train", description="'train': fit a model. 'list': the original quick-model list. 'backends': list Lab "
+                               "registry backends (and whether optional ones like xgboost/lightgbm are installed). "
+                               "'registry': list/get/delete a saved Lab model (see registry_action). 'evaluate': "
+                               "diagnostics for a saved model on an eval dataset (or in-sample). 'tune': "
+                               "hyperparameter search, saves the tuned model. 'explain': global + per-row feature "
+                               "importance. 'optimize': suggest input values that maximize/minimize the target. "
+                               "'pareto': non-dominated front across 2-3 models' predictions. 'compare': curve/series "
+                               "comparison (with x/y/group), or model_ids to compare saved models' metrics side by "
+                               "side. 'report': render a PDF report (profile + quality + model + diagnostics).")
     dataset: Optional[str] = None
     target: Optional[str] = None
     features: Optional[list[str]] = None
     task: Optional[Literal["regression", "classification"]] = None
-    algorithm: Optional[str] = Field(None, description="linear/logistic/random_forest/gradient_boosting")
+    algorithm: Optional[str] = Field(None, description="train (lab=false): linear/logistic/random_forest/"
+                                       "gradient_boosting. train (lab=true) / tune: any Lab registry backend — see "
+                                       "action='backends' (ridge/random_forest/gradient_boosting/extra_trees/knn/"
+                                       "mlp/gaussian_process/linear/logistic, plus xgboost/lightgbm if installed).")
+    lab: bool = Field(False, description="action='train' only: true trains through the Lab registry (more "
+                                           "backends, and — unlike the original path — saves the model artifact so "
+                                           "it can later be evaluate/tune/explain/optimize'd); false (default) keeps "
+                                           "the original data_model behaviour completely unchanged.")
     test_size: float = Field(0.2, gt=0, lt=0.9)
     seed: int = 42
     write_to: Literal["new_dataset", "new_version", "none"] = Field(
         "new_dataset", description="'new_dataset' (default) puts predictions in their own new dataset "
                                      "(source untouched); 'new_version' adds a predicted_<target> column to a new "
                                      "version of the source itself (never changes an existing column's type); "
-                                     "'none' skips writing them anywhere.")
+                                     "'none' skips writing them anywhere. optimize/pareto also accept 'new_dataset'/"
+                                     "'none' for their suggested points / Pareto front.")
     name: Optional[str] = None
+    model_id: Optional[int] = Field(None, description="registry get/delete, evaluate, explain, optimize, report: "
+                                      "the saved Lab model to act on.")
+    model_ids: Optional[list[int]] = Field(None, description="compare (registry side-by-side) / pareto: several "
+                                             "saved Lab models at once.")
+    eval_dataset: Optional[str] = Field(None, description="evaluate/report: dataset to score against; default is "
+                                          "the model's own training dataset (an in-sample check, clearly labeled).")
+    date_col: Optional[str] = Field(None, description="evaluate: rolling-mean bias-over-time by this date column.")
+    group_col: Optional[str] = Field(None, description="evaluate: error broken down by this categorical column.")
+    x: Optional[str] = Field(None, description="compare (curve comparison): the series' x column.")
+    y: Optional[str] = Field(None, description="compare (curve comparison): the series' y column.")
+    group: Optional[str] = Field(None, description="compare (curve comparison): optional grouping column.")
+    row_index: Optional[int] = Field(None, description="explain: also explain this one row individually.")
+    registry_action: Optional[Literal["list", "get", "delete"]] = Field(
+        None, description="action='registry': which operation; default 'list'.")
+    params: dict[str, Any] = Field(default_factory=dict, description=(
+        "Action-specific extras. tune: backend goes in `algorithm`; params={param_space, n_trials, timeout, cv}. "
+        "explain: {sample_size, seed}. optimize: {direction, bounds, fixed, integer_features, categorical_features, "
+        "constraints, acquisition, n_candidates, batch_size}. pareto: {directions (required, one per model_id), "
+        "bounds, fixed, n_candidates}. report: {optimize: true/false, optimize_params}."))
 
 
 class ClusterArgs(BaseModel):
@@ -242,7 +288,17 @@ def _run_list(s: Services, _: Empty) -> dict:
 
 
 def _run_profile(s: Services, a: ProfileArgs) -> dict:
-    return s.profile(a.dataset, a.version)
+    if a.mode == "profile":
+        return s.profile(a.dataset, a.version)
+    if a.mode == "eda":
+        return s.lab_eda_profile(a.dataset, source="agent")
+    if a.mode == "quality_score":
+        return s.lab_quality_score(a.dataset, source="agent")
+    if a.mode == "drift":
+        if not a.other_dataset:
+            raise ValueError("mode='drift' needs other_dataset")
+        return s.lab_drift(a.dataset, a.other_dataset, a.columns, source="agent")
+    raise ValueError(f"unknown mode: {a.mode}")
 
 
 def _run_preview(s: Services, a: PreviewArgs) -> dict:
@@ -309,11 +365,77 @@ def _run_dashboard(s: Services, a: DashboardArgs) -> dict:
     return s.dashboard_list()
 
 
-def _run_model(s: Services, a: ModelTrainArgs) -> dict:
+def _run_model(s: Services, a: ModelTrainArgs) -> dict:  # noqa: C901 - one dispatcher keeps the 18-tool cap
     if a.action == "list":
         return s.model_list(a.dataset)
+    if a.action == "backends":
+        return s.lab_backends(a.task)
+    if a.action == "registry":
+        sub = a.registry_action or "list"
+        if sub == "list":
+            return s.lab_registry_list(a.dataset)
+        if sub == "get":
+            if not a.model_id:
+                raise ValueError("registry_action='get' needs model_id")
+            return s.lab_registry_get(a.model_id)
+        if sub == "delete":
+            if not a.model_id:
+                raise ValueError("registry_action='delete' needs model_id")
+            return s.lab_registry_delete(a.model_id, source="agent")
+        raise ValueError(f"unknown registry_action: {sub}")
+    if a.action == "compare":
+        if a.model_ids:
+            return s.lab_registry_compare(a.model_ids)
+        if not (a.dataset and a.x and a.y):
+            raise ValueError("compare needs either model_ids (registry comparison) or dataset/x/y (curve comparison)")
+        return s.lab_compare_curves(a.dataset, a.x, a.y, a.group, source="agent")
+    if a.action == "evaluate":
+        if not a.model_id:
+            raise ValueError("evaluate needs model_id")
+        return s.lab_model_evaluate(a.model_id, a.eval_dataset, a.date_col, a.group_col, source="agent")
+    if a.action == "tune":
+        if not (a.dataset and a.target):
+            raise ValueError("tune needs dataset and target")
+        p = a.params
+        return s.lab_model_tune(a.dataset, a.target, a.features, a.task, a.algorithm or "random_forest",
+                                 p.get("param_space"), int(p.get("n_trials", 20)), p.get("timeout"),
+                                 int(p.get("cv", 5)), a.seed, a.test_size, a.name, source="agent")
+    if a.action == "explain":
+        if not a.model_id:
+            raise ValueError("explain needs model_id")
+        p = a.params
+        return s.lab_model_explain(a.model_id, a.dataset, int(p.get("sample_size", 200)), a.row_index,
+                                    int(p.get("seed", a.seed)), source="agent")
+    if a.action == "optimize":
+        if not a.model_id:
+            raise ValueError("optimize needs model_id")
+        p = a.params
+        return s.lab_model_optimize(a.model_id, p.get("direction", "maximize"), p.get("bounds"), p.get("fixed"),
+                                     p.get("integer_features"), p.get("categorical_features"), p.get("constraints"),
+                                     p.get("acquisition", "ei"), int(p.get("n_candidates", 3000)),
+                                     int(p.get("batch_size", 5)), a.seed, p.get("write_to", a.write_to),
+                                     source="agent")
+    if a.action == "pareto":
+        if not a.model_ids:
+            raise ValueError("pareto needs model_ids")
+        p = a.params
+        directions = p.get("directions")
+        if not directions:
+            raise ValueError("pareto needs params.directions (one 'maximize'/'minimize' per model_id)")
+        return s.lab_pareto(a.model_ids, directions, p.get("bounds"), p.get("fixed"),
+                             int(p.get("n_candidates", 1000)), a.seed, p.get("write_to", a.write_to), source="agent")
+    if a.action == "report":
+        if not a.dataset:
+            raise ValueError("report needs dataset")
+        p = a.params
+        return s.lab_report(a.dataset, a.model_id, a.eval_dataset, bool(p.get("optimize")),
+                             p.get("optimize_params"), source="agent")
+    # action == "train"
     if not (a.dataset and a.target):
         raise ValueError("train needs dataset and target")
+    if a.lab:
+        return s.lab_model_train(a.dataset, a.target, a.features, a.task, a.algorithm or "random_forest",
+                                  a.test_size, a.seed, a.write_to, a.name, source="agent")
     return s.model_train(a.dataset, a.target, a.features, a.task, a.algorithm, a.test_size, a.seed,
                           a.write_to, a.name, source="agent")
 
@@ -352,8 +474,9 @@ TOOLS: list[Tool] = [
     Tool("data_list", "List every registered dataset with row/column counts and last update time.\n"
          "Sinónimos: listar datasets, qué datos hay, ver tablas.",
          Empty, _ann(True), _run_list),
-    Tool("data_profile", "Column profile of a dataset version: types, nulls, distinct, min/max/mean/sd, histogram, "
-         "top values, IQR outliers.\nSinónimos: perfil de datos, describir columnas, estadísticas de columna.",
+    Tool("data_profile", "Column profile, or (mode=) deep EDA, a 0-100 quality score, or drift vs another dataset.\n"
+         "Sinónimos: perfil de datos, describir columnas, estadísticas de columna, análisis exploratorio, eda, "
+         "puntuación de calidad, calidad de datos, deriva de datos, drift, correlación, valores atípicos, outliers.",
          ProfileArgs, _ann(True), _run_profile),
     Tool("data_preview", "First rows of a dataset version, with total row count.\n"
          "Sinónimos: ver datos, muestra de filas, primeras filas.",
@@ -379,8 +502,10 @@ TOOLS: list[Tool] = [
     Tool("data_dashboard", "Create a dashboard, add a chart/KPI item to it, or list/get dashboards (write on create/add).\n"
          "Sinónimos: panel de control, cuadro de mando, dashboard.",
          DashboardArgs, _ann(False, False, False), _run_dashboard),
-    Tool("data_model", "Train/evaluate a quick supervised model for a target column, or list saved models (write on train).\n"
-         "Sinónimos: entrenar modelo, predecir, clasificación, regresión, importancia de variables.",
+    Tool("data_model", "Train/tune/explain/evaluate/optimize a model, or list/compare the Lab registry (write on "
+         "most actions).\nSinónimos: entrenar modelo, predecir, clasificación, regresión, importancia de variables, "
+         "ajustar hiperparámetros, tuning, explicar modelo, shap, optimizar, optimización bayesiana, frontera de "
+         "pareto, comparar curvas, deriva del modelo, informe pdf, reporte lab.",
          ModelTrainArgs, _ann(False, False, False), _run_model),
     Tool("data_cluster", "K-means clustering with an elbow/silhouette scan; writes cluster labels back (write).\n"
          "Sinónimos: agrupar datos, clustering, segmentación, k-means.",
