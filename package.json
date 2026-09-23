@@ -1,0 +1,32 @@
+{
+  "name": "nightingale-hoard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The data workbench for a local language model: ingest, clean, check, chart and model data.",
+  "scripts": {
+    "client": "vite",
+    "build": "vite build",
+    "dev": "python scripts/dev.py",
+    "start": "python -m nightingale",
+    "open": "python scripts/launch.py",
+    "test": "python -m pytest -q",
+    "mcp": "python mcp_server.py"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "vega": "^5.30.0",
+    "vega-lite": "^5.21.0",
+    "vega-embed": "^6.26.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "tailwindcss": "^4.1.0",
+    "vite": "^6.3.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
