@@ -6,9 +6,10 @@ import DataGrid from "../components/DataGrid.jsx";
 import ColumnProfilePopover from "../components/ColumnProfilePopover.jsx";
 import StepToolbar from "../components/StepToolbar.jsx";
 import RecipePanel from "../components/RecipePanel.jsx";
+import { formatNumber } from "../format.js";
 
 export default function DatasetsPage({ param }) {
-  const { t, datasets, refreshDatasets, notify } = useApp();
+  const { t, lang, datasets, refreshDatasets, notify } = useApp();
   const [active, setActive] = useState(param || null);
   const [tab, setTab] = useState("preview");
   const [preview, setPreview] = useState(null);
@@ -88,7 +89,7 @@ export default function DatasetsPage({ param }) {
         {dataset && (
           <span className="help">
             <span className="chip chip-accent">v{dataset.current_version}</span>{" "}
-            <span className="num">{dataset.row_count?.toLocaleString()}</span> {t("common_rows")} ·{" "}
+            <span className="num">{formatNumber(dataset.row_count, lang)}</span> {t("common_rows")} ·{" "}
             <span className="num">{dataset.columns?.length}</span> {t("common_columns")}
           </span>
         )}
@@ -148,9 +149,9 @@ export default function DatasetsPage({ param }) {
                           <td className="border-b p-1.5" style={{ borderColor: "var(--line)" }}>{c.type}</td>
                           <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.nulls_pct ?? "—"}</td>
                           <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.distinct_approx ?? "—"}</td>
-                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.min ?? "—"}</td>
-                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.max ?? "—"}</td>
-                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.mean ?? "—"}</td>
+                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{typeof entry.min === "number" ? formatNumber(entry.min, lang) : entry.min ?? "—"}</td>
+                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{typeof entry.max === "number" ? formatNumber(entry.max, lang) : entry.max ?? "—"}</td>
+                          <td className="num border-b p-1.5" style={{ borderColor: "var(--line)" }}>{entry.mean !== undefined ? formatNumber(entry.mean, lang) : "—"}</td>
                         </tr>
                       );
                     })}
@@ -170,6 +171,7 @@ export default function DatasetsPage({ param }) {
               await loadProfile();
             }}
             t={t}
+            lang={lang}
           />
         </div>
       )}

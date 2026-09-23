@@ -1,6 +1,9 @@
 import React from "react";
+import { useApp } from "../App.jsx";
+import { formatNumber } from "../format.js";
 
 export default function ColumnProfilePopover({ column, entry, onClose }) {
+  const { lang } = useApp();
   if (!entry) return null;
   return (
     <div className="popover" data-testid="column-profile-popover" style={{ top: 40, left: 8 }}>
@@ -12,11 +15,11 @@ export default function ColumnProfilePopover({ column, entry, onClose }) {
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">
         <div>Nulls</div><div className="num text-right">{entry.nulls_pct}%</div>
         <div>Distinct (approx.)</div><div className="num text-right">{entry.distinct_approx}</div>
-        {entry.min !== undefined && (<><div>Min</div><div className="num text-right">{String(entry.min)}</div></>)}
-        {entry.max !== undefined && (<><div>Max</div><div className="num text-right">{String(entry.max)}</div></>)}
-        {entry.mean !== undefined && (<><div>Mean</div><div className="num text-right">{fmt(entry.mean)}</div></>)}
-        {entry.median !== undefined && (<><div>Median</div><div className="num text-right">{fmt(entry.median)}</div></>)}
-        {entry.sd !== undefined && (<><div>Std dev</div><div className="num text-right">{fmt(entry.sd)}</div></>)}
+        {entry.min !== undefined && (<><div>Min</div><div className="num text-right">{fmt(entry.min, lang)}</div></>)}
+        {entry.max !== undefined && (<><div>Max</div><div className="num text-right">{fmt(entry.max, lang)}</div></>)}
+        {entry.mean !== undefined && (<><div>Mean</div><div className="num text-right">{fmt(entry.mean, lang)}</div></>)}
+        {entry.median !== undefined && (<><div>Median</div><div className="num text-right">{fmt(entry.median, lang)}</div></>)}
+        {entry.sd !== undefined && (<><div>Std dev</div><div className="num text-right">{fmt(entry.sd, lang)}</div></>)}
         {entry.outliers_iqr !== undefined && (<><div>Outliers (IQR)</div><div className="num text-right">{entry.outliers_iqr}</div></>)}
       </div>
       {entry.histogram && (
@@ -41,6 +44,6 @@ export default function ColumnProfilePopover({ column, entry, onClose }) {
   );
 }
 
-function fmt(v) {
-  return typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 3 }) : String(v);
+function fmt(v, lang) {
+  return typeof v === "number" ? formatNumber(v, lang, { maximumFractionDigits: 3 }) : String(v);
 }
