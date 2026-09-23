@@ -1,3 +1,5 @@
+<img src="app-icon.png" width="96" alt="">
+
 # Nightingale's Hoard
 
 The data workbench for a local language model: ingest a messy file, clean it with versioned steps

@@ -1,3 +1,5 @@
+<img src="app-icon.png" width="96" alt="">
+
 # Nightingale's Hoard
 
 El banco de trabajo de datos para un modelo de lenguaje local: ingesta un archivo desordenado,
