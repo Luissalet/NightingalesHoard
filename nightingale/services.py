@@ -787,17 +787,24 @@ class Services:
 
     def model_forecast(self, dataset_name: str, date_col: str, value_col: str, horizon: int = 12,
                         seasonal_period: Optional[int] = None, name: Optional[str] = None,
-                        write_dataset: bool = True, source: str = "ui") -> dict:
+                        write_dataset: bool = True, source: str = "ui", freq: str = "auto") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
             v = self._version_row(dataset_row)
             df = self.engine.to_dataframe(v["table_name"], limit=MAX_CHART_ROWS_FOR_DF)
-            result = model_engine.run_forecast(df, date_col, value_col, horizon=horizon, seasonal_period=seasonal_period)
+            result = model_engine.run_forecast(df, date_col, value_col, horizon=horizon,
+                                                seasonal_period=seasonal_period, freq=freq)
             model_id = self.meta.add_model(name or f"{dataset_row['name']}_forecast", dataset_row["id"], v["version"],
-                                             "forecast", value_col, [date_col], {"horizon": horizon, "method": result["method"]},
+                                             "forecast", value_col, [date_col],
+                                             {"horizon": horizon, "method": result["method"], "freq": freq,
+                                              "resampled_to": result["resampled_to"]},
                                              {"seasonal_period": result["seasonal_period"]}, 42, None)
-            out = {"model_id": model_id, **result, "_log_summary": f"forecast {horizon} steps ({result['method']}) for {dataset_row['name']!r}"}
+            _freq_adverb = {"day": "daily", "week": "weekly", "month": "monthly", "quarter": "quarterly"}
+            out = {"model_id": model_id, **result,
+                    "_log_summary": f"forecast {horizon} steps ({result['method']}, "
+                                     f"{_freq_adverb.get(result['resampled_to'], result['resampled_to'])}) "
+                                     f"for {dataset_row['name']!r}"}
             if write_dataset:
                 import pandas as pd
 

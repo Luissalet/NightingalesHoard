@@ -46,7 +46,7 @@ except Exception:  # noqa: BLE001
 
 __all__ = [
     "ModelError", "detect_task", "train_supervised", "run_kmeans", "run_pca",
-    "run_anomaly", "run_forecast", "HAVE_STATSMODELS", "MAX_TRAIN_ROWS",
+    "run_anomaly", "run_forecast", "HAVE_STATSMODELS", "MAX_TRAIN_ROWS", "FREQ_CHOICES",
 ]
 
 MAX_TRAIN_ROWS = 200_000  # rows above this are sampled before training (limit from the brief)
@@ -295,64 +295,105 @@ def run_anomaly(df: pd.DataFrame, features: list[str], contamination: float = 0.
             "anomaly_score": [None if pd.isna(v) else round(float(v), 5) for v in score_full], "sampled": sampled}
 
 
-def _infer_period(index: pd.DatetimeIndex) -> int:
-    if len(index) < 4:
-        return 1
-    diffs = index.to_series().diff().dropna()
-    if diffs.empty:
-        return 1
-    median_days = diffs.dt.total_seconds().median() / 86400
-    if median_days <= 1.5:
-        return 7  # daily data: weekly seasonality
-    if median_days <= 8:
-        return 52  # weekly data: yearly seasonality (roughly)
-    if median_days <= 31:
-        return 12  # monthly data
-    return 4  # quarterly
+FREQ_CHOICES = ("auto", "day", "week", "month", "quarter")
+_FREQ_RULE = {"day": "D", "week": "W-MON", "month": "MS", "quarter": "QS"}
+_SEASONAL_PERIOD_BY_FREQ = {"day": 7, "week": 52, "month": 12, "quarter": 4}
+
+
+def _choose_freq(dates: pd.DatetimeIndex) -> str:
+    """Pick a regular calendar grain to resample onto, from how far the data
+    spans and how densely it actually fills that span. Holt-Winters needs a
+    *regular* index with enough non-empty periods — not just enough raw rows
+    — so a short or genuinely-complete run stays at daily resolution, while a
+    long span or one with real gaps (irregular daily transactions, missing
+    days) is coarsened until each period reliably has something in it."""
+    span_days = max(1, (dates.max() - dates.min()).days + 1)
+    density = dates.nunique() / span_days
+    span_months = span_days / 30.4368
+    if span_months <= 3 or density >= 0.9:
+        return "day"
+    if span_months <= 15 and density >= 0.5:
+        return "week"
+    if span_months <= 36:
+        return "month"
+    return "quarter"
+
+
+def _resample_series(per_day: pd.Series, freq: str) -> pd.Series:
+    """Roll a (possibly gappy) per-day sum onto a fully regular index at the
+    chosen grain, summing values landing in the same period and filling any
+    period with no rows at all as 0 — the same convention as a sum aggregate
+    over an empty group."""
+    if freq == "day":
+        full_index = pd.date_range(per_day.index.min(), per_day.index.max(), freq="D")
+        return per_day.reindex(full_index, fill_value=0.0)
+    return per_day.resample(_FREQ_RULE[freq]).sum()
 
 
 def run_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizon: int = 12,
-                  seasonal_period: Optional[int] = None) -> dict:
+                  seasonal_period: Optional[int] = None, freq: str = "auto") -> dict:
     if date_col not in df.columns or value_col not in df.columns:
         raise ModelError(f"unknown column(s): {[c for c in (date_col, value_col) if c not in df.columns]}")
+    if freq not in FREQ_CHOICES:
+        raise ModelError(f"unknown freq: {freq!r}; choose from {FREQ_CHOICES}")
     work = df[[date_col, value_col]].dropna().copy()
     work[date_col] = pd.to_datetime(work[date_col])
-    # Row-level data (e.g. one row per transaction) commonly has several rows
-    # per timestamp; a time series needs one point per period, so duplicate
-    # timestamps are summed together first. Without this, the median step
-    # between consecutive (sorted, but often same-day) rows collapses to
-    # zero and every forecast row lands on the same date.
-    work = work.groupby(date_col, as_index=True)[value_col].sum().sort_index()
-    series = work.astype(float)
-    if len(series) < 4:
-        raise ModelError("need at least 4 distinct dates to forecast")
-    period = seasonal_period or _infer_period(series.index)
-    freq_step = series.index.to_series().diff().median()
-    if pd.isna(freq_step) or freq_step <= pd.Timedelta(0):
-        freq_step = pd.Timedelta(days=1)
-    last_date = series.index[-1]
-    future_index = [last_date + freq_step * (i + 1) for i in range(horizon)]
+    # Normalize to calendar-day granularity before anything else: row-level
+    # data (e.g. one row per transaction) commonly has several rows on the
+    # same day, sometimes at different times, and a time series needs one
+    # point per period. Without this the median step between sorted-but-
+    # often-repeated timestamps collapses to zero and every forecast row
+    # lands on the same date (a real bug caught during the UI walk).
+    per_day = work.groupby(work[date_col].dt.floor("D"))[value_col].sum().sort_index()
+    if len(per_day) < 2:
+        raise ModelError("need at least 2 distinct dates to forecast")
 
-    method = "holt_winters"
-    if HAVE_STATSMODELS and len(series) >= max(10, period * 2):
+    resolved_freq = _choose_freq(per_day.index) if freq == "auto" else freq
+    series = _resample_series(per_day, resolved_freq).astype(float)
+    if len(series) < 4:
+        raise ModelError(
+            f"only {len(series)} periods at '{resolved_freq}' resolution — need at least 4; "
+            "try a finer freq or provide more history"
+        )
+    period = seasonal_period or _SEASONAL_PERIOD_BY_FREQ[resolved_freq]
+    offset = series.index.freq or pd.tseries.frequencies.to_offset(_FREQ_RULE[resolved_freq])
+    last_date = series.index[-1]
+    future_index = [last_date + offset * (i + 1) for i in range(horizon)]
+
+    # Holt-Winters/ETS needs relatively few points for a trend-only fit; a
+    # *seasonal* component additionally needs at least two full cycles, so
+    # it's only attempted when the resampled series is long enough for that.
+    min_len_for_hw = 8
+    use_seasonal = len(series) >= period * 2
+    why = None
+    if HAVE_STATSMODELS and len(series) >= min_len_for_hw:
         try:
             model = ExponentialSmoothing(series, trend="add",
-                                          seasonal="add" if len(series) >= period * 2 else None,
-                                          seasonal_periods=period if len(series) >= period * 2 else None,
+                                          seasonal="add" if use_seasonal else None,
+                                          seasonal_periods=period if use_seasonal else None,
                                           initialization_method="estimated").fit()
             forecast_values = model.forecast(horizon)
             resid_std = float(np.std(model.resid)) if hasattr(model, "resid") else float(series.std())
-        except Exception:  # noqa: BLE001 - fall back below on any convergence failure
+            method = "holt_winters"
+        except Exception as exc:  # noqa: BLE001 - fall back below on any convergence failure
             method = "seasonal_naive"
+            why = f"Holt-Winters failed to converge ({exc}); used a seasonal-naive fallback instead."
             forecast_values, resid_std = _seasonal_naive(series, horizon, period)
     else:
         method = "seasonal_naive" if HAVE_STATSMODELS else "seasonal_naive_no_statsmodels"
+        why = (
+            f"only {len(series)} periods at '{resolved_freq}' resolution — need at least {min_len_for_hw} "
+            "for Holt-Winters" if HAVE_STATSMODELS else
+            "statsmodels is not installed — install it to get Holt-Winters/ETS forecasting instead of "
+            "the seasonal-naive fallback"
+        )
         forecast_values, resid_std = _seasonal_naive(series, horizon, period)
 
     z = 1.959963985  # ~95% CI
     forecast_list = [round(float(v), 4) for v in np.asarray(forecast_values)]
     return {
         "method": method, "seasonal_period": period, "horizon": horizon,
+        "freq": freq, "resampled_to": resolved_freq, "why": why,
         "history": [{"date": d.date().isoformat(), "value": round(float(v), 4)} for d, v in series.items()],
         "forecast": [{"date": pd.Timestamp(d).date().isoformat(), "value": v,
                        "lower": round(v - z * resid_std, 4), "upper": round(v + z * resid_std, 4)}

@@ -98,7 +98,10 @@ class QualityArgs(BaseModel):
     name: Optional[str] = Field(None, description="Rule name (define).")
     kind: Optional[str] = Field(None, description="not_null/unique/accepted_values/range/regex/row_count/"
                                                      "freshness/referential/custom_sql (define).")
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict, description="Every rule kind names the column(s) it "
+                                     "checks with 'columns' (canonical: a single name or a list) — 'column' is "
+                                     "accepted the same way as an alias, so unique's {\"columns\": [\"a\", \"b\"]} "
+                                     "and not_null's {\"column\": \"a\"} both work regardless of which key is used.")
     rule_id: Optional[int] = Field(None, description="Run one rule, or delete it.")
 
 
@@ -154,6 +157,11 @@ class ForecastArgs(BaseModel):
     seasonal_period: Optional[int] = Field(None, ge=2, le=366)
     name: Optional[str] = None
     write_dataset: bool = True
+    freq: Literal["auto", "day", "week", "month", "quarter"] = Field(
+        "auto", description="Calendar grain to resample the series onto before forecasting. 'auto' (default) "
+                              "picks by how far the dates span and how densely they fill that span, so irregular "
+                              "daily transactions with gaps aggregate to a coarser, fully-regular series (summing "
+                              "values per period, 0 for an empty one) instead of tripping up Holt-Winters.")
 
 
 class ExportArgs(BaseModel):
@@ -294,7 +302,7 @@ def _run_cluster(s: Services, a: ClusterArgs) -> dict:
 
 def _run_forecast(s: Services, a: ForecastArgs) -> dict:
     return s.model_forecast(a.dataset, a.date_col, a.value_col, a.horizon, a.seasonal_period, a.name,
-                             a.write_dataset, source="agent")
+                             a.write_dataset, source="agent", freq=a.freq)
 
 
 def _run_export(s: Services, a: ExportArgs) -> dict:
@@ -352,7 +360,12 @@ TOOLS: list[Tool] = [
     Tool("data_cluster", "K-means clustering with an elbow/silhouette scan; writes cluster labels back (write).\n"
          "Sinónimos: agrupar datos, clustering, segmentación, k-means.",
          ClusterArgs, _ann(False, False, False), _run_cluster),
-    Tool("data_forecast", "Time-series forecast (Holt-Winters or a seasonal-naive fallback) with an interval (write).\n"
+    Tool("data_forecast", "Time-series forecast with a confidence interval (write). Resamples onto a regular "
+         "calendar grain first (freq: auto/day/week/month/quarter — auto picks by span/density so gappy, "
+         "irregular daily data aggregates to a coarser series that Holt-Winters/ETS can actually fit), and "
+         "prefers Holt-Winters/ETS whenever statsmodels is available and the resampled series is long enough, "
+         "falling back to a seasonal-naive method otherwise — the result always reports resampled_to, method "
+         "and why (set on a fallback).\n"
          "Sinónimos: pronóstico, previsión, serie temporal, predecir el futuro.",
          ForecastArgs, _ann(False, False, False), _run_forecast),
     Tool("data_export", "Export a dataset to CSV/XLSX/Parquet/JSON inside the app's exports folder (write).\n"
