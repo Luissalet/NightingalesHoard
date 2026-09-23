@@ -69,7 +69,13 @@ class NightingaleBridge(FastMCP):
                     json={"name": name, "arguments": arguments or {}},
                     headers={"Authorization": f"Bearer {_token()}"},
                 )
-            body = response.json()
+            try:
+                body = response.json()
+            except ValueError:
+                # A non-JSON answer (a proxy page, a crash trace) used to reach
+                # the assistant as "Expecting value: line 1 column 1 (char 0)".
+                return [TextContent(type="text", text=json.dumps(
+                    {"error": f"HTTP {response.status_code}: {response.text[:400]}"}, ensure_ascii=False))]
             if response.status_code >= 400:
                 return [TextContent(type="text", text=json.dumps({"error": body.get("error", f"Error {response.status_code}")}, ensure_ascii=False))]
             return [TextContent(type="text", text=json.dumps(body, ensure_ascii=False))]
