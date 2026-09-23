@@ -41,6 +41,33 @@ def test_optimize_finds_known_maximum_within_tolerance():
         assert s["uncertainty"] is not None
 
 
+def test_optimize_non_gp_backend_stays_fast_at_default_candidate_count():
+    """Regression test: `_predict_with_std`'s GP surrogate must never be fit on
+    the full candidate pool (O(n^3) in the training set size), or a plain
+    `/api/lab/models/{id}/optimize` call at its own default `n_candidates`
+    (3000) on any non-`gaussian_process` backend hangs for minutes. This uses
+    `random_forest` (a backend that needs the surrogate path) at that same
+    default candidate count and enforces a generous wall-clock budget."""
+    import time
+
+    rng = np.random.default_rng(0)
+    n = 200
+    x1 = rng.uniform(-10, 10, n)
+    x2 = rng.uniform(-10, 10, n)
+    y = 10 - 0.1 * (x1 - 3) ** 2 - 0.1 * (x2 + 2) ** 2
+    df = pd.DataFrame({"x1": x1, "x2": x2, "y": y})
+    result = registry.train_model(df, "y", ["x1", "x2"], "regression", "random_forest", seed=0)
+    saved = registry.SavedModel(model=result["_model"], encoders=result["_encoders"],
+                                 label_encoder=result["_label_encoder"], X_columns=result["_X_columns"],
+                                 features=result["features"], target="y", task="regression", backend="random_forest")
+
+    start = time.monotonic()
+    out = optimize.optimize(saved, df, direction="maximize", n_candidates=3000, batch_size=5, seed=0)
+    elapsed = time.monotonic() - start
+    assert elapsed < 15.0, f"optimize() took {elapsed:.1f}s at the default candidate count — the GP surrogate is refitting on the whole pool again"
+    assert len(out["suggested_points"]) == 5
+
+
 def test_optimize_minimize_direction():
     saved, df = _saved_gp_on_known_max()
     result = optimize.optimize(saved, df, direction="minimize", n_candidates=1500, batch_size=3, seed=0)

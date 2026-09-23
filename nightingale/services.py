@@ -1327,7 +1327,7 @@ class Services:
                          "backend": params.get("backend"), "features": _json.loads(m["features_json"]),
                          "params": params, "metrics": _json.loads(m["metrics_json"]),
                          "created_at": m["created_at"], "dataset_id": m["dataset_id"],
-                         "has_artifact": bool(m["artifact_path"])})
+                         "dataset_version": m["dataset_version"], "has_artifact": bool(m["artifact_path"])})
         return {"models": out}
 
     def lab_registry_get(self, model_id: int) -> dict:
@@ -1374,6 +1374,15 @@ class Services:
         return self._log("lab_report", source, dataset_row["name"], {"model_id": model_id},
                           lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
 
+    def lab_report_path(self, path: str) -> Path:
+        """Resolve a Lab report path (as returned by `lab_report`) to a real
+        file inside the exports directory — never anything else on disk."""
+        exports_dir = self.config.exports_dir.resolve()
+        candidate = Path(path).resolve()
+        if exports_dir not in candidate.parents or not candidate.is_file():
+            raise LookupError(f"report file not found: {path!r}")
+        return candidate
+
     # ---- lab: visual pipeline --------------------------------------------------
     def lab_pipeline_graph(self, dataset_name: str) -> dict:
         dataset_row = self._dataset_row(dataset_name)
@@ -1401,7 +1410,9 @@ class Services:
                                                                          step["params"], self._resolve_table_by_name)
                         temp_tables.append(new_table)
                         current_table = new_table
+                    preview_rows = self.engine.query(f'SELECT * FROM "{current_table}"', limit=20)["rows"]
                     return {"dry_run": True, "steps": steps, "row_count": row_count, "columns": columns,
+                            "preview_rows": preview_rows,
                             "_log_summary": f"pipeline preview for {dataset_row['name']!r}: {len(steps)} step(s)"}
                 finally:
                     for t in temp_tables:
