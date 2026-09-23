@@ -25,16 +25,30 @@ export default function ChartsPage() {
     if (!active && datasets.length > 0) setActive(datasets[0].name);
   }, [datasets, active]);
 
+  const view = async (chartId) => {
+    try {
+      const result = await api.chartGet(chartId);
+      setRendered((r) => ({ ...r, [chartId]: result.vega_lite }));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const loadCharts = async () => {
     try {
       const { charts } = await api.chartList();
       setCharts(charts);
+      // Render every saved chart right away: a hover-to-render pattern never
+      // fires on a touch device, which would leave charts permanently blank
+      // on mobile.
+      charts.forEach((c) => view(c.id));
     } catch (e) {
       setError(e.message);
     }
   };
   useEffect(() => {
     loadCharts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dataset = datasets.find((d) => d.name === active);
@@ -57,16 +71,6 @@ export default function ChartsPage() {
       setError(e2.message);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const view = async (chartId) => {
-    if (rendered[chartId]) return;
-    try {
-      const result = await api.chartGet(chartId);
-      setRendered((r) => ({ ...r, [chartId]: result.vega_lite }));
-    } catch (e) {
-      setError(e.message);
     }
   };
 
@@ -163,12 +167,12 @@ export default function ChartsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="chart-list">
           {charts.map((c) => (
-            <div key={c.id} className="panel-white flex flex-col gap-2" onMouseEnter={() => view(c.id)}>
+            <div key={c.id} className="panel-white flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="font-medium">{c.name}</div>
                 <button type="button" className="btn-link text-xs" onClick={() => remove(c.id)}>{t("common_delete")}</button>
               </div>
-              {rendered[c.id] ? <VegaChart spec={rendered[c.id]} /> : <div className="help">Hover to render…</div>}
+              {rendered[c.id] ? <VegaChart spec={rendered[c.id]} /> : <div className="help">{t("common_loading")}</div>}
             </div>
           ))}
         </div>

@@ -293,8 +293,11 @@ class Engine:
                     entry.update({"min": json_safe(lo), "max": json_safe(hi), "mean": json_safe(mean),
                                   "sd": json_safe(sd), "median": json_safe(median)})
                     if p25 is not None and p75 is not None:
-                        iqr = p75 - p25
-                        fence_lo, fence_hi = p25 - 1.5 * iqr, p75 + 1.5 * iqr
+                        # DECIMAL columns come back as decimal.Decimal, which can't mix with a
+                        # plain float in arithmetic — normalize to float before the fence math.
+                        p25_f, p75_f = float(p25), float(p75)
+                        iqr = p75_f - p25_f
+                        fence_lo, fence_hi = p25_f - 1.5 * iqr, p75_f + 1.5 * iqr
                         outliers = conn.execute(
                             f"SELECT COUNT(*) FROM {q(table_name)} WHERE {c} < {fence_lo} OR {c} > {fence_hi}"
                         ).fetchone()[0]

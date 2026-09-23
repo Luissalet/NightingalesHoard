@@ -104,11 +104,29 @@ def _prep_features(df: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame,
     return X, encoders
 
 
+def _is_id_like(series: pd.Series, n_rows: int) -> bool:
+    """A free-text/identifier-ish column (order ids, customer ids, raw dates
+    with near-unique values...) whose one-hot encoding would blow up the
+    feature matrix and stall training. Excluded only when both conditions
+    hold, so a genuinely useful categorical with many values in a large
+    dataset (e.g. 40 countries in 50,000 rows) is not thrown away. Only
+    applied when features are auto-selected — an explicit feature list from
+    the caller is always trusted as-is."""
+    if pd.api.types.is_numeric_dtype(series):
+        return False
+    nunique = series.nunique(dropna=True)
+    return nunique > 30 and nunique > 0.05 * n_rows
+
+
 def train_supervised(df: pd.DataFrame, target: str, features: Optional[list[str]] = None, task: Optional[str] = None,
                       algorithm: Optional[str] = None, test_size: float = 0.2, seed: int = 42, cv: int = 5) -> dict:
     if target not in df.columns:
         raise ModelError(f"unknown target column: {target}")
-    features = features or [c for c in df.columns if c != target]
+    excluded_id_like: list[str] = []
+    if not features:
+        candidates = [c for c in df.columns if c != target]
+        features = [c for c in candidates if not _is_id_like(df[c], len(df))] or candidates
+        excluded_id_like = [c for c in candidates if c not in features]
     missing = [c for c in features if c not in df.columns]
     if missing:
         raise ModelError(f"unknown feature column(s): {missing}")
@@ -187,6 +205,7 @@ def train_supervised(df: pd.DataFrame, target: str, features: Optional[list[str]
 
     return {
         "task": task, "algorithm": algorithm, "target": target, "features": features,
+        "excluded_id_like_columns": excluded_id_like,
         "metrics": metrics, "feature_importance": feature_importance,
         "predictions": [_py(v) for v in predictions],
         "train_rows": int(len(X_train)), "test_rows": int(len(X_test)), "sampled": sampled,
@@ -298,12 +317,19 @@ def run_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizon: int =
         raise ModelError(f"unknown column(s): {[c for c in (date_col, value_col) if c not in df.columns]}")
     work = df[[date_col, value_col]].dropna().copy()
     work[date_col] = pd.to_datetime(work[date_col])
-    work = work.sort_values(date_col).set_index(date_col)
-    series = work[value_col].astype(float)
+    # Row-level data (e.g. one row per transaction) commonly has several rows
+    # per timestamp; a time series needs one point per period, so duplicate
+    # timestamps are summed together first. Without this, the median step
+    # between consecutive (sorted, but often same-day) rows collapses to
+    # zero and every forecast row lands on the same date.
+    work = work.groupby(date_col, as_index=True)[value_col].sum().sort_index()
+    series = work.astype(float)
     if len(series) < 4:
-        raise ModelError("need at least 4 data points to forecast")
+        raise ModelError("need at least 4 distinct dates to forecast")
     period = seasonal_period or _infer_period(series.index)
     freq_step = series.index.to_series().diff().median()
+    if pd.isna(freq_step) or freq_step <= pd.Timedelta(0):
+        freq_step = pd.Timedelta(days=1)
     last_date = series.index[-1]
     future_index = [last_date + freq_step * (i + 1) for i in range(horizon)]
 

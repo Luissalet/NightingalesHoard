@@ -52,6 +52,22 @@ def test_train_supervised_unknown_target_raises():
         m.train_supervised(df, "nope", ["x1"])
 
 
+def test_train_supervised_auto_features_exclude_id_like_columns():
+    """A near-unique text column (order id, customer id...) must not be
+    auto-selected as a feature: one-hot encoding it would blow up the design
+    matrix and stall training. An explicit feature list is still honored."""
+    df = make_classification_df(n=300)
+    df["order_id"] = [f"S{i:05d}" for i in range(len(df))]  # all-unique -> id-like
+    result = m.train_supervised(df, "label", seed=0)  # features=None -> auto
+    assert "order_id" not in result["features"]
+    assert "order_id" in result["excluded_id_like_columns"]
+    assert result["fit_seconds"] < 5
+
+    # an explicit feature list is trusted even if it includes an id-like column
+    result2 = m.train_supervised(df, "label", ["x1", "x2", "order_id"], seed=0)
+    assert result2["excluded_id_like_columns"] == []
+
+
 def test_run_kmeans():
     rng = np.random.default_rng(0)
     a = rng.normal(0, 0.3, (50, 2))
@@ -96,3 +112,19 @@ def test_seasonal_naive_fallback_used_for_short_series():
     result = m.run_forecast(df, "d", "v", horizon=3)
     assert result["method"].startswith("seasonal_naive")
     assert len(result["forecast"]) == 3
+
+
+def test_run_forecast_aggregates_duplicate_dates_and_advances_them():
+    """Row-level data (several rows per date, as in a transaction log) must be
+    summed per date before forecasting: otherwise the median step between
+    sorted-but-often-repeated timestamps collapses to zero and every forecast
+    row lands on the same date (a real bug caught during the UI walk)."""
+    rng = np.random.default_rng(0)
+    n = 300
+    dates = pd.to_datetime("2024-01-01") + pd.to_timedelta(rng.integers(0, 90, n), unit="D")
+    values = rng.uniform(10, 100, n)
+    df = pd.DataFrame({"d": dates, "v": values})
+    result = m.run_forecast(df, "d", "v", horizon=5)
+    forecast_dates = [row["date"] for row in result["forecast"]]
+    assert len(set(forecast_dates)) == len(forecast_dates)  # every date distinct, strictly advancing
+    assert forecast_dates == sorted(forecast_dates)
