@@ -1,0 +1,22 @@
+# Optional extras for the Lab package (nightingale/lab/). The core app and its
+# test suite run fine without any of these — every Lab feature that depends on
+# one degrades to a documented fallback (see docs/LAB.md) when it is missing.
+#
+#   optuna   -> hyperparameter tuning uses TPE search with a trial history
+#               instead of a randomized sklearn search.
+#   shap     -> explanations use TreeExplainer/KernelExplainer instead of
+#               permutation importance + partial dependence.
+#   xgboost  -> adds the "xgboost" backend to the model registry.
+#   lightgbm -> adds the "lightgbm" backend to the model registry.
+#   joblib   -> used to persist trained Lab models to disk; falls back to the
+#               stdlib pickle module when absent (functionally identical for
+#               scikit-learn estimators, just without joblib's numpy-array
+#               compression).
+#
+# Install with: pip install -r requirements-lab.txt
+-r requirements.txt
+optuna==5.0.0
+shap==0.51.0
+xgboost==3.2.0
+lightgbm==4.7.0
+joblib==1.6.0
