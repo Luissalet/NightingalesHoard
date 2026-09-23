@@ -16,6 +16,8 @@ import matplotlib
 matplotlib.use("Agg")  # headless everywhere, including Windows: never opens a GUI window
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import FuncFormatter
 
 from .engine import Engine, is_numeric_type, is_temporal_type, json_safe, q
 
@@ -24,7 +26,32 @@ __all__ = ["ChartError", "CHART_KINDS", "build_chart_query", "render_png", "to_v
 CHART_KINDS = ("bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut")
 MAX_CHART_ROWS = 5000
 ACCENT = "#7a1f4a"
-PALETTE = ["#7a1f4a", "#c94f7c", "#e0679a", "#f2a6c3", "#4a1330", "#9c3b64"]
+GOLD = "#e0a048"
+# Rose and gold alternate so adjacent categories in a legend or a stacked bar
+# stay visually distinct instead of blurring into one another the way an
+# all-rose ramp would for anything beyond two series.
+PALETTE = ["#7a1f4a", "#e0a048", "#c94f7c", "#8a6a1f", "#4a1330", "#e0679a", "#9c3b64", "#c98a2c"]
+# Shared look for every chart: brand colors plus a muted ink/axis palette so a
+# chart reads as part of the same app whether it came from the Charts page,
+# a dashboard tile, or an exported PNG.
+VEGA_CONFIG = {
+    "background": "transparent",
+    "font": "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    "range": {"category": PALETTE},
+    "numberFormat": ",.2f",
+    # A single-series bar/line/area/scatter mark has no "color" encoding
+    # channel, so it never touches range.category — without this it falls
+    # back to Vega's own default blue instead of the brand rose.
+    "mark": {"color": ACCENT},
+    "axis": {"labelColor": "#6b5560", "titleColor": "#241419", "gridColor": "#00000014",
+              "domainColor": "#00000030", "tickColor": "#00000030", "labelFontSize": 10.5},
+    "legend": {"labelColor": "#6b5560", "titleColor": "#241419"},
+    "view": {"stroke": "transparent"},
+    "title": {"color": "#241419", "fontSize": 13, "fontWeight": 600},
+}
+# The matplotlib heatmap path has no "scheme" concept — build the same
+# rose-to-gold ramp by hand so a PNG export matches the interactive chart.
+_HEATMAP_CMAP = LinearSegmentedColormap.from_list("nightingale_heat", [ACCENT, GOLD])
 
 
 class ChartError(ValueError):
@@ -115,38 +142,61 @@ def run_chart(engine: Engine, dataset_table: str, spec: ChartSpec) -> dict:
     return result
 
 
+# d3-format tokens (the client applies the actual locale's digit-group and
+# decimal characters via vega-embed's formatLocale, based on the UI language —
+# these strings just say "group by thousands" and how many decimals to keep).
+_COUNT_FMT = ",d"
+_VALUE_FMT = ",.2f"
+
+
+def _agg_format(agg: Optional[str], has_y: bool) -> str:
+    """A bare COUNT(*) (no y column, or agg == 'count') is always an integer;
+    anything aggregated from a real value column keeps two decimals."""
+    if not has_y or agg == "count":
+        return _COUNT_FMT
+    return _VALUE_FMT
+
+
 def to_vega_lite(spec: ChartSpec, data: dict) -> dict:
-    """A Vega-Lite v5 spec the client renders with vega-embed (see DESIGN.md)."""
+    """A Vega-Lite v5 spec the client renders with vega-embed (see DESIGN.md).
+    Colors and typography come from the shared VEGA_CONFIG theme so every
+    chart — Charts page, dashboard tile, or PNG export — looks like the same
+    app; number fields carry a d3-format token so thousands separators and
+    the decimal mark follow the UI's language once vega-embed applies its
+    locale (see VegaChart.jsx)."""
     values = data["rows"]
     base = {"$schema": "https://vega.github.io/schema/vega-lite/v5.json", "data": {"values": values},
-            "width": "container", "height": 320, "config": {"range": {"category": PALETTE}}}
+            "width": "container", "height": 320, "config": dict(VEGA_CONFIG)}
     if spec.title:
         base["title"] = spec.title
     if spec.kind == "histogram":
         base["mark"] = {"type": "bar", "color": ACCENT, "tooltip": True}
-        base["encoding"] = {"x": {"field": "bin_start", "type": "quantitative", "title": spec.x},
-                             "y": {"field": "count", "type": "quantitative", "title": "count"}}
+        base["encoding"] = {"x": {"field": "bin_start", "type": "quantitative", "title": spec.x, "format": _VALUE_FMT},
+                             "y": {"field": "count", "type": "quantitative", "title": "count", "format": _COUNT_FMT}}
     elif spec.kind == "box":
         base["mark"] = {"type": "boxplot", "extent": "min-max", "color": ACCENT}
-        enc = {"y": {"field": "median", "type": "quantitative"}}
+        enc = {"y": {"field": "median", "type": "quantitative", "format": _VALUE_FMT}}
         if spec.x:
             enc["x"] = {"field": spec.x, "type": "nominal", "sort": None}
         base["encoding"] = enc
         base["transform"] = []
     elif spec.kind == "heatmap":
         base["mark"] = "rect"
+        value_fmt = _agg_format(spec.agg, has_y=bool(spec.color))
         base["encoding"] = {"x": {"field": "x", "type": "nominal", "sort": None},
                              "y": {"field": "y", "type": "nominal", "sort": None},
-                             "color": {"field": "value", "type": "quantitative", "scale": {"scheme": "reds"}}}
+                             "color": {"field": "value", "type": "quantitative", "format": value_fmt,
+                                       "scale": {"range": [VEGA_CONFIG["range"]["category"][0], GOLD]}}}
     elif spec.kind == "scatter":
         base["mark"] = {"type": "point", "filled": True, "tooltip": True}
-        enc = {"x": {"field": "x", "type": "quantitative"}, "y": {"field": "y", "type": "quantitative"}}
+        enc = {"x": {"field": "x", "type": "quantitative", "format": _VALUE_FMT},
+               "y": {"field": "y", "type": "quantitative", "format": _VALUE_FMT}}
         if spec.color:
             enc["color"] = {"field": "color", "type": "nominal"}
         base["encoding"] = enc
     elif spec.kind in ("pie", "donut"):
         base["mark"] = {"type": "arc", "innerRadius": 60 if spec.kind == "donut" else 0, "tooltip": True}
-        base["encoding"] = {"theta": {"field": "value", "type": "quantitative"},
+        base["encoding"] = {"theta": {"field": "value", "type": "quantitative", "format": _agg_format(spec.agg, bool(spec.y))},
                              "color": {"field": "label", "type": "nominal", "sort": None}}
     else:
         mark = {"bar": "bar", "grouped_bar": "bar", "stacked_bar": "bar", "line": "line", "area": "area"}[spec.kind]
@@ -157,7 +207,8 @@ def to_vega_lite(spec: ChartSpec, data: dict) -> dict:
             x_enc: dict[str, Any] = {"field": "x", "type": "temporal", "title": spec.x}
         else:
             x_enc = {"field": "x", "type": "nominal", "sort": None, "title": spec.x}
-        enc: dict[str, Any] = {"x": x_enc, "y": {"field": "y", "type": "quantitative", "title": spec.y or "count"}}
+        enc: dict[str, Any] = {"x": x_enc, "y": {"field": "y", "type": "quantitative", "title": spec.y or "count",
+                                                   "format": _agg_format(spec.agg, bool(spec.y))}}
         if "series" in (values[0] if values else {}):
             enc["color"] = {"field": "series", "type": "nominal"}
             if spec.kind == "grouped_bar":
@@ -167,12 +218,30 @@ def to_vega_lite(spec: ChartSpec, data: dict) -> dict:
     return base
 
 
-def render_png(spec: ChartSpec, data: dict, out_path=None) -> bytes:
+def _format_locale_number(value: float, lang: str) -> str:
+    """Thousands-grouped, at most 2 decimals, trimmed to a whole number when
+    the value is (near enough) one — the matplotlib equivalent of
+    Intl.NumberFormat(..., {maximumFractionDigits: 2}). es swaps the
+    grouping/decimal marks (3.374.888,14) to match the UI's language."""
+    if value is None or value != value:  # None or NaN
+        return ""
+    rounded = round(float(value), 2)
+    s = f"{rounded:,.0f}" if abs(rounded - round(rounded)) < 1e-9 else f"{rounded:,.2f}"
+    if lang == "es":
+        s = s.translate(str.maketrans({",": "\u0000", ".": ","})).replace("\u0000", ".")
+    return s
+
+
+def _locale_formatter(lang: str) -> FuncFormatter:
+    return FuncFormatter(lambda v, _pos: _format_locale_number(v, lang))
+
+
+def render_png(spec: ChartSpec, data: dict, lang: str = "en", out_path=None) -> bytes:
     rows = data["rows"]
     fig, ax = plt.subplots(figsize=(6, 4), dpi=130)
     fig.patch.set_facecolor("white")
     try:
-        _draw(ax, spec, rows)
+        _draw(ax, spec, rows, lang)
         ax.set_title(spec.title or spec.dataset, fontsize=11)
         fig.tight_layout()
         buf = io.BytesIO()
@@ -197,13 +266,16 @@ def _thin_labels(labels: list[str], max_labels: int = 15) -> list[str]:
     return [lab if i % step == 0 else "" for i, lab in enumerate(labels)]
 
 
-def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
+def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
+    fmt = _locale_formatter(lang)
     if spec.kind == "histogram":
         xs = [r["bin_start"] for r in rows]
         ys = [r["count"] for r in rows]
         ax.bar(xs, ys, color=ACCENT, width=(xs[1] - xs[0]) * 0.9 if len(xs) > 1 else 1)
         ax.set_xlabel(spec.x)
         ax.set_ylabel("count")
+        ax.xaxis.set_major_formatter(fmt)
+        ax.yaxis.set_major_formatter(fmt)
     elif spec.kind == "box":
         stats = []
         for r in rows:
@@ -213,6 +285,7 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
         if spec.x:
             labels = [str(r.get(spec.x, i)) for i, r in enumerate(rows)]
             ax.set_xticklabels(labels, rotation=30, ha="right")
+        ax.yaxis.set_major_formatter(fmt)
     elif spec.kind == "heatmap":
         xs = sorted({r["x"] for r in rows}, key=str)
         ys = sorted({r["y"] for r in rows}, key=str)
@@ -221,12 +294,13 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
         yi = {v: i for i, v in enumerate(ys)}
         for r in rows:
             grid[yi[r["y"]], xi[r["x"]]] = r["value"] or 0
-        im = ax.imshow(grid, cmap="Reds", aspect="auto")
+        im = ax.imshow(grid, cmap=_HEATMAP_CMAP, aspect="auto")
         ax.set_xticks(range(len(xs)))
         ax.set_xticklabels([str(v) for v in xs], rotation=45, ha="right", fontsize=7)
         ax.set_yticks(range(len(ys)))
         ax.set_yticklabels([str(v) for v in ys], fontsize=7)
-        plt.colorbar(im, ax=ax, fraction=0.046)
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046)
+        cbar.ax.yaxis.set_major_formatter(fmt)
     elif spec.kind == "scatter":
         xs = np.array([r["x"] for r in rows], dtype=float)
         ys = np.array([r["y"] for r in rows], dtype=float)
@@ -244,6 +318,8 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
             ax.plot(xs_line, np.polyval(coeffs, xs_line), color="#4a1330", linewidth=1.5, linestyle="--")
         ax.set_xlabel(spec.x)
         ax.set_ylabel(spec.y)
+        ax.xaxis.set_major_formatter(fmt)
+        ax.yaxis.set_major_formatter(fmt)
     elif spec.kind in ("pie", "donut"):
         labels = [str(r["label"]) for r in rows]
         values = [r["value"] or 0 for r in rows]
@@ -284,3 +360,4 @@ def _draw(ax, spec: ChartSpec, rows: list[dict]) -> None:
             ax.set_xticks(range(len(xs)))
             ax.set_xticklabels(_thin_labels(xs), rotation=30, ha="right", fontsize=7)
         ax.set_ylabel(spec.y or "count")
+        ax.yaxis.set_major_formatter(fmt)

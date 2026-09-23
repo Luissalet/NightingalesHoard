@@ -3,9 +3,10 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import VegaChart from "../components/VegaChart.jsx";
+import { formatNumber } from "../format.js";
 
 export default function DashboardsPage() {
-  const { t, datasets, notify } = useApp();
+  const { t, lang, datasets, notify } = useApp();
   const [dashboards, setDashboards] = useState([]);
   const [active, setActive] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -153,7 +154,7 @@ export default function DashboardsPage() {
                 item.type === "kpi" ? (
                   <div className="stat-tile" key={i} data-testid="dashboard-kpi">
                     <div className="help">{item.label || item.expr}</div>
-                    <div className="stat-number">{item.error ? "—" : String(item.value)}</div>
+                    <div className="stat-number">{item.error ? "—" : formatNumber(item.value, lang)}</div>
                   </div>
                 ) : (
                   <div className="panel-white md:col-span-2" key={i} data-testid="dashboard-chart">

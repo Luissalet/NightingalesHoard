@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
+import { formatNumber } from "../format.js";
 
 export default function SettingsPage() {
   const { t, lang, setLang, datasets } = useApp();
@@ -104,7 +105,9 @@ export default function SettingsPage() {
                     {answer.rows.slice(0, 20).map((row, i) => (
                       <tr key={i}>
                         {Object.keys(answer.rows[0]).map((c) => (
-                          <td key={c} className="border-b p-1" style={{ borderColor: "var(--line)" }}>{String(row[c] ?? "")}</td>
+                          <td key={c} className="border-b p-1" style={{ borderColor: "var(--line)" }}>
+                            {typeof row[c] === "number" ? formatNumber(row[c], lang) : String(row[c] ?? "")}
+                          </td>
                         ))}
                       </tr>
                     ))}
@@ -112,7 +115,7 @@ export default function SettingsPage() {
                 </table>
               </div>
             )}
-            <div className="help">{answer.row_count} row(s)</div>
+            <div className="help">{formatNumber(answer.row_count, lang)} row(s)</div>
           </div>
         )}
       </div>

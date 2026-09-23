@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { displaySource, formatNumber } from "../format.js";
 
 /** The lineage/recipe side panel: every step applied to the current dataset,
  * with jump-to-version undo/redo and a recipe export (a runnable SQL script). */
-export default function RecipePanel({ dataset, currentVersion, versionCount, onChanged, t }) {
+export default function RecipePanel({ dataset, currentVersion, versionCount, onChanged, t, lang }) {
   const [recipe, setRecipe] = useState(null);
   const [lineage, setLineage] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -74,7 +75,8 @@ export default function RecipePanel({ dataset, currentVersion, versionCount, onC
 
       {lineage?.source && (
         <div className="help">
-          Source: <span className="chip">{lineage.source.kind}</span> <span className="truncate">{lineage.source.path}</span>
+          Source: <span className="chip">{lineage.source.kind}</span>{" "}
+          <span className="truncate" title={lineage.source.path}>{displaySource(lineage.source.path)}</span>
         </div>
       )}
 
@@ -90,7 +92,7 @@ export default function RecipePanel({ dataset, currentVersion, versionCount, onC
           >
             <span className="chip">v{s.version}</span>
             <span className="font-medium">{s.op}</span>
-            <span className="help num ml-auto shrink-0">{s.row_count?.toLocaleString?.() ?? s.row_count}</span>
+            <span className="help num ml-auto shrink-0">{formatNumber(s.row_count, lang)}</span>
           </li>
         ))}
         {(!recipe || recipe.steps.length === 0) && <div className="help">No steps yet.</div>}

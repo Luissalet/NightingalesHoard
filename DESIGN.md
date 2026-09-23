@@ -51,6 +51,14 @@ process) for the MCP agent and for anything that needs a static image (a saved d
 A date/timestamp axis is encoded as Vega-Lite's `temporal` type rather than `nominal`, so the
 library picks readable tick spacing instead of drawing one label per distinct date.
 
+Both renderings share one theme (`VEGA_CONFIG` in `charts.py`, and the matching matplotlib
+constants): the rose ramp plus a gold accent (`#e0a048`) as a categorical palette, so a chart with
+several series reads as clearly distinct colors rather than a blur of near-identical rose tones. A
+number field carries a d3-format token (thousands-grouped, at most 2 decimals); the *characters*
+used for grouping and the decimal mark come from the UI's own language, applied client-side via
+vega-embed's `formatLocale` for the interactive chart, and by a small locale-swapping formatter for
+the matplotlib PNG — both read the same setting Settings uses, not the browser's default locale.
+
 ## Why the model layer excludes "id-like" columns by default
 
 Training with every column as a feature is the obvious first thing to try, but a raw order id or

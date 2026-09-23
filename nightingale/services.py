@@ -582,7 +582,7 @@ class Services:
     def chart_create(self, dataset_name: str, kind: str, x: Optional[str] = None, y: Optional[str] = None,
                       agg: str = "sum", color: Optional[str] = None, filter: Optional[str] = None,
                       title: str = "", name: Optional[str] = None, image: bool = False,
-                      source: str = "ui") -> dict:
+                      source: str = "ui", lang: str = "en") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
@@ -596,7 +596,7 @@ class Services:
                     "_log_summary": f"chart {kind} on {dataset_row['name']!r} ({data['row_count']} rows)"}
             if image:
                 png_path = self.config.charts_dir / f"chart_{chart_id}.png"
-                png_bytes = render_png(spec, data, out_path=png_path)
+                png_bytes = render_png(spec, data, lang=lang, out_path=png_path)
                 out["image_path"] = str(png_path)
                 out["image_base64"] = __import__("base64").b64encode(png_bytes).decode("ascii")
             return out
@@ -604,7 +604,7 @@ class Services:
         return self._log("chart", source, dataset_row["name"],
                           {"kind": kind, "x": x, "y": y, "agg": agg, "color": color}, do)
 
-    def chart_get(self, chart_id: int, image: bool = False) -> dict:
+    def chart_get(self, chart_id: int, image: bool = False, lang: str = "en") -> dict:
         row = self.meta.get_chart(chart_id)
         if row is None:
             raise NotFoundError(f"unknown chart: {chart_id}")
@@ -617,7 +617,7 @@ class Services:
         out = {"chart_id": chart_id, "name": row["name"], "spec": spec.to_dict(),
                "vega_lite": to_vega_lite(spec, data), "row_count": data["row_count"]}
         if image:
-            png_bytes = render_png(spec, data)
+            png_bytes = render_png(spec, data, lang=lang)
             out["image_base64"] = __import__("base64").b64encode(png_bytes).decode("ascii")
         return out
 

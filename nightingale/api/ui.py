@@ -204,6 +204,7 @@ class ChartBody(BaseModel):
     title: str = ""
     name: Optional[str] = None
     image: bool = False
+    lang: str = "en"
 
 
 @router.post("/charts")
@@ -211,7 +212,7 @@ class ChartBody(BaseModel):
 def chart_create(request: Request, body: ChartBody):
     svc = services(request)
     return svc.chart_create(body.dataset, body.kind, body.x, body.y, body.agg, body.color, body.filter,
-                             body.title, body.name, body.image)
+                             body.title, body.name, body.image, lang=body.lang)
 
 
 @router.get("/charts")
@@ -222,8 +223,8 @@ def chart_list(request: Request):
 
 @router.get("/charts/{chart_id}")
 @api_errors
-def chart_get(request: Request, chart_id: int, image: bool = False):
-    return services(request).chart_get(chart_id, image)
+def chart_get(request: Request, chart_id: int, image: bool = False, lang: str = "en"):
+    return services(request).chart_get(chart_id, image, lang=lang)
 
 
 @router.delete("/charts/{chart_id}")

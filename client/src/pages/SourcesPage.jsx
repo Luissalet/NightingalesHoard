@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
+import { displaySource } from "../format.js";
 
 const KINDS = ["file", "folder", "url", "paste"];
 
@@ -141,7 +142,7 @@ export default function SourcesPage() {
               <div className="row" key={s.id}>
                 <span className="chip">{s.kind}</span>
                 <span className="font-medium">{s.name}</span>
-                <span className="help truncate">{s.path}</span>
+                <span className="help truncate" title={s.path}>{displaySource(s.path)}</span>
                 {s.last_refreshed_at && <span className="help ml-auto shrink-0">refreshed {s.last_refreshed_at}</span>}
               </div>
             ))}

@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { api } from "./api.js";
 import { detectLang, makeT, setLang as persistLang } from "./i18n.js";
 import { Toast, Icon, ErrorBanner } from "./components/ui.jsx";
+import { formatNumber } from "./format.js";
 import SourcesPage from "./pages/SourcesPage.jsx";
 import DatasetsPage from "./pages/DatasetsPage.jsx";
 import QualityPage from "./pages/QualityPage.jsx";
@@ -92,7 +93,7 @@ export default function App() {
       <div className="min-h-dvh md:grid md:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="sticky top-0 z-10 border-b md:h-dvh md:border-b-0 md:border-r" style={{ background: "var(--sidebar)", borderColor: "var(--line)" }}>
           <div className="flex items-center gap-2 px-4 py-3 md:px-5 md:py-5">
-            <span className="grid h-8 w-8 place-items-center rounded-md text-[15px] font-bold text-white" style={{ background: "var(--accent)" }}>N</span>
+            <img src="/icon-192.png" alt="" width="32" height="32" className="h-8 w-8 rounded-md" />
             <div className="leading-tight">
               <div className="text-[15px] font-semibold">Nightingale's Hoard</div>
               <div className="help text-[11px]">{t("tagline")}</div>
@@ -110,7 +111,7 @@ export default function App() {
             <div className="hidden px-5 pt-4 md:block">
               <div className="help text-[11px]">{t("nav_datasets")}</div>
               <div className="text-[13px]">
-                <span className="num font-semibold">{datasets.length}</span> · <span className="num">{datasets.reduce((s, d) => s + (d.row_count || 0), 0).toLocaleString()}</span> {t("common_rows")}
+                <span className="num font-semibold">{datasets.length}</span> · <span className="num">{formatNumber(datasets.reduce((s, d) => s + (d.row_count || 0), 0), lang)}</span> {t("common_rows")}
               </div>
             </div>
           )}
