@@ -46,7 +46,7 @@ except Exception:  # noqa: BLE001
 
 __all__ = [
     "ModelError", "detect_task", "train_supervised", "run_kmeans", "run_pca",
-    "run_anomaly", "run_forecast", "HAVE_STATSMODELS", "MAX_TRAIN_ROWS", "FREQ_CHOICES",
+    "run_anomaly", "run_forecast", "HAVE_STATSMODELS", "MAX_TRAIN_ROWS", "FREQ_CHOICES", "is_id_like",
 ]
 
 MAX_TRAIN_ROWS = 200_000  # rows above this are sampled before training (limit from the brief)
@@ -104,7 +104,7 @@ def _prep_features(df: pd.DataFrame, features: list[str]) -> tuple[pd.DataFrame,
     return X, encoders
 
 
-def _is_id_like(series: pd.Series, n_rows: int) -> bool:
+def is_id_like(series: pd.Series, n_rows: int) -> bool:
     """A free-text/identifier-ish column (order ids, customer ids, raw dates
     with near-unique values...) whose one-hot encoding would blow up the
     feature matrix and stall training. Excluded only when both conditions
@@ -125,7 +125,7 @@ def train_supervised(df: pd.DataFrame, target: str, features: Optional[list[str]
     excluded_id_like: list[str] = []
     if not features:
         candidates = [c for c in df.columns if c != target]
-        features = [c for c in candidates if not _is_id_like(df[c], len(df))] or candidates
+        features = [c for c in candidates if not is_id_like(df[c], len(df))] or candidates
         excluded_id_like = [c for c in candidates if c not in features]
     missing = [c for c in features if c not in df.columns]
     if missing:

@@ -17,7 +17,7 @@ import sqlite3
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 
 from . import __version__, backend, db
 from .config import Config
@@ -155,6 +155,59 @@ class Services:
 
     def list_datasets(self) -> dict:
         return {"datasets": [self.dataset_summary(d) for d in self.meta.list_datasets()]}
+
+    def dataset_dependents(self, name: str) -> dict:
+        """What would be affected by deleting this dataset: its own charts,
+        any dashboard holding one of those charts or a KPI on this dataset,
+        and any model trained on it. Used both to show a delete-confirmation
+        warning and to block a non-forced delete."""
+        import json as _json
+
+        dataset_row = self._dataset_row(name)
+        charts = [dict(c) for c in self.meta.list_charts() if c["dataset_id"] == dataset_row["id"]]
+        chart_ids = {c["id"] for c in charts}
+        dashboards = []
+        for d in self.meta.list_dashboards():
+            full = self.meta.get_dashboard(d["id"])
+            spec = _json.loads(full["spec_json"]) if full else {}
+            hits = [item for item in spec.get("items", [])
+                    if (item.get("type") == "chart" and item.get("chart_id") in chart_ids)
+                    or (item.get("type") == "kpi" and item.get("dataset") == name)]
+            if hits:
+                dashboards.append({"id": d["id"], "name": d["name"], "items": len(hits)})
+        models = [dict(m) for m in self.meta.list_models(dataset_row["id"])]
+        return {
+            "dataset": name,
+            "charts": [{"id": c["id"], "name": c["name"]} for c in charts],
+            "dashboards": dashboards,
+            "models": [{"id": m["id"], "name": m.get("name") or f"model {m['id']}"} for m in models],
+            "has_dependents": bool(charts or dashboards or models),
+        }
+
+    def dataset_delete(self, name: str, force: bool = False, source: str = "ui") -> dict:
+        """Drop a dataset entirely: every version's DuckDB table, its view,
+        and its metadata row (which cascades to versions/quality/charts/models
+        via ON DELETE CASCADE). Dashboards aren't touched — dashboard_get()
+        already tolerates a missing chart/dataset — but a chart or dashboard
+        that depended on this dataset stops working, so unless `force` is
+        set, dependents block the delete with a clear list to warn the user."""
+        dataset_row = self._dataset_row(name)
+        deps = self.dataset_dependents(name)
+        if deps["has_dependents"] and not force:
+            raise ValueError(
+                f"dataset {name!r} has dependents: {len(deps['charts'])} chart(s), "
+                f"{len(deps['dashboards'])} dashboard(s), {len(deps['models'])} model(s). "
+                "Pass force=true to delete anyway."
+            )
+
+        def do():
+            for v in self.meta.list_versions(dataset_row["id"]):
+                self.engine.drop_table(v["table_name"])
+            self.engine.drop_view(name)
+            self.meta.delete_dataset(dataset_row["id"])
+            return {"ok": True, "deleted": name, "dependents": deps, "_log_summary": f"deleted {name!r}"}
+
+        return self._log("dataset_delete", source, name, {"force": force}, do)
 
     # ---- ingestion ----------------------------------------------------------
     def _finish_ingest(self, name: str, source_id: Optional[int], select_sql: str, row_count: int,
@@ -677,9 +730,70 @@ class Services:
                                  for r in self.meta.list_dashboards()]}
 
     # ---- models --------------------------------------------------------------
+    WRITE_TO_CHOICES = ("new_dataset", "new_version", "none")
+
+    def _model_key_columns(self, df, used: list[str]) -> list[str]:
+        """Best-effort natural key column(s) for a side output dataset — a
+        near-unique id-like column not already used as a model input, so a
+        row in the output can still be matched back to the source. See
+        `models.is_id_like`."""
+        return [c for c in df.columns if c not in used and model_engine.is_id_like(df[c], len(df))]
+
+    def _write_model_output(self, dataset_row: sqlite3.Row, v: sqlite3.Row, df, model_id: int, suffix: str,
+                              op: str, key_cols: list[str], inputs: list[str], extra: dict[str, list],
+                              write_to: str) -> dict:
+        """Write a model's per-row output (predictions/cluster labels/anomaly
+        flags). Default (`write_to="new_dataset"`) puts it in its own new
+        dataset named `<source>__<suffix>_<model_id>`, holding the key/id
+        columns plus the inputs plus the output — the source dataset is never
+        touched. `write_to="new_version"` is the old behaviour (a new version
+        of the source itself) kept as an explicit opt-in, and even then only
+        ever *adds* the new column(s): it can't change an existing column's
+        type, unlike the old round-trip-through-pandas implementation (a real
+        bug: a DATE column came back as TIMESTAMP, a DECIMAL as DOUBLE).
+        `write_to="none"` skips writing anything."""
+        import pandas as pd
+
+        if write_to not in self.WRITE_TO_CHOICES:
+            raise ValueError(f"unknown write_to: {write_to!r}; choose from {self.WRITE_TO_CHOICES}")
+        if write_to == "none":
+            return {"write_to": "none"}
+        if write_to == "new_version":
+            if len(df) < v["row_count"]:
+                raise model_engine.ModelError(
+                    f"dataset has {v['row_count']} rows, more than fit in the {len(df)}-row training limit; "
+                    "write_to='new_version' can't safely align columns back onto the source — "
+                    "use the default write_to='new_dataset' instead"
+                )
+            extra_df = pd.DataFrame(extra)
+            new_version = max(r["version"] for r in self.meta.list_versions(dataset_row["id"])) + 1
+            new_table = f"ds_{dataset_row['id']}_v{new_version}"
+            row_count, columns = self.engine.append_columns(v["table_name"], new_table, extra_df)
+            self.meta.add_version(dataset_row["id"], new_version, v["version"], op,
+                                    {"model_id": model_id}, f"({op})", new_table, row_count, columns)
+            self.meta.set_current_version(dataset_row["id"], new_version)
+            self._refresh_view(self.meta.get_dataset_by_id(dataset_row["id"]))
+            return {"write_to": "new_version", "dataset": dataset_row["name"], "version": new_version}
+        # default: a separate dataset, source untouched
+        carried = [c for c in dict.fromkeys([*key_cols, *inputs]) if c in df.columns]
+        out_df = df[carried].copy() if carried else pd.DataFrame(index=range(len(df)))
+        if not carried:
+            out_df.insert(0, "_row_index", range(len(df)))
+        for col_name, values in extra.items():
+            out_df[col_name] = values
+        out_name = slugify_name(f"{dataset_row['name']}__{suffix}_{model_id}")
+        out_id = self.meta.add_dataset(out_name, None)
+        out_table = f"ds_{out_id}_v0"
+        row_count, columns = self.engine.materialize_from_dataframe(out_table, out_df)
+        self.meta.add_version(out_id, 0, None, op, {"model_id": model_id, "source_dataset": dataset_row["name"]},
+                                f"({op})", out_table, row_count, columns)
+        self.meta.set_current_version(out_id, 0)
+        self.engine.set_view(out_name, out_table)
+        return {"write_to": "new_dataset", "dataset": out_name}
+
     def model_train(self, dataset_name: str, target: str, features: Optional[list[str]] = None,
                      task: Optional[str] = None, algorithm: Optional[str] = None, test_size: float = 0.2,
-                     seed: int = 42, write_predictions: bool = True, name: Optional[str] = None,
+                     seed: int = 42, write_to: str = "new_dataset", name: Optional[str] = None,
                      source: str = "ui") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
@@ -693,27 +807,22 @@ class Services:
                                              result["metrics"], seed, None)
             out = {"model_id": model_id, **{k: v2 for k, v2 in result.items() if k != "predictions"},
                     "_log_summary": f"trained {result['task']} ({result['algorithm']}) on {dataset_row['name']!r}"}
-            if write_predictions:
-                pred_col = f"predicted_{target}"
-                df_out = df.copy()
-                df_out[pred_col] = result["predictions"]
-                new_version = max(r["version"] for r in self.meta.list_versions(dataset_row["id"])) + 1
-                new_table = f"ds_{dataset_row['id']}_v{new_version}"
-                row_count, columns = self.engine.materialize_from_dataframe(new_table, df_out)
-                self.meta.add_version(dataset_row["id"], new_version, v["version"], "model_predict",
-                                        {"model_id": model_id, "target": target}, "(model predictions)",
-                                        new_table, row_count, columns)
-                self.meta.set_current_version(dataset_row["id"], new_version)
-                self._refresh_view(self.meta.get_dataset_by_id(dataset_row["id"]))
-                out["prediction_dataset_version"] = new_version
-                out["prediction_column"] = pred_col
+            pred_col = f"predicted_{target}"
+            write_result = self._write_model_output(
+                dataset_row, v, df, model_id, "model", "model_predict",
+                key_cols=self._model_key_columns(df, [*result["features"], target]),
+                inputs=[*result["features"], target],
+                extra={pred_col: result["predictions"]}, write_to=write_to,
+            )
+            out.update(write_result)
+            out["prediction_column"] = pred_col
             return out
 
         return self._log("model", source, dataset_row["name"], {"target": target, "algorithm": algorithm},
                           lambda: self.run_heavy(do, timeout=MAX_MODEL_TIMEOUT_S))
 
     def model_cluster(self, dataset_name: str, features: list[str], k: Optional[int] = None, seed: int = 42,
-                       write_labels: bool = True, name: Optional[str] = None, source: str = "ui") -> dict:
+                       write_to: str = "new_dataset", name: Optional[str] = None, source: str = "ui") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
@@ -725,17 +834,12 @@ class Services:
                                              {"elbow": result["elbow"], "silhouette": result["silhouette"]}, seed, None)
             out = {"model_id": model_id, **{k2: v2 for k2, v2 in result.items() if k2 != "labels"},
                     "_log_summary": f"kmeans k={result['k']} on {dataset_row['name']!r}"}
-            if write_labels:
-                df_out = df.copy()
-                df_out["cluster"] = result["labels"]
-                new_version = max(r["version"] for r in self.meta.list_versions(dataset_row["id"])) + 1
-                new_table = f"ds_{dataset_row['id']}_v{new_version}"
-                row_count, columns = self.engine.materialize_from_dataframe(new_table, df_out)
-                self.meta.add_version(dataset_row["id"], new_version, v["version"], "model_cluster",
-                                        {"model_id": model_id}, "(cluster labels)", new_table, row_count, columns)
-                self.meta.set_current_version(dataset_row["id"], new_version)
-                self._refresh_view(self.meta.get_dataset_by_id(dataset_row["id"]))
-                out["prediction_dataset_version"] = new_version
+            write_result = self._write_model_output(
+                dataset_row, v, df, model_id, "clusters", "model_cluster",
+                key_cols=self._model_key_columns(df, features), inputs=features,
+                extra={"cluster": result["labels"]}, write_to=write_to,
+            )
+            out.update(write_result)
             return out
 
         return self._log("cluster", source, dataset_row["name"], {"features": features, "k": k},
@@ -756,7 +860,7 @@ class Services:
                           lambda: self.run_heavy(do, timeout=MAX_MODEL_TIMEOUT_S))
 
     def model_anomaly(self, dataset_name: str, features: list[str], contamination: float = 0.05, seed: int = 42,
-                       write_flags: bool = True, name: Optional[str] = None, source: str = "ui") -> dict:
+                       write_to: str = "new_dataset", name: Optional[str] = None, source: str = "ui") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
@@ -768,18 +872,13 @@ class Services:
                                              {"n_anomalies": result["n_anomalies"]}, seed, None)
             out = {"model_id": model_id, **{k: v2 for k, v2 in result.items() if k not in ("is_anomaly", "anomaly_score")},
                     "_log_summary": f"{result['n_anomalies']} anomalies found in {dataset_row['name']!r}"}
-            if write_flags:
-                df_out = df.copy()
-                df_out["is_anomaly"] = result["is_anomaly"]
-                df_out["anomaly_score"] = result["anomaly_score"]
-                new_version = max(r["version"] for r in self.meta.list_versions(dataset_row["id"])) + 1
-                new_table = f"ds_{dataset_row['id']}_v{new_version}"
-                row_count, columns = self.engine.materialize_from_dataframe(new_table, df_out)
-                self.meta.add_version(dataset_row["id"], new_version, v["version"], "model_anomaly",
-                                        {"model_id": model_id}, "(anomaly flags)", new_table, row_count, columns)
-                self.meta.set_current_version(dataset_row["id"], new_version)
-                self._refresh_view(self.meta.get_dataset_by_id(dataset_row["id"]))
-                out["prediction_dataset_version"] = new_version
+            write_result = self._write_model_output(
+                dataset_row, v, df, model_id, "anomalies", "model_anomaly",
+                key_cols=self._model_key_columns(df, features), inputs=features,
+                extra={"is_anomaly": result["is_anomaly"], "anomaly_score": result["anomaly_score"]},
+                write_to=write_to,
+            )
+            out.update(write_result)
             return out
 
         return self._log("model", source, dataset_row["name"], {"kind": "anomaly", "features": features},
@@ -787,8 +886,11 @@ class Services:
 
     def model_forecast(self, dataset_name: str, date_col: str, value_col: str, horizon: int = 12,
                         seasonal_period: Optional[int] = None, name: Optional[str] = None,
-                        write_dataset: bool = True, source: str = "ui", freq: str = "auto") -> dict:
+                        write_to: str = "new_dataset", source: str = "ui", freq: str = "auto") -> dict:
         dataset_row = self._dataset_row(dataset_name)
+        if write_to not in ("new_dataset", "none"):
+            raise ValueError(f"unknown write_to: {write_to!r}; forecast supports 'new_dataset' or 'none' "
+                              "(its output has different rows than the source, so 'new_version' doesn't apply)")
 
         def do():
             v = self._version_row(dataset_row)
@@ -805,21 +907,23 @@ class Services:
                     "_log_summary": f"forecast {horizon} steps ({result['method']}, "
                                      f"{_freq_adverb.get(result['resampled_to'], result['resampled_to'])}) "
                                      f"for {dataset_row['name']!r}"}
-            if write_dataset:
+            if write_to == "new_dataset":
                 import pandas as pd
 
                 fc_df = pd.DataFrame(result["forecast"])
-                fc_name = slugify_name(f"{dataset_row['name']}_forecast")
-                fc_dataset = self.meta.get_dataset(fc_name)
-                fc_id = fc_dataset["id"] if fc_dataset else self.meta.add_dataset(fc_name, None)
-                new_version = 0 if not fc_dataset else max(r["version"] for r in self.meta.list_versions(fc_id)) + 1
-                fc_table = f"ds_{fc_id}_v{new_version}"
+                fc_name = slugify_name(f"{dataset_row['name']}__forecast_{model_id}")
+                fc_id = self.meta.add_dataset(fc_name, None)
+                fc_table = f"ds_{fc_id}_v0"
                 row_count, columns = self.engine.materialize_from_dataframe(fc_table, fc_df)
-                self.meta.add_version(fc_id, new_version, None, "forecast_output", {"model_id": model_id}, "(forecast)",
-                                        fc_table, row_count, columns)
-                self.meta.set_current_version(fc_id, new_version)
+                self.meta.add_version(fc_id, 0, None, "forecast_output",
+                                        {"model_id": model_id, "source_dataset": dataset_row["name"]},
+                                        "(forecast)", fc_table, row_count, columns)
+                self.meta.set_current_version(fc_id, 0)
                 self.engine.set_view(fc_name, fc_table)
+                out["write_to"] = "new_dataset"
                 out["forecast_dataset"] = fc_name
+            else:
+                out["write_to"] = "none"
             return out
 
         return self._log("forecast", source, dataset_row["name"],

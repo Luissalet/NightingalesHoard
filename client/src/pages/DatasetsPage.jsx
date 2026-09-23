@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
-import { EmptyState } from "../components/ui.jsx";
+import { EmptyState, Modal } from "../components/ui.jsx";
 import DataGrid from "../components/DataGrid.jsx";
 import ColumnProfilePopover from "../components/ColumnProfilePopover.jsx";
 import StepToolbar from "../components/StepToolbar.jsx";
@@ -17,6 +17,8 @@ export default function DatasetsPage({ param }) {
   const [profileColumn, setProfileColumn] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [deleteDeps, setDeleteDeps] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!active && datasets.length > 0) setActive(datasets[0].name);
@@ -66,6 +68,32 @@ export default function DatasetsPage({ param }) {
     notify("Step applied");
   };
 
+  const openDeleteConfirm = async () => {
+    if (!active) return;
+    try {
+      const deps = await api.datasetDependents(active);
+      setDeleteDeps(deps);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!active) return;
+    setDeleting(true);
+    try {
+      await api.datasetDelete(active, true);
+      setDeleteDeps(null);
+      setActive(null);
+      await refreshDatasets();
+      notify(t("datasets_deleted"));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const columnList = useMemo(() => dataset?.columns || [], [dataset]);
 
   if (datasets.length === 0) {
@@ -97,7 +125,32 @@ export default function DatasetsPage({ param }) {
                 data-testid="dataset-refresh-source">
           {t("common_refresh")}
         </button>
+        <button type="button" className="btn btn-sm" onClick={openDeleteConfirm} data-testid="dataset-delete-open">
+          {t("datasets_delete")}
+        </button>
       </div>
+
+      {deleteDeps && (
+        <Modal title={t("datasets_delete_confirm_title")} onClose={() => setDeleteDeps(null)}>
+          <p className="help mb-3">{t("datasets_delete_confirm_body")}</p>
+          {deleteDeps.has_dependents && (
+            <div className="mb-3 rounded-md border p-3 text-[13px]" style={{ background: "var(--danger-bg)", color: "var(--danger-ink)", borderColor: "var(--danger-line)" }}>
+              <div className="mb-1 font-semibold">{t("datasets_delete_dependents_warning")}</div>
+              <ul className="list-disc pl-4">
+                {deleteDeps.charts.length > 0 && <li>{deleteDeps.charts.length} {t("datasets_delete_dependents_charts")}: {deleteDeps.charts.map((c) => c.name).join(", ")}</li>}
+                {deleteDeps.dashboards.length > 0 && <li>{deleteDeps.dashboards.length} {t("datasets_delete_dependents_dashboards")}: {deleteDeps.dashboards.map((d) => d.name).join(", ")}</li>}
+                {deleteDeps.models.length > 0 && <li>{deleteDeps.models.length} {t("datasets_delete_dependents_models")}: {deleteDeps.models.map((m) => m.name).join(", ")}</li>}
+              </ul>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-sm" onClick={() => setDeleteDeps(null)}>{t("common_cancel")}</button>
+            <button type="button" className="btn btn-sm btn-danger" disabled={deleting} onClick={confirmDelete} data-testid="dataset-delete-confirm">
+              {t("datasets_delete_confirm_button")}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {error && <div className="help" style={{ color: "var(--danger-ink)" }}>{error}</div>}
 
@@ -118,6 +171,7 @@ export default function DatasetsPage({ param }) {
                   rows={preview.rows}
                   onHeaderClick={(name) => setProfileColumn(name === profileColumn ? null : name)}
                   activeColumn={profileColumn}
+                  lang={lang}
                 />
                 {profileColumn && profile && (
                   <ColumnProfilePopover

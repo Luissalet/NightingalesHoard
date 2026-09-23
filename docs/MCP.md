@@ -17,7 +17,7 @@ answerable from the **Log** screen.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
-| `data_ingest` | write | Load a file, folder (glob), URL, or pasted CSV/JSON text as a new dataset. |
+| `data_ingest` | write, destructive on `action="delete"` | `action="ingest"` (default) loads a file, folder (glob), URL, or pasted CSV/JSON text as a new dataset. `action="delete"` permanently removes an existing dataset (its versions, quality rules, charts, and models); pass `force: true` to delete past dependents, otherwise the call fails and lists them. |
 | `data_refresh` | write | Re-ingest a dataset's original source and replay its recorded recipe on the fresh data. |
 | `data_list` | read | Every registered dataset, with row/column counts and last update time. |
 | `data_profile` | read | Per-column profile: type, nulls %, distinct count, min/max/mean/sd, histogram, top values, IQR outlier count. |
@@ -29,9 +29,9 @@ answerable from the **Log** screen.
 | `data_quality` | write on `define`/`delete` | Define, run, or report data-quality rules: `not_null`, `unique`, `accepted_values`, `range`, `regex`, `row_count`, `freshness`, `referential`, `custom_sql`. |
 | `data_chart` | write | Build and save a chart (aggregated in SQL); `image: true` also returns a base64 PNG. |
 | `data_dashboard` | write on `create`/`add` | Create a dashboard, add a chart or KPI item to it, or list/get dashboards. |
-| `data_model` | write on `train` | Train a quick supervised model (regression/classification, auto-detected) for a target column, or list saved models. |
-| `data_cluster` | write | K-means clustering with an elbow/silhouette scan; writes cluster labels back as a new dataset version. |
-| `data_forecast` | write | Time-series forecast (Holt-Winters, or a documented seasonal-naive fallback) with a confidence interval. |
+| `data_model` | write on `train` | Train a quick supervised model (regression/classification, auto-detected) for a target column, or list saved models. Predictions go to a new dataset by default — see `write_to` below. |
+| `data_cluster` | write | K-means clustering with an elbow/silhouette scan. Cluster labels go to a new dataset by default — see `write_to` below. |
+| `data_forecast` | write | Time-series forecast (Holt-Winters, or a documented seasonal-naive fallback) with a confidence interval. The forecast goes to a new dataset (`<source>__forecast_<model_id>`) by default. |
 | `data_export` | write | Export a dataset to CSV/XLSX/Parquet/JSON inside the app's `exports/` folder. |
 | `data_log` | read | Search the analysis log by free text, source (`ui`/`agent`), dataset, or an id like `N-000123`. |
 | `data_ask` | read | Ask a question in plain language; a shared language model (via Hoard Link) writes and runs one SQL query, shown alongside the answer. Needs a resolved LLM backend — see `data_ask`'s error message if none is configured. |
@@ -54,6 +54,34 @@ data_query(sql="SELECT region, SUM(amount) AS total FROM sales GROUP BY region O
 # check what just happened
 data_log(source="agent", limit=5)
 ```
+
+## Model/cluster/forecast output: `write_to`
+
+`data_model` (train), `data_cluster`, and `data_forecast` all write their per-row output
+somewhere by default — a prediction column, a cluster label, an anomaly flag, a forecast. The
+`write_to` parameter controls where:
+
+- `"new_dataset"` (the default): a fresh dataset named `<source>__<model|clusters|anomalies|forecast>_<model_id>`,
+  holding a natural key/id column (or a synthetic `_row_index`), the inputs, and the output. The
+  source dataset is never touched — its columns, types, and version stay exactly as they were.
+- `"new_version"` (`data_model`/`data_cluster` only, an explicit opt-in): adds the output as a new
+  column on a new version of the *source* dataset itself. It only ever adds a column — an existing
+  column's type is never changed (a DATE stays DATE, a DECIMAL stays DECIMAL), which is why this
+  isn't the default: retyping an existing column on the very dataset you're building on top of is a
+  surprising, previously-buggy thing for a "just train a model" call to do.
+- `"none"`: run the model and return its metrics/predictions in the response, but don't write
+  anything to any dataset.
+
+`data_forecast` only supports `"new_dataset"`/`"none"` — a forecast's rows (future dates) don't
+line up with the source dataset's rows, so `"new_version"` doesn't apply to it.
+
+## Deleting a dataset
+
+There's no separate 19th tool for this (the family contract caps the tool count at 18): it's
+`data_ingest` with `action="delete"` and `name` set to the dataset to remove. It also exists as
+`DELETE /api/datasets/{name}` in the HTTP API (`?force=true` to bypass the dependents check) and as
+a "Delete dataset" button with a confirmation dialog in the Datasets screen, which shows exactly
+which charts/dashboards/models depend on it before you confirm.
 
 ## Boundaries worth knowing
 

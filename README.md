@@ -33,9 +33,16 @@ applies.
 | **Undo / redo / recipe** | Every version is a real table; a side panel shows the full recipe, exports it as a runnable SQL script, and can replay it against re-ingested source data. | Branching after an undo discards the redone-away versions (like any editor's undo stack) — there's one timeline, not a tree. |
 | **Quality rules** | 9 rule kinds (not_null, unique, accepted_values, range, regex, row_count, freshness, referential integrity, custom SQL), run on demand, with a pass/fail history. | Rules check the dataset's *current* version; they don't run automatically on ingest unless you re-run them yourself. |
 | **Charts & dashboards** | 11 chart kinds, aggregated in SQL (never a full table pulled client-side), rendered interactively (Vega-Lite) and as PNG (for export/agent use); dashboards combine saved charts with SQL-expression KPI tiles. | Charts read the dataset's current version at render time — a chart doesn't freeze past data, it reflects the latest cleaning. |
-| **Models** | Supervised learning (auto task detection, cross-validation, feature importance, confusion matrix), k-means clustering (elbow + silhouette), PCA, isolation-forest anomaly detection, Holt-Winters forecasting with interval and a documented seasonal-naive fallback. | Training samples down at 200k rows; automatic feature selection excludes near-unique identifier-like columns (reported back) to avoid a one-hot blow-up — pass an explicit feature list to override. |
+| **Models** | Supervised learning (auto task detection, cross-validation, feature importance, confusion matrix), k-means clustering (elbow + silhouette), PCA, isolation-forest anomaly detection, Holt-Winters forecasting with interval and a documented seasonal-naive fallback. Predictions/labels/flags/forecasts land in their own new dataset by default (`<source>__model_<id>` etc.) — the source dataset, and every one of its existing column types, is never touched; `write_to="new_version"` opts back into writing onto the source itself, and even then only ever adds a column. | Training samples down at 200k rows; automatic feature selection excludes near-unique identifier-like columns (reported back) to avoid a one-hot blow-up — pass an explicit feature list to override. |
+| **Delete a dataset** | Removes a dataset, all its versions, and cascades to its quality rules, charts, and models; a dashboard that used one of those charts keeps working (it shows the item as unavailable) rather than breaking. Available from the Datasets screen (with a confirmation dialog listing what depends on it), `DELETE /api/datasets/{name}` (`?force=true` to go past dependents), and the `data_ingest` MCP tool's `action="delete"`. | Blocked by default when charts/dashboards/models depend on the dataset — pass `force`/`force=true` to delete anyway. |
 | **Analysis log** | Every operation (ingest, transform, quality run, chart, model, export...) gets an id like `N-000123`, with input, a one-line summary, timing, and whether it came from you or the assistant. | The log is append-only and capped per-field in size; it's an audit trail, not a full data backup. |
 | **Ask your data** | A plain-language question becomes one SQL query (shown, not hidden) run through a shared local language model via Hoard Link. | Needs a resolved LLM backend (Faustus, a local llama.cpp server, Ollama, or an OpenAI-compatible endpoint) — with none configured it says so clearly instead of guessing. |
+
+The data grid formats every cell by its DuckDB column type and the UI's own language setting —
+dates and timestamps render as dates (a timestamp at exact midnight drops its time-of-day), and
+numbers get thousands separators and sensible precision (2 decimals for `DECIMAL` columns, up to 4
+significant digits for other numeric types) — while the exact raw value stays one hover away (a
+tooltip) and a double-click away (copies it to the clipboard).
 
 ## Use cases
 
@@ -98,7 +105,7 @@ All JSON; errors are `{ "error": "..." }`.
 
 - `GET /api/health`, `GET /api/status`
 - `GET /api/sources`, `POST /api/sources/ingest`
-- `GET /api/datasets`, `POST /api/datasets/{name}/refresh`
+- `GET /api/datasets`, `POST /api/datasets/{name}/refresh`, `DELETE /api/datasets/{name}`, `GET /api/datasets/{name}/dependents`
 - `GET /api/datasets/{name}/{profile,preview,lineage,recipe,correlation}`
 - `POST /api/datasets/{name}/{transform,undo,redo,join-preview}`
 - `POST /api/query`
@@ -124,11 +131,12 @@ cite the analysis-log id (`N-000123`) when reporting a result back.
 venv/bin/python -m pytest -q     # Windows: venv\Scripts\python -m pytest -q
 ```
 
-104 tests covering the workbench engine (every ingestion path, every transform step, versioning and
+127 tests covering the workbench engine (every ingestion path, every transform step, versioning and
 undo/redo/replay), quality rules, charts and dashboards, models (including the id-like-column
-exclusion and the duplicate-timestamp forecasting fix), the HTTP API, agent tools through
-`/api/agent/call`, the request guard, the PWA endpoints, and a subprocess end-to-end test through
-the MCP stdio bridge.
+exclusion, the duplicate-timestamp forecasting fix, the default new-dataset output vs. the
+type-preserving `write_to="new_version"` opt-in), dataset deletion (dependents check, cascade,
+force), the HTTP API, agent tools through `/api/agent/call`, the request guard, the PWA endpoints,
+and a subprocess end-to-end test through the MCP stdio bridge.
 
 ## License
 
