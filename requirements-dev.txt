@@ -1,0 +1,4 @@
+# Extra tools used only for testing/verification, not by the running app.
+-r requirements.txt
+pytest-asyncio==1.4.0
+playwright==1.63.0

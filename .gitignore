@@ -1,0 +1,16 @@
+node_modules/
+nightingale/static/
+dist/
+data/
+data-demo/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.log
+requirements.in
+*.egg-info/
