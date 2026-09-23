@@ -342,8 +342,9 @@ def _run_ask(s: Services, a: AskArgs):
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file/folder/URL/pasted text into the workbench as a new dataset (write); "
          "action='delete' permanently removes a dataset and everything derived from it instead (write, "
-         "destructive).\nSinónimos: importar datos, cargar archivo, ingerir csv, subir excel, leer carpeta, "
-         "importar url, borrar dataset, eliminar tabla.",
+         "destructive).\nSinónimos: importar datos, cargar archivo, cargar csv, cargar datos, carga el csv, "
+         "ingerir csv, subir excel, cargar excel, leer carpeta, importar url, load csv, import data, "
+         "borrar dataset, eliminar tabla.",
          IngestArgs, _ann(False, True, False), _run_ingest),
     Tool("data_refresh", "Re-ingest a dataset's source and replay its recorded recipe on the fresh data (write).\n"
          "Sinónimos: actualizar datos, releer archivo, refrescar fuente.",
