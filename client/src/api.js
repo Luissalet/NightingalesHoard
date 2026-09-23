@@ -76,4 +76,28 @@ export const api = {
 
   ask: (question, datasets) => post("/api/ask", { question, datasets }),
   askAvailable: () => get("/api/ask/available"),
+
+  lab: {
+    eda: (name) => get(`/api/lab/datasets/${encodeURIComponent(name)}/eda`),
+    qualityScore: (name) => get(`/api/lab/datasets/${encodeURIComponent(name)}/quality-score`),
+    drift: (body) => post("/api/lab/drift", body),
+    compareCurves: (body) => post("/api/lab/compare-curves", body),
+
+    backends: (task) => get("/api/lab/backends", { task }),
+    train: (body) => post("/api/lab/models/train", body),
+    tune: (body) => post("/api/lab/models/tune", body),
+    modelsList: (dataset) => get("/api/lab/models", { dataset }),
+    modelGet: (id) => get(`/api/lab/models/${id}`),
+    modelsCompare: (modelIds) => post("/api/lab/models/compare", { model_ids: modelIds }),
+    modelDelete: (id) => del(`/api/lab/models/${id}`),
+    evaluate: (id, body) => post(`/api/lab/models/${id}/evaluate`, body),
+    explain: (id, body) => post(`/api/lab/models/${id}/explain`, body),
+    optimize: (id, body) => post(`/api/lab/models/${id}/optimize`, body),
+    pareto: (body) => post("/api/lab/pareto", body),
+    report: (body) => post("/api/lab/report", body),
+    reportDownloadUrl: (path) => `/api/lab/report/download?path=${encodeURIComponent(path)}`,
+
+    pipelineGraph: (name) => get(`/api/lab/datasets/${encodeURIComponent(name)}/pipeline`),
+    pipelineApply: (name, graph, dryRun) => post(`/api/lab/datasets/${encodeURIComponent(name)}/pipeline/apply`, { graph, dry_run: dryRun }),
+  },
 };

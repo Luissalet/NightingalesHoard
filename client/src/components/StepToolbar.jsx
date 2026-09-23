@@ -89,8 +89,9 @@ const STEP_FIELDS = {
 };
 
 export const STEP_OPS = Object.keys(STEP_FIELDS);
+export { STEP_FIELDS };
 
-function parseList(v) {
+export function parseList(v) {
   return (v || "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 function parseKv(v) {
@@ -102,7 +103,7 @@ function parseKv(v) {
   return out;
 }
 
-function buildParams(op, values) {
+export function buildParams(op, values) {
   const fields = STEP_FIELDS[op] || [];
   const params = {};
   for (const f of fields) {
@@ -121,6 +122,60 @@ function buildParams(op, values) {
     } else params[f.name] = raw;
   }
   return params;
+}
+
+/** Reverses `buildParams`: turns an already-built params object (as stored on
+ * a recorded step) back into the string/bool form the fields above edit.
+ * Used by the Lab pipeline editor to open an existing step for editing. */
+export function paramsToValues(op, params) {
+  const fields = STEP_FIELDS[op] || [];
+  const values = {};
+  for (const f of fields) {
+    const raw = params?.[f.name];
+    if (raw === undefined) continue;
+    if (f.type === "list") values[f.name] = Array.isArray(raw) ? raw.join(", ") : raw;
+    else if (f.type === "kv") values[f.name] = raw && typeof raw === "object" ? Object.entries(raw).map(([k, v]) => `${k}:${v}`).join("\n") : raw;
+    else if (f.type === "json") values[f.name] = JSON.stringify(raw);
+    else values[f.name] = raw;
+  }
+  return values;
+}
+
+/** The op-specific field grid shared by the dataset Recipe's step toolbar and
+ * the Lab pipeline node editor, so both edit the exact same step shapes. */
+export function StepFieldsGrid({ fields, values, setField, columnNames }) {
+  return (
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+      {fields.map((f) => (
+        <div key={f.name} className={f.type === "textarea" || f.type === "json" || f.type === "kv" ? "md:col-span-2" : ""}>
+          <label className="label">{f.label}</label>
+          {f.type === "select" ? (
+            <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
+              <option value="">—</option>
+              {f.options.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          ) : f.type === "column" ? (
+            <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
+              <option value="">—</option>
+              {columnNames.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          ) : f.type === "bool" ? (
+            <input type="checkbox" checked={!!values[f.name]} onChange={(e) => setField(f.name, e.target.checked)} />
+          ) : f.type === "textarea" || f.type === "json" || f.type === "kv" ? (
+            <textarea className="field" rows={3} placeholder={f.placeholder} value={values[f.name] ?? ""}
+                      onChange={(e) => setField(f.name, e.target.value)} />
+          ) : (
+            <input className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
+                   value={values[f.name] ?? f.default ?? ""} onChange={(e) => setField(f.name, e.target.value)} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function StepToolbar({ dataset, columns, onApplied, t }) {
@@ -187,36 +242,7 @@ export default function StepToolbar({ dataset, columns, onApplied, t }) {
         </select>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        {fields.map((f) => (
-          <div key={f.name} className={f.type === "textarea" || f.type === "json" || f.type === "kv" ? "md:col-span-2" : ""}>
-            <label className="label">{f.label}</label>
-            {f.type === "select" ? (
-              <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
-                <option value="">—</option>
-                {f.options.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            ) : f.type === "column" ? (
-              <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
-                <option value="">—</option>
-                {columnNames.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            ) : f.type === "bool" ? (
-              <input type="checkbox" checked={!!values[f.name]} onChange={(e) => setField(f.name, e.target.checked)} />
-            ) : f.type === "textarea" || f.type === "json" || f.type === "kv" ? (
-              <textarea className="field" rows={3} placeholder={f.placeholder} value={values[f.name] ?? ""}
-                        onChange={(e) => setField(f.name, e.target.value)} />
-            ) : (
-              <input className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
-                     value={values[f.name] ?? f.default ?? ""} onChange={(e) => setField(f.name, e.target.value)} />
-            )}
-          </div>
-        ))}
-      </div>
+      <StepFieldsGrid fields={fields} values={values} setField={setField} columnNames={columnNames} />
 
       {error && <div className="help" style={{ color: "var(--danger-ink)" }}>{error}</div>}
 
