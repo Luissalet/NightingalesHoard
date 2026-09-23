@@ -121,7 +121,12 @@ export default function DatasetsPage({ param }) {
             <span className="num">{dataset.columns?.length}</span> {t("common_columns")}
           </span>
         )}
-        <button type="button" className="btn btn-sm ml-auto" onClick={() => api.refresh(active).then(() => { refreshDatasets(); notify("Refreshed"); }).catch((e) => setError(e.message))}
+        {active && (
+          <a className="btn btn-sm ml-auto" href={`#/lab/explore/${encodeURIComponent(active)}`} data-testid="dataset-open-in-lab">
+            {t("lab_open_in_lab")}
+          </a>
+        )}
+        <button type="button" className="btn btn-sm" onClick={() => api.refresh(active).then(() => { refreshDatasets(); notify("Refreshed"); }).catch((e) => setError(e.message))}
                 data-testid="dataset-refresh-source">
           {t("common_refresh")}
         </button>

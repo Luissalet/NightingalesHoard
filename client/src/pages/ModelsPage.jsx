@@ -116,6 +116,7 @@ export default function ModelsPage() {
             <option key={d.name} value={d.name}>{d.name}</option>
           ))}
         </select>
+        <a className="btn btn-sm ml-auto" href="#/lab/models" data-testid="models-open-lab-registry">{t("lab_open_registry")}</a>
       </div>
 
       <div className="seg self-start" role="tablist">
