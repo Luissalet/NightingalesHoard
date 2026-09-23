@@ -214,10 +214,19 @@ class Services:
                         columns: list[dict], op: str, options: dict, extra: dict,
                         probe_table: Optional[str] = None) -> dict:
         dataset_row = self.meta.get_dataset(name)
-        if dataset_row is None:
-            dataset_id = self.meta.add_dataset(name, source_id)
-        else:
-            dataset_id = dataset_row["id"]
+        if dataset_row is not None:
+            # Ingesting under a name that is taken used to rename the new data
+            # onto the existing dataset's version-0 table -- dropping it -- and
+            # then fail on the version row (HTTP 500), leaving that dataset's
+            # original data replaced. Seen live when an assistant retried an
+            # ingest. Refuse before touching anything.
+            if probe_table:
+                self.engine.drop_table(probe_table)
+            raise DataError(
+                f"a dataset named {name!r} already exists. Use data_refresh to reload its source, "
+                "pick another name, or delete it first."
+            )
+        dataset_id = self.meta.add_dataset(name, source_id)
         table_name = f"ds_{dataset_id}_v0"
         if probe_table:
             # the data is already materialized (ingestion scanned the source once); just rename it
@@ -602,9 +611,27 @@ class Services:
                     passed = failed == 0
                     sample = failing["rows"][:10]
                 message = "passed" if passed else f"{failed} failing row(s)"
+                extra: dict = {}
+                if rule["kind"] == "unique" and not passed:
+                    # `failed` counts every row of a duplicated group, both
+                    # copies of a pair included. Asked "how many duplicate
+                    # rows?", an assistant read 12 failing rows as 12
+                    # duplicates (and 1,494 left) when 6 extra copies make
+                    # 1,500: say both numbers so nobody has to infer them.
+                    from .workbench.quality import _col_list, q as _q
+                    part = ", ".join(_q(c) for c in _col_list(params))
+                    agg = self.engine.query(
+                        f"SELECT COUNT(*) AS g, COALESCE(SUM(n), 0) AS r FROM (SELECT COUNT(*) AS n FROM "
+                        f"{_q(v['table_name'])} GROUP BY {part} HAVING COUNT(*) > 1) __d", limit=1)["rows"][0]
+                    groups, in_groups = int(agg["g"]), int(agg["r"])
+                    extra = {"duplicate_groups": groups, "extra_copies": in_groups - groups,
+                             "rows_if_deduplicated": checked - (in_groups - groups)}
+                    message = (f"{failed} rows share their values with another row: {groups} duplicate group(s), "
+                               f"{in_groups - groups} extra cop(ies); {checked - (in_groups - groups)} rows after "
+                               f"keeping one of each")
                 self.meta.add_result(rule["id"], dataset_row["id"], v["version"], passed, checked, failed, sample, message)
                 results.append({"rule_id": rule["id"], "name": rule["name"], "kind": rule["kind"], "passed": passed,
-                                  "checked": checked, "failed": failed, "sample": sample, "message": message})
+                                  "checked": checked, "failed": failed, **extra, "sample": sample, "message": message})
             n_failed = sum(1 for r in results if not r["passed"])
             return {"dataset": dataset_row["name"], "version": v["version"], "results": results,
                      "_log_summary": f"{len(results) - n_failed}/{len(results)} rule(s) passed"}
