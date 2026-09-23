@@ -92,11 +92,22 @@ def _predict(saved: SavedModel, rows: pd.DataFrame) -> np.ndarray:
     return np.asarray(preds, dtype=float)
 
 
-def _predict_with_std(saved: SavedModel, rows: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+# Fitting a GaussianProcessRegressor is O(n^3) in its training set size (a
+# Cholesky factorization of the n x n kernel matrix), so it must never be fit
+# on the full candidate pool: `n_candidates` defaults to 3000, and 3000^3
+# candidate points would make every non-GP optimize() call hang for minutes.
+# The surrogate only needs to capture the model's response surface, so a
+# capped random subsample is fit instead and then used to predict std over
+# the whole pool (that `predict` call is only O(n_fit * n_pool), cheap).
+_MAX_SURROGATE_FIT_ROWS = 300
+
+
+def _predict_with_std(saved: SavedModel, rows: pd.DataFrame, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
     """Mean + std of the model's prediction. When the model is a Gaussian
     Process, its own `return_std` is used directly; otherwise a small GP
-    surrogate is fit on the pool's (features -> model prediction) pairs, which
-    is what supplies the uncertainty for the acquisition function."""
+    surrogate is fit on a capped sample of the pool's (features -> model
+    prediction) pairs, which is what supplies the uncertainty for the
+    acquisition function."""
     X, _ = prep_features(rows, saved.features)
     X = X.reindex(columns=saved.X_columns, fill_value=0)
     if saved.backend == "gaussian_process" and hasattr(saved.model, "predict"):
@@ -112,8 +123,12 @@ def _predict_with_std(saved: SavedModel, rows: pd.DataFrame) -> tuple[np.ndarray
     y = saved.model.predict(X)
     scaler = StandardScaler().fit(X.values)
     Xs = scaler.transform(X.values)
+    if len(Xs) > _MAX_SURROGATE_FIT_ROWS:
+        fit_idx = np.random.RandomState(seed).choice(len(Xs), _MAX_SURROGATE_FIT_ROWS, replace=False)
+    else:
+        fit_idx = np.arange(len(Xs))
     surrogate = GaussianProcessRegressor(kernel=RBF() + WhiteKernel(), normalize_y=True, n_restarts_optimizer=1)
-    surrogate.fit(Xs, y)
+    surrogate.fit(Xs[fit_idx], y[fit_idx])
     mu, std = surrogate.predict(Xs, return_std=True)
     return np.asarray(mu, dtype=float), np.asarray(std, dtype=float)
 
@@ -152,7 +167,7 @@ def optimize(saved: SavedModel, df: pd.DataFrame, direction: str = "maximize", b
         raise LabError("no candidate points satisfy the given constraints")
 
     y_pool = _predict(saved, pool)
-    mu, std = _predict_with_std(saved, pool)
+    mu, std = _predict_with_std(saved, pool, seed=seed)
     sign = 1.0 if direction == "maximize" else -1.0
     best_so_far = float((sign * y_pool).max())
     scores = _acquisition(sign * mu, std, best_so_far, acquisition)

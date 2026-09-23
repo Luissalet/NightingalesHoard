@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .deps import api_errors, services
@@ -216,6 +217,14 @@ class ReportBody(BaseModel):
 def report(request: Request, body: ReportBody):
     svc = services(request)
     return svc.lab_report(body.dataset, body.model_id, body.eval_dataset, body.optimize, body.optimize_params)
+
+
+@router.get("/report/download")
+@api_errors
+def report_download(request: Request, path: str):
+    svc = services(request)
+    file_path = svc.lab_report_path(path)
+    return FileResponse(file_path, media_type="application/pdf", filename=file_path.name)
 
 
 # ---- visual pipeline ---------------------------------------------------------

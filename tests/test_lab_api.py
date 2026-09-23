@@ -50,6 +50,11 @@ def test_train_evaluate_explain_optimize_flow(client, reg_ds):
     assert r.status_code == 200
     model_id = r.json()["model_id"]
 
+    r = client.get("/api/lab/models", params={"dataset": reg_ds})
+    assert r.status_code == 200
+    listed = next(m for m in r.json()["models"] if m["id"] == model_id)
+    assert listed["dataset_version"] == 0
+
     r = client.get(f"/api/lab/models/{model_id}")
     assert r.status_code == 200
     assert r.json()["backend"] == "random_forest"
@@ -108,7 +113,15 @@ def test_report_route(client, reg_ds):
     model_id = r.json()["model_id"]
     r = client.post("/api/lab/report", json={"dataset": reg_ds, "model_id": model_id})
     assert r.status_code == 200
-    assert r.json()["path"].endswith(".pdf")
+    path = r.json()["path"]
+    assert path.endswith(".pdf")
+
+    r = client.get("/api/lab/report/download", params={"path": path})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+
+    r = client.get("/api/lab/report/download", params={"path": "/etc/passwd"})
+    assert r.status_code == 404
 
 
 def test_pipeline_graph_and_apply_routes(client, reg_ds):
@@ -124,6 +137,8 @@ def test_pipeline_graph_and_apply_routes(client, reg_ds):
     r = client.post(f"/api/lab/datasets/{reg_ds}/pipeline/apply", json={"graph": edited, "dry_run": True})
     assert r.status_code == 200
     assert r.json()["dry_run"] is True
+    assert isinstance(r.json()["preview_rows"], list)
+    assert len(r.json()["preview_rows"]) > 0
 
     r = client.post(f"/api/lab/datasets/{reg_ds}/pipeline/apply", json={"graph": edited, "dry_run": False})
     assert r.status_code == 200
