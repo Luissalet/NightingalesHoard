@@ -48,6 +48,10 @@ class Config:
     def charts_dir(self) -> Path:
         return self.data_dir / "charts"
 
+    @property
+    def lab_models_dir(self) -> Path:
+        return self.data_dir / "lab_models"
+
     @classmethod
     def from_env(cls, demo: bool = False) -> "Config":
         raw_dir = _env("NIGHTINGALE_DATA_DIR")

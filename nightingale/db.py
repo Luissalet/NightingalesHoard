@@ -359,6 +359,16 @@ class Meta:
             return self.conn.execute("SELECT * FROM models WHERE dataset_id=? ORDER BY id DESC", (dataset_id,)).fetchall()
         return self.conn.execute("SELECT * FROM models ORDER BY id DESC").fetchall()
 
+    def delete_model(self, model_id: int) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM models WHERE id=?", (model_id,))
+            self.conn.commit()
+
+    def set_model_artifact_path(self, model_id: int, path: str) -> None:
+        with self._lock:
+            self.conn.execute("UPDATE models SET artifact_path=? WHERE id=?", (path, model_id))
+            self.conn.commit()
+
     # ---- analysis log ----
     def next_log_id(self) -> str:
         row = self.conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM log").fetchone()

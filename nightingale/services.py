@@ -21,6 +21,16 @@ from typing import Any, Callable, Literal, Optional
 
 from . import __version__, backend, db
 from .config import Config
+from .lab import LabError
+from .lab import diagnostics as lab_diagnostics
+from .lab import drift as lab_drift
+from .lab import eda as lab_eda
+from .lab import explain as lab_explain
+from .lab import optimize as lab_optimize
+from .lab import pipeline as lab_pipeline
+from .lab import registry as lab_registry
+from .lab import report as lab_report_mod
+from .lab import tuning as lab_tuning
 from .workbench import ask as ask_engine
 from .workbench.charts import ChartSpec, render_png, run_chart, to_vega_lite
 from .workbench.engine import DataError, Engine, slugify_name
@@ -32,6 +42,7 @@ log = logging.getLogger("nightingale")
 
 MAX_INGEST_TIMEOUT_S = 300
 MAX_MODEL_TIMEOUT_S = 180
+MAX_LAB_TIMEOUT_S = 240
 MAX_CHART_ROWS_FOR_DF = 1_000_000
 
 
@@ -1047,3 +1058,374 @@ class Services:
     def ask_available(self) -> dict:
         return {"used_capabilities": list(backend.USED_CAPABILITIES),
                  "config_error": backend.config_error(self.config.data_dir)}
+
+    # ---- lab: EDA / quality / drift ------------------------------------------
+    def _dataset_df(self, dataset_name: str, version: Optional[int] = None):
+        dataset_row = self._dataset_row(dataset_name)
+        v = self._version_row(dataset_row, version)
+        return self.engine.to_dataframe(v["table_name"], limit=MAX_CHART_ROWS_FOR_DF), dataset_row, v
+
+    def lab_eda_profile(self, dataset_name: str, source: str = "ui") -> dict:
+        def do():
+            df, dataset_row, v = self._dataset_df(dataset_name)
+            result = lab_eda.eda_profile(df)
+            result["dataset"], result["version"] = dataset_row["name"], v["version"]
+            result["_log_summary"] = f"EDA on {dataset_row['name']!r}: quality {result['quality_score']['score']}/100"
+            return result
+
+        return self._log("lab_eda", source, dataset_name, {}, lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_quality_score(self, dataset_name: str, source: str = "ui") -> dict:
+        def do():
+            df, dataset_row, v = self._dataset_df(dataset_name)
+            result = lab_eda.quality_score(df)
+            result["dataset"], result["version"] = dataset_row["name"], v["version"]
+            result["_log_summary"] = f"quality score {result['score']}/100 for {dataset_row['name']!r}"
+            return result
+
+        return self._log("lab_quality_score", source, dataset_name, {}, lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_drift(self, dataset_name: str, other_dataset: str, columns: Optional[list[str]] = None,
+                  source: str = "ui") -> dict:
+        def do():
+            df_a, dataset_row, _ = self._dataset_df(dataset_name)
+            df_b, other_row, _ = self._dataset_df(other_dataset)
+            result = lab_drift.compare_distributions(df_a, df_b, columns)
+            result["dataset_a"], result["dataset_b"] = dataset_row["name"], other_row["name"]
+            result["_log_summary"] = f"drift {dataset_row['name']!r} vs {other_row['name']!r}: {result['n_flagged']} flagged"
+            return result
+
+        return self._log("lab_drift", source, dataset_name, {"other_dataset": other_dataset, "columns": columns},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_compare_curves(self, dataset_name: str, x: str, y: str, group: Optional[str] = None,
+                            source: str = "ui") -> dict:
+        def do():
+            df, dataset_row, _ = self._dataset_df(dataset_name)
+            result = lab_drift.curve_comparison(df, x, y, group)
+            result["dataset"] = dataset_row["name"]
+            result["_log_summary"] = f"curve comparison on {dataset_row['name']!r} ({x} vs {y})"
+            return result
+
+        return self._log("lab_compare", source, dataset_name, {"x": x, "y": y, "group": group},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    # ---- lab: model registry --------------------------------------------------
+    def lab_backends(self, task: Optional[str] = None) -> dict:
+        return lab_registry.list_backends(task)
+
+    def _lab_model_row(self, model_id: int) -> sqlite3.Row:
+        row = self.meta.get_model(model_id)
+        if row is None:
+            raise NotFoundError(f"unknown model: {model_id}")
+        return row
+
+    def _lab_load(self, model_id: int) -> tuple[sqlite3.Row, "lab_registry.SavedModel"]:
+        row = self._lab_model_row(model_id)
+        if not row["artifact_path"]:
+            raise LabError(f"model {model_id} has no saved artifact (trained before Lab, or write_to='none')")
+        return row, lab_registry.load_model(row["artifact_path"])
+
+    def _lab_training_df(self, row: sqlite3.Row):
+        dataset_row = self.meta.get_dataset_by_id(row["dataset_id"])
+        if dataset_row is None:
+            raise NotFoundError(f"model {row['id']}'s training dataset no longer exists")
+        v = self._version_row(dataset_row, row["dataset_version"])
+        return self.engine.to_dataframe(v["table_name"], limit=MAX_CHART_ROWS_FOR_DF), dataset_row
+
+    def _lab_register(self, dataset_row: sqlite3.Row, version: int, result: dict, name: Optional[str],
+                       extra_params: dict) -> int:
+        model_id = self.meta.add_model(
+            name or f"{dataset_row['name']}_{result['backend']}", dataset_row["id"], version, result["task"],
+            result["target"], result["features"],
+            {"backend": result["backend"], "lab": True, **extra_params}, result["metrics"], extra_params.get("seed", 42),
+            None,
+        )
+        path = lab_registry.save_model(self.config.lab_models_dir, model_id, result)
+        self.meta.set_model_artifact_path(model_id, path)  # only known once model_id exists
+        return model_id
+
+    def lab_model_train(self, dataset_name: str, target: str, features: Optional[list[str]] = None,
+                         task: Optional[str] = None, backend_name: str = "random_forest", test_size: float = 0.2,
+                         seed: int = 42, write_to: str = "new_dataset", name: Optional[str] = None,
+                         source: str = "ui") -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            v = self._version_row(dataset_row)
+            df = self.engine.to_dataframe(v["table_name"], limit=MAX_CHART_ROWS_FOR_DF)
+            result = lab_registry.train_model(df, target, features, task, backend_name, test_size, seed)
+            model_id = self._lab_register(dataset_row, v["version"], result, name, {"test_size": test_size, "seed": seed})
+            X_all, _ = lab_registry.prep_features(df, result["features"])
+            X_all = X_all.reindex(columns=result["_X_columns"], fill_value=0)
+            predictions = result["_model"].predict(X_all)
+            if result["_label_encoder"] is not None:
+                predictions = result["_label_encoder"].inverse_transform(predictions.astype(int))
+            out = {"model_id": model_id,
+                   **{k: v2 for k, v2 in result.items() if not k.startswith("_")},
+                   "_log_summary": f"trained {result['task']} ({result['backend']}) on {dataset_row['name']!r}"}
+            pred_col = f"predicted_{target}"
+            write_result = self._write_model_output(
+                dataset_row, v, df, model_id, "lab_model", "lab_model_train",
+                key_cols=self._model_key_columns(df, [*result["features"], target]),
+                inputs=[*result["features"], target],
+                extra={pred_col: list(predictions)}, write_to=write_to,
+            )
+            out.update(write_result)
+            out["prediction_column"] = pred_col
+            return out
+
+        return self._log("lab_model_train", source, dataset_row["name"], {"target": target, "backend": backend_name},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_model_tune(self, dataset_name: str, target: str, features: Optional[list[str]] = None,
+                        task: Optional[str] = None, backend_name: str = "random_forest",
+                        param_space: Optional[dict] = None, n_trials: int = 20, timeout: Optional[float] = None,
+                        cv: int = 5, seed: int = 42, test_size: float = 0.2, name: Optional[str] = None,
+                        source: str = "ui") -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            v = self._version_row(dataset_row)
+            df = self.engine.to_dataframe(v["table_name"], limit=MAX_CHART_ROWS_FOR_DF)
+            result = lab_tuning.tune_model(df, target, features, task, backend_name, param_space, n_trials,
+                                            timeout, cv, seed, test_size)
+            model_id = self._lab_register(dataset_row, v["version"], result, name,
+                                           {"seed": seed, "tuned": True, "tuning_method": result["tuning"]["method"]})
+            return {"model_id": model_id, **{k: v2 for k, v2 in result.items() if not k.startswith("_")},
+                    "_log_summary": f"tuned {result['backend']} on {dataset_row['name']!r} "
+                                     f"({result['tuning']['method']}, best cv={result['tuning']['best_cv_score']})"}
+
+        return self._log("lab_model_tune", source, dataset_row["name"], {"target": target, "backend": backend_name},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_model_evaluate(self, model_id: int, eval_dataset: Optional[str] = None, date_col: Optional[str] = None,
+                            group_col: Optional[str] = None, source: str = "ui") -> dict:
+        def do():
+            row, saved = self._lab_load(model_id)
+            df_train, train_dataset_row = self._lab_training_df(row)
+            note = None
+            if eval_dataset:
+                df_eval, eval_row, _ = self._dataset_df(eval_dataset)
+                eval_name = eval_row["name"]
+            else:
+                df_eval, eval_name = df_train, train_dataset_row["name"]
+                note = "no eval_dataset given; evaluated in-sample against the training dataset"
+            result = lab_diagnostics.evaluate_model(saved, df_eval, df_train, seed=42, date_col=date_col,
+                                                      group_col=group_col)
+            result["model_id"] = model_id
+            result["eval_dataset"] = eval_name
+            if note:
+                result["note"] = note
+            result["_log_summary"] = f"evaluated model {model_id} on {eval_name!r}"
+            return result
+
+        return self._log("lab_model_evaluate", source, None, {"model_id": model_id, "eval_dataset": eval_dataset},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_model_explain(self, model_id: int, dataset_name: Optional[str] = None, sample_size: int = 200,
+                           row_index: Optional[int] = None, seed: int = 42, source: str = "ui") -> dict:
+        def do():
+            row, saved = self._lab_load(model_id)
+            if dataset_name:
+                df, dataset_row, _ = self._dataset_df(dataset_name)
+            else:
+                df, dataset_row = self._lab_training_df(row)
+            result = lab_explain.explain_model(saved, df, sample_size, row_index, seed)
+            result["model_id"] = model_id
+            result["dataset"] = dataset_row["name"]
+            result["_log_summary"] = f"explained model {model_id} ({result['method']}) on {dataset_row['name']!r}"
+            return result
+
+        return self._log("lab_model_explain", source, None, {"model_id": model_id, "dataset": dataset_name},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_model_optimize(self, model_id: int, direction: str = "maximize", bounds: Optional[dict] = None,
+                            fixed: Optional[dict] = None, integer_features: Optional[list[str]] = None,
+                            categorical_features: Optional[dict] = None, constraints: Optional[list[dict]] = None,
+                            acquisition: str = "ei", n_candidates: int = 3000, batch_size: int = 5, seed: int = 42,
+                            write_to: str = "none", source: str = "ui") -> dict:
+        def do():
+            row, saved = self._lab_load(model_id)
+            df, dataset_row = self._lab_training_df(row)
+            result = lab_optimize.optimize(saved, df, direction, bounds, fixed, integer_features,
+                                            categorical_features, constraints, acquisition, n_candidates,
+                                            batch_size, seed)
+            result["model_id"] = model_id
+            result["_log_summary"] = f"optimize model {model_id}: {len(result['suggested_points'])} suggestion(s)"
+            if write_to == "new_dataset":
+                import pandas as pd
+
+                rows = [{**s["inputs"], "predicted_value": s["predicted_value"], "uncertainty": s["uncertainty"]}
+                        for s in result["suggested_points"]]
+                out_df = pd.DataFrame(rows)
+                out_name = slugify_name(f"{dataset_row['name']}__optimize_{model_id}")
+                out_id = self.meta.add_dataset(out_name, None)
+                out_table = f"ds_{out_id}_v0"
+                row_count, columns = self.engine.materialize_from_dataframe(out_table, out_df)
+                self.meta.add_version(out_id, 0, None, "lab_optimize_output", {"model_id": model_id}, "(optimize)",
+                                        out_table, row_count, columns)
+                self.meta.set_current_version(out_id, 0)
+                self.engine.set_view(out_name, out_table)
+                result["write_to"] = "new_dataset"
+                result["optimize_dataset"] = out_name
+            else:
+                result["write_to"] = "none"
+            return result
+
+        return self._log("lab_model_optimize", source, None, {"model_id": model_id, "direction": direction},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_pareto(self, model_ids: list[int], directions: list[str], bounds: Optional[dict] = None,
+                    fixed: Optional[dict] = None, n_candidates: int = 1000, seed: int = 42,
+                    write_to: str = "none", source: str = "ui") -> dict:
+        def do():
+            saved_models = []
+            dfs = []
+            for mid in model_ids:
+                row, saved = self._lab_load(mid)
+                df, _ = self._lab_training_df(row)
+                saved_models.append(saved)
+                dfs.append(df)
+            import pandas as pd
+
+            merged = pd.concat(dfs, ignore_index=True, sort=False) if len(dfs) > 1 else dfs[0]
+            result = lab_optimize.pareto_front(saved_models, merged, directions, bounds, fixed, n_candidates, seed)
+            result["model_ids"] = model_ids
+            result["_log_summary"] = f"pareto front over {len(model_ids)} model(s): {result['n_front']} point(s)"
+            if write_to == "new_dataset":
+                rows = [{**p["inputs"], **{f"objective_{i}": v for i, v in enumerate(p["objectives"])}}
+                        for p in result["front"]]
+                out_df = pd.DataFrame(rows)
+                out_name = slugify_name(f"pareto_{'_'.join(str(m) for m in model_ids)}")
+                out_id = self.meta.add_dataset(out_name, None)
+                out_table = f"ds_{out_id}_v0"
+                row_count, columns = self.engine.materialize_from_dataframe(out_table, out_df)
+                self.meta.add_version(out_id, 0, None, "lab_pareto_output", {"model_ids": model_ids}, "(pareto)",
+                                        out_table, row_count, columns)
+                self.meta.set_current_version(out_id, 0)
+                self.engine.set_view(out_name, out_table)
+                result["write_to"] = "new_dataset"
+                result["pareto_dataset"] = out_name
+            else:
+                result["write_to"] = "none"
+            return result
+
+        return self._log("lab_pareto", source, None, {"model_ids": model_ids, "directions": directions},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def lab_registry_list(self, dataset_name: Optional[str] = None) -> dict:
+        import json as _json
+
+        dataset_id = self._dataset_row(dataset_name)["id"] if dataset_name else None
+        out = []
+        for m in self.meta.list_models(dataset_id):
+            params = _json.loads(m["params_json"])
+            if not params.get("lab"):
+                continue
+            out.append({"id": m["id"], "name": m["name"], "kind": m["kind"], "target": m["target"],
+                         "backend": params.get("backend"), "features": _json.loads(m["features_json"]),
+                         "params": params, "metrics": _json.loads(m["metrics_json"]),
+                         "created_at": m["created_at"], "dataset_id": m["dataset_id"],
+                         "has_artifact": bool(m["artifact_path"])})
+        return {"models": out}
+
+    def lab_registry_get(self, model_id: int) -> dict:
+        import json as _json
+
+        row = self._lab_model_row(model_id)
+        params = _json.loads(row["params_json"])
+        return {"id": row["id"], "name": row["name"], "kind": row["kind"], "target": row["target"],
+                "backend": params.get("backend"), "features": _json.loads(row["features_json"]), "params": params,
+                "metrics": _json.loads(row["metrics_json"]), "dataset_id": row["dataset_id"],
+                "dataset_version": row["dataset_version"], "created_at": row["created_at"],
+                "has_artifact": bool(row["artifact_path"])}
+
+    def lab_registry_compare(self, model_ids: list[int]) -> dict:
+        return {"models": [self.lab_registry_get(mid) for mid in model_ids]}
+
+    def lab_registry_delete(self, model_id: int, source: str = "ui") -> dict:
+        row = self._lab_model_row(model_id)
+        path = row["artifact_path"]
+        self.meta.delete_model(model_id)
+        if path:
+            Path(path).unlink(missing_ok=True)
+        return {"ok": True, "model_id": model_id}
+
+    def lab_report(self, dataset_name: str, model_id: Optional[int] = None, eval_dataset: Optional[str] = None,
+                    optimize: bool = False, optimize_params: Optional[dict] = None, source: str = "ui") -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            eda_result = self.lab_eda_profile(dataset_row["name"], source="agent")
+            model_result = None
+            diagnostics_result = None
+            optimize_result = None
+            if model_id:
+                model_result = self.lab_registry_get(model_id)
+                diagnostics_result = self.lab_model_evaluate(model_id, eval_dataset, source="agent")
+                if optimize:
+                    optimize_result = self.lab_model_optimize(model_id, source="agent", **(optimize_params or {}))
+            out_path = self.config.exports_dir / f"lab_report_{dataset_row['name']}_{int(self.now())}.pdf"
+            path = lab_report_mod.build_report(out_path, dataset_row["name"], eda_result, model_result,
+                                                 diagnostics_result, optimize_result)
+            return {"path": str(path), "_log_summary": f"Lab report for {dataset_row['name']!r} -> {path.name}"}
+
+        return self._log("lab_report", source, dataset_row["name"], {"model_id": model_id},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    # ---- lab: visual pipeline --------------------------------------------------
+    def lab_pipeline_graph(self, dataset_name: str) -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+        steps = self.recipe(dataset_row["name"], "show")["steps"]
+        graph = lab_pipeline.dataset_graph(dataset_row["current_version"], steps)
+        graph["dataset"] = dataset_row["name"]
+        return graph
+
+    def lab_pipeline_apply(self, dataset_name: str, graph: dict, dry_run: bool = False, source: str = "ui") -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            import json as _json
+
+            steps = lab_pipeline.validate_graph(graph)
+            v0 = self._version_row(dataset_row, 0)
+            if dry_run:
+                current_table = v0["table_name"]
+                temp_tables = []
+                row_count, columns = v0["row_count"], _json.loads(v0["columns_json"])
+                try:
+                    for i, step in enumerate(steps):
+                        new_table = f"__pipeline_preview_{dataset_row['id']}_{i}_{int(self.now() * 1000)}"
+                        _, row_count, columns = self.engine.apply_step(current_table, new_table, step["op"],
+                                                                         step["params"], self._resolve_table_by_name)
+                        temp_tables.append(new_table)
+                        current_table = new_table
+                    return {"dry_run": True, "steps": steps, "row_count": row_count, "columns": columns,
+                            "_log_summary": f"pipeline preview for {dataset_row['name']!r}: {len(steps)} step(s)"}
+                finally:
+                    for t in temp_tables:
+                        self.engine.drop_table(t)
+            # apply for real: branch off v0, discarding every recorded step after it (same rule as transform_apply)
+            dropped = self.meta.delete_versions_after(dataset_row["id"], 0)
+            for d in dropped:
+                self.engine.drop_table(d["table_name"])
+            current_table = v0["table_name"]
+            current_version = 0
+            for step in steps:
+                new_version = current_version + 1
+                new_table = f"ds_{dataset_row['id']}_v{new_version}"
+                select_sql, row_count, columns = self.engine.apply_step(current_table, new_table, step["op"],
+                                                                          step["params"], self._resolve_table_by_name)
+                self.meta.add_version(dataset_row["id"], new_version, current_version, step["op"], step["params"],
+                                        select_sql, new_table, row_count, columns)
+                self.meta.set_current_version(dataset_row["id"], new_version)
+                current_table, current_version = new_table, new_version
+            row = self.meta.get_dataset_by_id(dataset_row["id"])
+            self._refresh_view(row)
+            summary = self.dataset_summary(row)
+            summary["_log_summary"] = f"applied pipeline graph to {dataset_row['name']!r}: {len(steps)} step(s) -> v{current_version}"
+            return summary
+
+        return self._log("lab_pipeline_apply", source, dataset_row["name"], {"dry_run": dry_run, "n_nodes": len(graph.get("nodes", []))},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
