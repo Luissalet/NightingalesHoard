@@ -37,6 +37,7 @@ applies.
 | **Delete a dataset** | Removes a dataset, all its versions, and cascades to its quality rules, charts, and models; a dashboard that used one of those charts keeps working (it shows the item as unavailable) rather than breaking. Available from the Datasets screen (with a confirmation dialog listing what depends on it), `DELETE /api/datasets/{name}` (`?force=true` to go past dependents), and the `data_ingest` MCP tool's `action="delete"`. | Blocked by default when charts/dashboards/models depend on the dataset — pass `force`/`force=true` to delete anyway. |
 | **Analysis log** | Every operation (ingest, transform, quality run, chart, model, export...) gets an id like `N-000123`, with input, a one-line summary, timing, and whether it came from you or the assistant. | The log is append-only and capped per-field in size; it's an audit trail, not a full data backup. |
 | **Ask your data** | A plain-language question becomes one SQL query (shown, not hidden) run through a shared local language model via Hoard Link. | Needs a resolved LLM backend (Faustus, a local llama.cpp server, Ollama, or an OpenAI-compatible endpoint) — with none configured it says so clearly instead of guessing. |
+| **Lab** | Deeper data science on top of the workbench: full EDA (correlation, null patterns + imputation preview, IQR/z-score outliers, encoding suggestions) and a 0-100 quality score; a pluggable model registry (linear/ridge/logistic, random forest, gradient boosting, extra trees, k-NN, MLP, Gaussian process, plus XGBoost/LightGBM if installed) with versioned, persisted models; model diagnostics (residuals, predicted-vs-actual, error by group, bias over time, over/under-fitting, calibration); hyperparameter tuning (Optuna TPE or a randomized fallback); explanations (SHAP or permutation importance + partial dependence); Bayesian optimization of a model's inputs (GP surrogate + EI/UCB) and multi-objective Pareto fronts; drift detection and curve/series comparison between datasets; a PDF report; and a visual-pipeline graph API for the node editor. See `docs/LAB.md`. | XGBoost/LightGBM/Optuna/SHAP are optional (`requirements-lab.txt`) — every feature degrades to a documented fallback without them. |
 
 The data grid formats every cell by its DuckDB column type and the UI's own language setting —
 dates and timestamps render as dates (a timestamp at exact midnight drops its time-of-day), and
@@ -64,6 +65,7 @@ git clone <this repo> nightingale-hoard
 cd nightingale-hoard
 python -m venv venv
 venv/bin/pip install -r requirements.txt      # Windows: venv\Scripts\pip install -r requirements.txt
+venv/bin/pip install -r requirements-lab.txt  # optional: Optuna/SHAP/XGBoost/LightGBM for the Lab package
 npm install
 npm run build
 venv/bin/python -m nightingale --demo         # Windows: venv\Scripts\python -m nightingale --demo

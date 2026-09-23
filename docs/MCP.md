@@ -13,14 +13,17 @@ Every call is recorded in the analysis log with `source: "agent"` and an id like
 exactly like a UI action would be, so "what did the assistant just do to my data" is always
 answerable from the **Log** screen.
 
-18 tools, matching the family contract's cap:
+18 tools, matching the family contract's cap. The Lab package (EDA/quality/drift, the model
+registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports, the visual pipeline
+graph — see `docs/LAB.md`) is reached entirely through new `mode`s on `data_profile` and new
+`action`s on `data_model`, so the cap never had to move:
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
 | `data_ingest` | write, destructive on `action="delete"` | `action="ingest"` (default) loads a file, folder (glob), URL, or pasted CSV/JSON text as a new dataset. `action="delete"` permanently removes an existing dataset (its versions, quality rules, charts, and models); pass `force: true` to delete past dependents, otherwise the call fails and lists them. |
 | `data_refresh` | write | Re-ingest a dataset's original source and replay its recorded recipe on the fresh data. |
 | `data_list` | read | Every registered dataset, with row/column counts and last update time. |
-| `data_profile` | read | Per-column profile: type, nulls %, distinct count, min/max/mean/sd, histogram, top values, IQR outlier count. |
+| `data_profile` | read | `mode="profile"` (default): per-column profile (type, nulls %, distinct, min/max/mean/sd, histogram, top values, IQR outliers). `mode="eda"`: the Lab bundle — Pearson+Spearman correlation, null co-occurrence, IQR+z-score outliers, encoding suggestions, quality score. `mode="quality_score"`: just the 0-100 score. `mode="drift"`: KS test/PSI/Wasserstein/mean-sd shift against `other_dataset`. |
 | `data_preview` | read | First rows of a dataset version, plus the total row count. |
 | `data_transform` | write (unless `preview: true`) | Apply or preview one of 21 cleaning/reshaping steps (filter, select, drop, rename, cast, fill_null, drop_duplicates, derive, split_column, text, replace, bin, date_parts, group, pivot, unpivot, join, union, sort, sample, window, sql). |
 | `data_undo` | write, non-destructive | Move a dataset to an earlier (`undo`) or later (`redo`) version. |
@@ -29,7 +32,7 @@ answerable from the **Log** screen.
 | `data_quality` | write on `define`/`delete` | Define, run, or report data-quality rules: `not_null`, `unique`, `accepted_values`, `range`, `regex`, `row_count`, `freshness`, `referential`, `custom_sql`. |
 | `data_chart` | write | Build and save a chart (aggregated in SQL); `image: true` also returns a base64 PNG. |
 | `data_dashboard` | write on `create`/`add` | Create a dashboard, add a chart or KPI item to it, or list/get dashboards. |
-| `data_model` | write on `train` | Train a quick supervised model (regression/classification, auto-detected) for a target column, or list saved models. Predictions go to a new dataset by default — see `write_to` below. |
+| `data_model` | write on most actions | `action="train"` (default): the original quick supervised model, unchanged, unless `lab=true` — then it trains through the Lab registry (many more backends, and the model artifact is persisted so it can be evaluated/tuned/explained/optimized later). `action="list"`: the original quick-model list. `action="backends"`: list Lab registry backends and whether optional ones (xgboost/lightgbm) are installed. `action="registry"`: list/get/delete a saved Lab model (`registry_action`). `action="evaluate"`: diagnostics (metrics, residuals, error by group, bias over time, fit-gap) for a saved model. `action="tune"`: hyperparameter search (Optuna or a randomized fallback), saves the tuned model. `action="explain"`: global + per-row feature importance (SHAP or permutation importance + partial dependence). `action="optimize"`: suggest input values that maximize/minimize the target (Bayesian optimization, GP surrogate + EI/UCB). `action="pareto"`: non-dominated front across 2-3 saved models' predictions. `action="compare"`: curve/series comparison (`x`/`y`/`group`) or, with `model_ids`, a saved-models metrics comparison. `action="report"`: render a Lab PDF report. See `docs/LAB.md` for the full parameter reference (most of this lives under the `params` bag to stay within the tool's own schema). |
 | `data_cluster` | write | K-means clustering with an elbow/silhouette scan. Cluster labels go to a new dataset by default — see `write_to` below. |
 | `data_forecast` | write | Time-series forecast (Holt-Winters, or a documented seasonal-naive fallback) with a confidence interval. The forecast goes to a new dataset (`<source>__forecast_<model_id>`) by default. |
 | `data_export` | write | Export a dataset to CSV/XLSX/Parquet/JSON inside the app's `exports/` folder. |
@@ -97,3 +100,11 @@ which charts/dashboards/models depend on it before you confirm.
 - `data_ask` needs a locally resolvable language model through Hoard Link (Faustus, a local
   llama.cpp server, Ollama, or an OpenAI-compatible endpoint). With none configured it returns a
   clear error rather than a made-up answer.
+- Lab's model registry is separate bookkeeping from the original `data_model`/`data_cluster`/
+  `data_forecast` models: only a model trained with `lab=true` (or `action="tune"`, which always
+  goes through the registry) is persisted to disk and can be evaluated/tuned/explained/optimized
+  afterwards. `algorithm` names overlap between the two ("random_forest" exists in both) — `lab`
+  is what decides which path a `train` call takes; every other Lab action always uses the registry.
+- XGBoost, LightGBM, Optuna and SHAP are optional (`requirements-lab.txt`); every Lab feature that
+  would use one degrades to a documented fallback (a randomized search instead of Optuna's TPE,
+  permutation importance + partial dependence instead of SHAP) rather than failing outright.
