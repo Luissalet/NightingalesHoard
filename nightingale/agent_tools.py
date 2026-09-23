@@ -37,16 +37,24 @@ class Empty(BaseModel):
 
 
 class IngestArgs(BaseModel):
-    kind: Literal["file", "folder", "url", "paste"] = Field("file", description="What to ingest.")
+    action: Literal["ingest", "delete"] = Field(
+        "ingest", description="'ingest' (default) loads a new dataset. 'delete' permanently removes an existing "
+                               "one (its versions, quality rules, charts and models) — pass `name` as the dataset "
+                               "to delete; other ingest-only fields are ignored.")
+    kind: Literal["file", "folder", "url", "paste"] = Field("file", description="What to ingest (action=ingest).")
     path: Optional[str] = Field(None, description="Absolute path to a file or folder (kind=file/folder).")
     url: Optional[str] = Field(None, description="http(s) URL to a CSV/JSON resource (kind=url).")
     text: Optional[str] = Field(None, description="Pasted CSV/JSON text (kind=paste).")
-    name: Optional[str] = Field(None, max_length=200, description="Dataset name; derived from the source if omitted.")
+    name: Optional[str] = Field(None, max_length=200, description=(
+        "Dataset name. For action=ingest, derived from the source if omitted; for action=delete, the dataset to "
+        "delete (required)."))
     fmt: Literal["csv", "json"] = Field("csv", description="Format for kind=url/paste.")
     glob: str = Field("*.csv", description="File pattern for kind=folder, e.g. '*.csv' or '*.parquet'.")
     options: dict[str, Any] = Field(default_factory=dict, description=(
         "delimiter, header, encoding (utf-8/utf-16/latin-1), date_format, decimal_separator, thousands_separator, "
         "sheet/sheets/skip_rows (Excel), tables (SQLite), flatten (JSON)."))
+    force: bool = Field(False, description="action=delete only: delete even if charts/dashboards/models depend on "
+                                             "this dataset (otherwise the call fails and lists them).")
 
 
 class RefreshArgs(BaseModel):
@@ -136,7 +144,11 @@ class ModelTrainArgs(BaseModel):
     algorithm: Optional[str] = Field(None, description="linear/logistic/random_forest/gradient_boosting")
     test_size: float = Field(0.2, gt=0, lt=0.9)
     seed: int = 42
-    write_predictions: bool = True
+    write_to: Literal["new_dataset", "new_version", "none"] = Field(
+        "new_dataset", description="'new_dataset' (default) puts predictions in their own new dataset "
+                                     "(source untouched); 'new_version' adds a predicted_<target> column to a new "
+                                     "version of the source itself (never changes an existing column's type); "
+                                     "'none' skips writing them anywhere.")
     name: Optional[str] = None
 
 
@@ -145,7 +157,10 @@ class ClusterArgs(BaseModel):
     features: list[str] = Field(..., min_length=1)
     k: Optional[int] = Field(None, ge=2, le=20)
     seed: int = 42
-    write_labels: bool = True
+    write_to: Literal["new_dataset", "new_version", "none"] = Field(
+        "new_dataset", description="'new_dataset' (default) puts cluster labels in their own new dataset (source "
+                                     "untouched); 'new_version' adds a cluster column to a new version of the "
+                                     "source itself; 'none' skips writing them anywhere.")
     name: Optional[str] = None
 
 
@@ -156,7 +171,10 @@ class ForecastArgs(BaseModel):
     horizon: int = Field(12, ge=1, le=365)
     seasonal_period: Optional[int] = Field(None, ge=2, le=366)
     name: Optional[str] = None
-    write_dataset: bool = True
+    write_to: Literal["new_dataset", "none"] = Field(
+        "new_dataset", description="'new_dataset' (default) puts the forecast in its own new dataset; 'none' "
+                                     "skips writing it anywhere. The forecast has different rows than the source, "
+                                     "so there's no 'new_version' option.")
     freq: Literal["auto", "day", "week", "month", "quarter"] = Field(
         "auto", description="Calendar grain to resample the series onto before forecasting. 'auto' (default) "
                               "picks by how far the dates span and how densely they fill that span, so irregular "
@@ -192,6 +210,10 @@ class Tool:
 
 
 def _run_ingest(s: Services, a: IngestArgs) -> dict:
+    if a.action == "delete":
+        if not a.name:
+            raise ValueError("name is required for action=delete")
+        return s.dataset_delete(a.name, a.force, source="agent")
     if a.kind == "file":
         if not a.path:
             raise ValueError("path is required for kind=file")
@@ -293,16 +315,16 @@ def _run_model(s: Services, a: ModelTrainArgs) -> dict:
     if not (a.dataset and a.target):
         raise ValueError("train needs dataset and target")
     return s.model_train(a.dataset, a.target, a.features, a.task, a.algorithm, a.test_size, a.seed,
-                          a.write_predictions, a.name, source="agent")
+                          a.write_to, a.name, source="agent")
 
 
 def _run_cluster(s: Services, a: ClusterArgs) -> dict:
-    return s.model_cluster(a.dataset, a.features, a.k, a.seed, a.write_labels, a.name, source="agent")
+    return s.model_cluster(a.dataset, a.features, a.k, a.seed, a.write_to, a.name, source="agent")
 
 
 def _run_forecast(s: Services, a: ForecastArgs) -> dict:
     return s.model_forecast(a.dataset, a.date_col, a.value_col, a.horizon, a.seasonal_period, a.name,
-                             a.write_dataset, source="agent", freq=a.freq)
+                             a.write_to, source="agent", freq=a.freq)
 
 
 def _run_export(s: Services, a: ExportArgs) -> dict:
@@ -318,9 +340,11 @@ def _run_ask(s: Services, a: AskArgs):
 
 
 TOOLS: list[Tool] = [
-    Tool("data_ingest", "Load a file/folder/URL/pasted text into the workbench as a new dataset (write).\n"
-         "Sinónimos: importar datos, cargar archivo, ingerir csv, subir excel, leer carpeta, importar url.",
-         IngestArgs, _ann(False, False, False), _run_ingest),
+    Tool("data_ingest", "Load a file/folder/URL/pasted text into the workbench as a new dataset (write); "
+         "action='delete' permanently removes a dataset and everything derived from it instead (write, "
+         "destructive).\nSinónimos: importar datos, cargar archivo, ingerir csv, subir excel, leer carpeta, "
+         "importar url, borrar dataset, eliminar tabla.",
+         IngestArgs, _ann(False, True, False), _run_ingest),
     Tool("data_refresh", "Re-ingest a dataset's source and replay its recorded recipe on the fresh data (write).\n"
          "Sinónimos: actualizar datos, releer archivo, refrescar fuente.",
          RefreshArgs, _ann(False, False, False), _run_refresh),

@@ -35,9 +35,17 @@ aplica.
 | **Deshacer / rehacer / receta** | Cada versión es una tabla real; un panel lateral muestra la receta completa, la exporta como un script SQL ejecutable, y puede reproducirla contra datos de origen reingeridos. | Ramificar tras un deshacer descarta las versiones rehechas hacia adelante (como el deshacer de cualquier editor) — hay una sola línea temporal, no un árbol. |
 | **Reglas de calidad** | 9 tipos de regla (not_null, unique, accepted_values, range, regex, row_count, freshness, integridad referencial, SQL personalizado), ejecutadas bajo demanda, con historial de aprobado/fallido. | Las reglas comprueban la versión *actual* del conjunto de datos; no se ejecutan automáticamente al ingerir salvo que las vuelvas a ejecutar tú mismo. |
 | **Gráficos y paneles** | 11 tipos de gráfico, agregados en SQL (nunca se trae una tabla completa al cliente), representados de forma interactiva (Vega-Lite) y como PNG (para exportar/uso del asistente); los paneles combinan gráficos guardados con casillas KPI de expresión SQL. | Los gráficos leen la versión actual del conjunto de datos en el momento de representarse — un gráfico no congela datos pasados, refleja la última limpieza. |
-| **Modelos** | Aprendizaje supervisado (detección automática de tarea, validación cruzada, importancia de variables, matriz de confusión), agrupamiento k-means (codo + silueta), PCA, detección de anomalías por bosque de aislamiento, previsión Holt-Winters con intervalo y una alternativa estacional-ingenua documentada. | El entrenamiento reduce la muestra a 200.000 filas; la selección automática de variables excluye columnas de tipo identificador casi únicas (se informa de ello) para evitar una explosión de codificación one-hot — pasa una lista explícita de variables para anularlo. |
+| **Modelos** | Aprendizaje supervisado (detección automática de tarea, validación cruzada, importancia de variables, matriz de confusión), agrupamiento k-means (codo + silueta), PCA, detección de anomalías por bosque de aislamiento, previsión Holt-Winters con intervalo y una alternativa estacional-ingenua documentada. Las predicciones/etiquetas/marcas/previsiones van por defecto a un conjunto de datos nuevo (`<origen>__model_<id>`, etc.) — el conjunto de datos de origen, y el tipo de cada una de sus columnas existentes, nunca se toca; `write_to="new_version"` permite optar por escribir sobre el propio origen, y aun así solo añade una columna. | El entrenamiento reduce la muestra a 200.000 filas; la selección automática de variables excluye columnas de tipo identificador casi únicas (se informa de ello) para evitar una explosión de codificación one-hot — pasa una lista explícita de variables para anularlo. |
+| **Eliminar un conjunto de datos** | Elimina un conjunto de datos, todas sus versiones, y en cascada sus reglas de calidad, gráficos y modelos; un panel que usaba uno de esos gráficos sigue funcionando (muestra el elemento como no disponible) en lugar de romperse. Disponible desde la pantalla de Datasets (con un diálogo de confirmación que lista lo que depende de él), `DELETE /api/datasets/{name}` (`?force=true` para saltarse las dependencias), y la acción `action="delete"` de la herramienta MCP `data_ingest`. | Se bloquea por defecto si hay gráficos/paneles/modelos que dependen del conjunto de datos — pasa `force`/`force=true` para eliminarlo de todos modos. |
 | **Registro de análisis** | Cada operación (ingesta, transformación, ejecución de calidad, gráfico, modelo, exportación...) recibe un id como `N-000123`, con la entrada, un resumen de una línea, el tiempo empleado, y si vino de ti o del asistente. | El registro es de solo-añadir y tiene un límite de tamaño por campo; es un rastro de auditoría, no una copia de seguridad completa de los datos. |
 | **Pregunta a tus datos** | Una pregunta en lenguaje llano se convierte en una consulta SQL (que se muestra, no se oculta) ejecutada a través de un modelo de lenguaje local compartido vía Hoard Link. | Necesita un backend de LLM resuelto (Faustus, un servidor llama.cpp local, Ollama, o un endpoint compatible con OpenAI) — sin ninguno configurado lo dice claramente en lugar de inventar. |
+
+La cuadrícula de datos formatea cada celda según el tipo de columna de DuckDB y el idioma de la
+interfaz — las fechas y marcas de tiempo se muestran como fechas (una marca de tiempo exactamente a
+medianoche omite la hora), y los números llevan separador de miles y una precisión razonable (2
+decimales para columnas `DECIMAL`, hasta 4 cifras significativas para el resto de tipos numéricos)
+— mientras que el valor exacto sin formatear queda a un pase del ratón (una descripción emergente) y
+a un doble clic (lo copia al portapapeles).
 
 ## Casos de uso
 
@@ -104,7 +112,7 @@ Todo JSON; los errores son `{ "error": "..." }`.
 
 - `GET /api/health`, `GET /api/status`
 - `GET /api/sources`, `POST /api/sources/ingest`
-- `GET /api/datasets`, `POST /api/datasets/{name}/refresh`
+- `GET /api/datasets`, `POST /api/datasets/{name}/refresh`, `DELETE /api/datasets/{name}`, `GET /api/datasets/{name}/dependents`
 - `GET /api/datasets/{name}/{profile,preview,lineage,recipe,correlation}`
 - `POST /api/datasets/{name}/{transform,undo,redo,join-preview}`
 - `POST /api/query`
@@ -131,10 +139,12 @@ nombre de un conjunto de datos (`data_list` primero), y que cite el id del regis
 venv/bin/python -m pytest -q     # Windows: venv\Scripts\python -m pytest -q
 ```
 
-104 pruebas que cubren el motor del banco de trabajo (cada vía de ingesta, cada paso de
+127 pruebas que cubren el motor del banco de trabajo (cada vía de ingesta, cada paso de
 transformación, versionado y deshacer/rehacer/reproducción), reglas de calidad, gráficos y paneles,
-modelos (incluida la exclusión de columnas de tipo identificador y la corrección de previsión con
-marcas de tiempo duplicadas), la API HTTP, las herramientas del agente a través de
+modelos (incluida la exclusión de columnas de tipo identificador, la corrección de previsión con
+marcas de tiempo duplicadas, y la salida por defecto a un conjunto de datos nuevo frente a la opción
+`write_to="new_version"` que conserva los tipos), la eliminación de conjuntos de datos (comprobación
+de dependencias, cascada, forzado), la API HTTP, las herramientas del agente a través de
 `/api/agent/call`, la protección de peticiones, los puntos finales de la PWA, y una prueba de
 extremo a extremo en subproceso a través del puente MCP por stdio.
 

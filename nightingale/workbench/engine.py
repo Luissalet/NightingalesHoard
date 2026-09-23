@@ -209,6 +209,35 @@ class Engine:
             columns = [{"name": r[0], "type": r[1]} for r in self._conn.execute(f"DESCRIBE {q(table_name)}").fetchall()]
             return int(row_count), columns
 
+    def append_columns(self, prev_table: str, new_table: str, extra) -> tuple[int, list[dict]]:
+        """Create `new_table` as `prev_table`'s exact columns — unchanged
+        types, straight from DuckDB, never round-tripped through pandas —
+        plus `extra`'s columns (typically a model's prediction/label output),
+        matched to each row by position. Used for `write_to="new_version"`:
+        the old code rebuilt the whole table from a `to_dataframe()` copy,
+        which silently re-typed columns pandas has no exact match for (DATE
+        became TIMESTAMP, DECIMAL became DOUBLE) — this only ever *adds*
+        columns, so an existing one can never change type."""
+        with self._lock:
+            self._conn.register("__extra_in", extra)
+            try:
+                for stmt in (f"DROP TABLE IF EXISTS {q(new_table)}", f"DROP VIEW IF EXISTS {q(new_table)}"):
+                    try:
+                        self._conn.execute(stmt)
+                    except duckdb.Error:
+                        pass
+                self._conn.execute(
+                    f"CREATE TABLE {q(new_table)} AS "
+                    f"SELECT p.* EXCLUDE (__rn), x.* EXCLUDE (__rn) FROM "
+                    f"(SELECT *, row_number() OVER () AS __rn FROM {q(prev_table)}) p JOIN "
+                    f"(SELECT *, row_number() OVER () AS __rn FROM __extra_in) x USING (__rn)"
+                )
+            finally:
+                self._conn.unregister("__extra_in")
+            row_count = self._conn.execute(f"SELECT COUNT(*) FROM {q(new_table)}").fetchone()[0]
+            columns = [{"name": r[0], "type": r[1]} for r in self._conn.execute(f"DESCRIBE {q(new_table)}").fetchall()]
+            return int(row_count), columns
+
     def set_view(self, view_name: str, table_name: str) -> None:
         """Point the friendly view name (the dataset's slug) at its current version's table,
         so `data_query`/quality/ask can address a dataset by name instead of an internal id."""

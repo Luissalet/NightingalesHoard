@@ -5,7 +5,7 @@ be told apart in the Log screen.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -61,6 +61,18 @@ def sources(request: Request):
 @api_errors
 def list_datasets(request: Request):
     return services(request).list_datasets()
+
+
+@router.get("/datasets/{name}/dependents")
+@api_errors
+def dataset_dependents(request: Request, name: str):
+    return services(request).dataset_dependents(name)
+
+
+@router.delete("/datasets/{name}")
+@api_errors
+def dataset_delete(request: Request, name: str, force: bool = False):
+    return services(request).dataset_delete(name, force)
 
 
 @router.post("/datasets/{name}/refresh")
@@ -277,7 +289,7 @@ class ModelTrainBody(BaseModel):
     algorithm: Optional[str] = None
     test_size: float = 0.2
     seed: int = 42
-    write_predictions: bool = True
+    write_to: Literal["new_dataset", "new_version", "none"] = "new_dataset"
     name: Optional[str] = None
 
 
@@ -286,7 +298,7 @@ class ModelTrainBody(BaseModel):
 def model_train(request: Request, body: ModelTrainBody):
     svc = services(request)
     return svc.model_train(body.dataset, body.target, body.features, body.task, body.algorithm,
-                            body.test_size, body.seed, body.write_predictions, body.name)
+                            body.test_size, body.seed, body.write_to, body.name)
 
 
 class ClusterBody(BaseModel):
@@ -294,7 +306,7 @@ class ClusterBody(BaseModel):
     features: list[str]
     k: Optional[int] = None
     seed: int = 42
-    write_labels: bool = True
+    write_to: Literal["new_dataset", "new_version", "none"] = "new_dataset"
     name: Optional[str] = None
 
 
@@ -302,7 +314,7 @@ class ClusterBody(BaseModel):
 @api_errors
 def model_cluster(request: Request, body: ClusterBody):
     svc = services(request)
-    return svc.model_cluster(body.dataset, body.features, body.k, body.seed, body.write_labels, body.name)
+    return svc.model_cluster(body.dataset, body.features, body.k, body.seed, body.write_to, body.name)
 
 
 class PcaBody(BaseModel):
@@ -323,7 +335,7 @@ class AnomalyBody(BaseModel):
     features: list[str]
     contamination: float = 0.05
     seed: int = 42
-    write_flags: bool = True
+    write_to: Literal["new_dataset", "new_version", "none"] = "new_dataset"
     name: Optional[str] = None
 
 
@@ -331,7 +343,7 @@ class AnomalyBody(BaseModel):
 @api_errors
 def model_anomaly(request: Request, body: AnomalyBody):
     svc = services(request)
-    return svc.model_anomaly(body.dataset, body.features, body.contamination, body.seed, body.write_flags, body.name)
+    return svc.model_anomaly(body.dataset, body.features, body.contamination, body.seed, body.write_to, body.name)
 
 
 class ForecastBody(BaseModel):
@@ -341,7 +353,7 @@ class ForecastBody(BaseModel):
     horizon: int = 12
     seasonal_period: Optional[int] = None
     name: Optional[str] = None
-    write_dataset: bool = True
+    write_to: Literal["new_dataset", "none"] = "new_dataset"
     freq: str = "auto"
 
 
@@ -350,7 +362,7 @@ class ForecastBody(BaseModel):
 def model_forecast(request: Request, body: ForecastBody):
     svc = services(request)
     return svc.model_forecast(body.dataset, body.date_col, body.value_col, body.horizon, body.seasonal_period,
-                               body.name, body.write_dataset, freq=body.freq)
+                               body.name, body.write_to, freq=body.freq)
 
 
 @router.get("/models")

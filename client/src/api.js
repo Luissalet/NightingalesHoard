@@ -22,7 +22,7 @@ async function request(method, path, { params, body } = {}) {
 
 const get = (path, params) => request("GET", path, { params });
 const post = (path, body) => request("POST", path, { body: body ?? {} });
-const del = (path) => request("DELETE", path);
+const del = (path, params) => request("DELETE", path, { params });
 
 export const api = {
   health: () => get("/api/health"),
@@ -42,6 +42,8 @@ export const api = {
   undo: (name, steps = 1) => post(`/api/datasets/${encodeURIComponent(name)}/undo`, { steps }),
   redo: (name, steps = 1) => post(`/api/datasets/${encodeURIComponent(name)}/redo`, { steps }),
   joinPreview: (name, other_dataset, on, how) => post(`/api/datasets/${encodeURIComponent(name)}/join-preview`, { other_dataset, on, how }),
+  datasetDependents: (name) => get(`/api/datasets/${encodeURIComponent(name)}/dependents`),
+  datasetDelete: (name, force) => del(`/api/datasets/${encodeURIComponent(name)}`, force ? { force: "true" } : undefined),
 
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
