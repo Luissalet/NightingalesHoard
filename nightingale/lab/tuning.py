@@ -42,10 +42,42 @@ DEFAULT_PARAM_SPACE: dict[str, dict[str, tuple]] = {
 }
 
 
+_VALID_PARAM_KINDS = ("int", "float", "categorical")
+
+
+def _validate_param_space(space: dict) -> None:
+    """Reject a malformed `param_space` with a clear message up front, rather
+    than letting a bad value (a non-numeric bound, a missing element, ...)
+    blow up mid-search as a raw TypeError/ValueError/IndexError from deep
+    inside Optuna or numpy -- which, unlike `LabError`, isn't guaranteed to
+    map to a clean 4xx at the API layer."""
+    if not isinstance(space, dict) or not space:
+        raise LabError("param_space must be a non-empty object of {param_name: [kind, ...]}")
+    for name, spec in space.items():
+        if not isinstance(spec, (list, tuple)) or not spec:
+            raise LabError(f"param_space[{name!r}] must be a non-empty [kind, ...] list")
+        kind = spec[0]
+        if kind not in _VALID_PARAM_KINDS:
+            raise LabError(f"param_space[{name!r}]: unknown kind {kind!r}; choose from {_VALID_PARAM_KINDS}")
+        if kind == "categorical":
+            if len(spec) < 2 or not isinstance(spec[1], (list, tuple)) or not spec[1]:
+                raise LabError(f"param_space[{name!r}]: 'categorical' needs a non-empty list of choices")
+        else:
+            if len(spec) < 3:
+                raise LabError(f"param_space[{name!r}]: {kind!r} needs [kind, low, high] (and optionally log=True)")
+            lo, hi = spec[1], spec[2]
+            if not isinstance(lo, (int, float)) or isinstance(lo, bool) or not isinstance(hi, (int, float)) or isinstance(hi, bool):
+                raise LabError(f"param_space[{name!r}]: {kind!r} bounds must be numbers, got {lo!r}, {hi!r}")
+            if lo >= hi:
+                raise LabError(f"param_space[{name!r}]: low bound {lo!r} must be less than high bound {hi!r}")
+
+
 def _param_space_for(backend: str, custom: Optional[dict]) -> dict[str, tuple]:
     space = custom or DEFAULT_PARAM_SPACE.get(backend)
     if not space:
         raise LabError(f"no default tuning search space for backend {backend!r}; pass param_space explicitly")
+    if custom:
+        _validate_param_space(space)
     return space
 
 
@@ -150,12 +182,23 @@ def tune_model(df: pd.DataFrame, target: str, features: Optional[list[str]] = No
             "rmse": round(float(np.sqrt(np.mean((y_test_arr - y_pred_arr) ** 2))), 4),
         }
     else:
-        from sklearn.metrics import accuracy_score, f1_score
-        n_classes = len(np.unique(result["_y_test"]))
+        from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
+
+        y_test = result["_y_test"]
+        # Union of true/predicted labels (not just y_test's): the retrained,
+        # tuned model can predict a class that a small test split doesn't
+        # happen to contain, and confusion_matrix(labels=...) silently drops
+        # any row/column not in `labels` rather than raising.
+        labels = sorted(set(np.unique(y_test)) | set(np.unique(y_pred)))
+        n_classes = len(labels)
         average = "binary" if n_classes == 2 else "macro"
+        label_encoder = result["_label_encoder"]
+        class_names = ([label_encoder.classes_[int(l)] for l in labels] if label_encoder is not None
+                        else [str(l) for l in labels])
         result["metrics"] = {
-            "accuracy": round(float(accuracy_score(result["_y_test"], y_pred)), 4),
-            "f1": round(float(f1_score(result["_y_test"], y_pred, average=average, zero_division=0)), 4),
+            "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+            "f1": round(float(f1_score(y_test, y_pred, average=average, zero_division=0)), 4),
+            "confusion_matrix": {"labels": class_names, "matrix": confusion_matrix(y_test, y_pred, labels=labels).tolist()},
         }
     result["_y_pred"] = y_pred
     result["tuning"] = {"method": method, "best_params": best_params, "best_cv_score": round(best_score, 4),
