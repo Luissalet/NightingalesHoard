@@ -115,3 +115,27 @@ def test_evaluate_classification_unseen_label_is_dropped_not_fatal():
     combined = pd.concat([df, extra], ignore_index=True)
     result = diagnostics.evaluate_model(saved, combined)
     assert result["n_rows"] == len(df)  # the unseen-label rows were excluded, not fatal
+
+
+def test_evaluate_classification_single_class_holdout_confusion_matrix_matches_labels():
+    # A holdout where every true label is the same class, but the model
+    # (trained on both classes) still predicts both on these rows. The
+    # confusion matrix must cover every label the model actually produced,
+    # not just the ones seen in this holdout's true column -- otherwise
+    # `matrix` comes back smaller than `labels`, a shape mismatch that
+    # silently discards the misclassified rows from the count too.
+    saved, df = _saved_classification()
+    holdout = pd.DataFrame({
+        "x1": [5.0, 5.0, -5.0, -5.0], "x2": [5.0, 5.0, -5.0, -5.0],
+        "label": ["no", "no", "no", "no"],
+    })
+    result = diagnostics.evaluate_model(saved, holdout)
+    cm = result["metrics"]["confusion_matrix"]
+    n = len(cm["labels"])
+    assert len(cm["matrix"]) == n
+    assert all(len(row) == n for row in cm["matrix"])
+    # two of the four holdout rows are misclassified as "yes"; a correct
+    # matrix must count them as errors, not silently drop them.
+    assert result["metrics"]["accuracy"] == pytest.approx(0.5)
+    total_counted = sum(sum(row) for row in cm["matrix"])
+    assert total_counted == len(holdout)
