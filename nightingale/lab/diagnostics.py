@@ -115,10 +115,16 @@ def _regression_diagnostics(saved: SavedModel, X: pd.DataFrame, y: np.ndarray, w
 def _classification_diagnostics(saved: SavedModel, X: pd.DataFrame, y: np.ndarray, work: pd.DataFrame,
                                   date_col: Optional[str], group_col: Optional[str]) -> dict:
     y_pred = saved.model.predict(X)
-    labels = sorted(np.unique(y))
+    # Use the union of true and predicted labels, not just `y`'s: an evaluation
+    # slice (e.g. a holdout with a single true class) can still see the model
+    # predict a class that never appears in `y`, and confusion_matrix(labels=...)
+    # silently drops any row/column not in `labels` — leaving `matrix` smaller
+    # than `class_names` and misreporting accuracy instead of raising.
+    labels = sorted(set(np.unique(y)) | set(np.unique(y_pred)))
     n_classes = len(labels)
     average = "binary" if n_classes == 2 else "macro"
-    class_names = list(saved.label_encoder.classes_) if saved.label_encoder is not None else [str(l) for l in labels]
+    class_names = ([saved.label_encoder.classes_[int(l)] for l in labels] if saved.label_encoder is not None
+                    else [str(l) for l in labels])
 
     metrics: dict[str, Any] = {
         "accuracy": _py(accuracy_score(y, y_pred)),
@@ -135,7 +141,13 @@ def _classification_diagnostics(saved: SavedModel, X: pd.DataFrame, y: np.ndarra
             proba = None
     if proba is not None:
         try:
-            if n_classes == 2:
+            # Branch on how many classes the model was actually trained on
+            # (proba's column count), not on how many appear in this
+            # particular evaluation slice: a holdout with only one true (or
+            # predicted) class must still use the binary form, and
+            # roc_auc_score itself raises (caught below) when `y` ends up
+            # with a single class -- exactly the "one class in holdout" case.
+            if proba.shape[1] == 2:
                 metrics["roc_auc"] = _py(roc_auc_score(y, proba[:, 1]))
             else:
                 metrics["roc_auc"] = _py(roc_auc_score(y, proba, multi_class="ovr", average="macro"))
