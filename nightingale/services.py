@@ -14,6 +14,7 @@ import concurrent.futures
 import logging
 import secrets
 import sqlite3
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -72,6 +73,8 @@ class Services:
         self.engine = Engine(config.duckdb_path)
         self.link = backend.load_link(config.data_dir)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="nightingale-work")
+        self._dataset_locks: dict[int, threading.Lock] = {}
+        self._dataset_locks_guard = threading.Lock()
         config.exports_dir.mkdir(parents=True, exist_ok=True)
         config.charts_dir.mkdir(parents=True, exist_ok=True)
         if config.demo:
@@ -95,6 +98,26 @@ class Services:
             "models": len(self.meta.list_models()), "started_at": self.started_at,
             "backends": backend.app_backends(),
         }
+
+    # ---- per-dataset write serialization ------------------------------------
+    def _dataset_lock(self, dataset_id: int) -> threading.Lock:
+        """One lock per dataset id, held across a version-changing operation's
+        whole "read current_version -> materialize -> insert version -> update
+        current_version" sequence (transform apply, undo/redo, refresh/replay,
+        pipeline apply, delete). Two such operations on the *same* dataset used
+        to race on `current_version` -- each captured it once before being
+        queued onto the worker pool, so two concurrent calls could compute the
+        same "next version" and collide (a `versions.dataset_id, version`
+        UNIQUE violation), or one could silently discard the other's just-added
+        version. This lock makes them queue instead; a different dataset id
+        gets its own lock, so it is never blocked, and plain reads (EDA,
+        preview, charts, ...) never take this lock at all."""
+        with self._dataset_locks_guard:
+            lock = self._dataset_locks.get(dataset_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._dataset_locks[dataset_id] = lock
+            return lock
 
     # ---- run heavy work off the event loop, with a timeout -----------------
     def run_heavy(self, fn: Callable, *args, timeout: float = MAX_INGEST_TIMEOUT_S, **kwargs):
@@ -212,10 +235,13 @@ class Services:
             )
 
         def do():
-            for v in self.meta.list_versions(dataset_row["id"]):
-                self.engine.drop_table(v["table_name"])
-            self.engine.drop_view(name)
-            self.meta.delete_dataset(dataset_row["id"])
+            with self._dataset_lock(dataset_row["id"]):
+                if self.meta.get_dataset_by_id(dataset_row["id"]) is None:
+                    return {"ok": True, "deleted": name, "dependents": deps, "_log_summary": f"deleted {name!r}"}
+                for v in self.meta.list_versions(dataset_row["id"]):
+                    self.engine.drop_table(v["table_name"])
+                self.engine.drop_view(name)
+                self.meta.delete_dataset(dataset_row["id"])
             return {"ok": True, "deleted": name, "dependents": deps, "_log_summary": f"deleted {name!r}"}
 
         return self._log("dataset_delete", source, name, {"force": force}, do)
@@ -374,61 +400,66 @@ class Services:
         def do():
             import json as _json
 
-            options = _json.loads(source_row["options_json"] or "{}")
-            kind, path = source_row["kind"], source_row["path"]
-            p = Path(path)
-            # capture the recorded recipe (every step up to the current tip) before wiping history
-            old_steps = [{"op": v["op"], "params": _json.loads(v["params_json"])}
-                          for v in self.meta.list_versions(dataset_row["id"])
-                          if v["op"] != "ingest" and v["version"] <= dataset_row["current_version"]]
-            if kind in ("csv", "tsv", "txt"):
-                result = self.engine.ingest_delimited(p, options)
-            elif kind == "parquet":
-                result = self.engine.ingest_parquet(p)
-            elif kind in ("json", "ndjson", "jsonl"):
-                result = self.engine.ingest_json(p, options)
-            elif kind.startswith("url_"):
-                fmt = "json" if kind.endswith("json") else "csv"
-                tmp_path = self.engine.cache_dir / f"__refresh_{secrets.token_hex(6)}.{fmt}"
-                with urllib.request.urlopen(path, timeout=30) as resp:  # noqa: S310
-                    tmp_path.write_bytes(resp.read())
-                try:
-                    result = self.engine.ingest_json(tmp_path, options) if fmt == "json" \
-                        else self.engine.ingest_delimited(tmp_path, options)
-                finally:
-                    tmp_path.unlink(missing_ok=True)
-            else:
-                raise DataError(f"source kind {kind!r} cannot be refreshed directly; re-ingest it manually")
+            with self._dataset_lock(dataset_row["id"]):
+                fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+                if fresh is None:
+                    raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+                options = _json.loads(source_row["options_json"] or "{}")
+                kind, path = source_row["kind"], source_row["path"]
+                p = Path(path)
+                # capture the recorded recipe (every step up to the current tip) before wiping history --
+                # `fresh`, re-read under the lock, so a step applied while this call was queued isn't lost
+                old_steps = [{"op": v["op"], "params": _json.loads(v["params_json"])}
+                              for v in self.meta.list_versions(fresh["id"])
+                              if v["op"] != "ingest" and v["version"] <= fresh["current_version"]]
+                if kind in ("csv", "tsv", "txt"):
+                    result = self.engine.ingest_delimited(p, options)
+                elif kind == "parquet":
+                    result = self.engine.ingest_parquet(p)
+                elif kind in ("json", "ndjson", "jsonl"):
+                    result = self.engine.ingest_json(p, options)
+                elif kind.startswith("url_"):
+                    fmt = "json" if kind.endswith("json") else "csv"
+                    tmp_path = self.engine.cache_dir / f"__refresh_{secrets.token_hex(6)}.{fmt}"
+                    with urllib.request.urlopen(path, timeout=30) as resp:  # noqa: S310
+                        tmp_path.write_bytes(resp.read())
+                    try:
+                        result = self.engine.ingest_json(tmp_path, options) if fmt == "json" \
+                            else self.engine.ingest_delimited(tmp_path, options)
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+                else:
+                    raise DataError(f"source kind {kind!r} cannot be refreshed directly; re-ingest it manually")
 
-            # wipe the old version history (dropping its tables) and rebuild from the fresh raw data
-            old_versions = self.meta.delete_all_versions(dataset_row["id"])
-            for v in old_versions:
-                self.engine.drop_table(v["table_name"])
-            new_table = f"ds_{dataset_row['id']}_v0"
-            row_count, columns = result.row_count, result.columns
-            self.engine.rename_table(result.table_name, new_table)
-            self.meta.add_version(dataset_row["id"], 0, None, "ingest", options, result.select_sql,
-                                   new_table, row_count, columns)
-            self.meta.set_current_version(dataset_row["id"], 0)
-            self.meta.touch_source(source_row["id"])
-            # replay the recorded recipe (every step after the original ingest) on the fresh raw data
-            replayed = 0
-            current_version = 0
-            for step in old_steps:
-                new_version = current_version + 1
-                prev_table = self.meta.get_version(dataset_row["id"], current_version)["table_name"]
-                new_table_v = f"ds_{dataset_row['id']}_v{new_version}"
-                try:
-                    select_sql, rc, cols = self.engine.apply_step(prev_table, new_table_v, step["op"], step["params"],
-                                                                    self._resolve_table_by_name)
-                except (DataError, StepError):
-                    break  # a step no longer applies to the refreshed shape: stop replay here, keep what worked
-                self.meta.add_version(dataset_row["id"], new_version, current_version, step["op"],
-                                        step["params"], select_sql, new_table_v, rc, cols)
-                self.meta.set_current_version(dataset_row["id"], new_version)
-                current_version = new_version
-                replayed += 1
-            row = self.meta.get_dataset_by_id(dataset_row["id"])
+                # wipe the old version history (dropping its tables) and rebuild from the fresh raw data
+                old_versions = self.meta.delete_all_versions(fresh["id"])
+                for v in old_versions:
+                    self.engine.drop_table(v["table_name"])
+                new_table = f"ds_{fresh['id']}_v0"
+                row_count, columns = result.row_count, result.columns
+                self.engine.rename_table(result.table_name, new_table)
+                self.meta.add_version(fresh["id"], 0, None, "ingest", options, result.select_sql,
+                                       new_table, row_count, columns)
+                self.meta.set_current_version(fresh["id"], 0)
+                self.meta.touch_source(source_row["id"])
+                # replay the recorded recipe (every step after the original ingest) on the fresh raw data
+                replayed = 0
+                current_version = 0
+                for step in old_steps:
+                    new_version = current_version + 1
+                    prev_table = self.meta.get_version(fresh["id"], current_version)["table_name"]
+                    new_table_v = f"ds_{fresh['id']}_v{new_version}"
+                    try:
+                        select_sql, rc, cols = self.engine.apply_step(prev_table, new_table_v, step["op"], step["params"],
+                                                                        self._resolve_table_by_name)
+                    except (DataError, StepError):
+                        break  # a step no longer applies to the refreshed shape: stop replay here, keep what worked
+                    self.meta.add_version(fresh["id"], new_version, current_version, step["op"],
+                                            step["params"], select_sql, new_table_v, rc, cols)
+                    self.meta.set_current_version(fresh["id"], new_version)
+                    current_version = new_version
+                    replayed += 1
+                row = self.meta.get_dataset_by_id(fresh["id"])
             self._refresh_view(row)
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"refreshed {dataset_row['name']!r}: {row_count} raw rows, replayed {replayed} step(s)"
@@ -488,20 +519,24 @@ class Services:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
-            v = self._version_row(dataset_row)
-            new_version = max(r["version"] for r in self.meta.list_versions(dataset_row["id"])) + 1
-            new_table = f"ds_{dataset_row['id']}_v{new_version}"
-            # a new step branching off a version that is not the tip discards the redo stack it replaces
-            dropped = self.meta.delete_versions_after(dataset_row["id"], v["version"])
-            for d in dropped:
-                self.engine.drop_table(d["table_name"])
-            select_sql, row_count, columns = self.engine.apply_step(
-                v["table_name"], new_table, op, params, self._resolve_table_by_name
-            )
-            self.meta.add_version(dataset_row["id"], new_version, v["version"], op, params, select_sql,
-                                    new_table, row_count, columns)
-            self.meta.set_current_version(dataset_row["id"], new_version)
-            row = self.meta.get_dataset_by_id(dataset_row["id"])
+            with self._dataset_lock(dataset_row["id"]):
+                fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+                if fresh is None:
+                    raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+                v = self._version_row(fresh)
+                new_version = max(r["version"] for r in self.meta.list_versions(fresh["id"])) + 1
+                new_table = f"ds_{fresh['id']}_v{new_version}"
+                # a new step branching off a version that is not the tip discards the redo stack it replaces
+                dropped = self.meta.delete_versions_after(fresh["id"], v["version"])
+                for d in dropped:
+                    self.engine.drop_table(d["table_name"])
+                select_sql, row_count, columns = self.engine.apply_step(
+                    v["table_name"], new_table, op, params, self._resolve_table_by_name
+                )
+                self.meta.add_version(fresh["id"], new_version, v["version"], op, params, select_sql,
+                                        new_table, row_count, columns)
+                self.meta.set_current_version(fresh["id"], new_version)
+                row = self.meta.get_dataset_by_id(fresh["id"])
             self._refresh_view(row)
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"{op} on {dataset_row['name']!r} -> v{new_version} ({row_count} rows)"
@@ -513,11 +548,15 @@ class Services:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
-            target = max(0, dataset_row["current_version"] - steps)
-            if self.meta.get_version(dataset_row["id"], target) is None:
-                raise DataError(f"no version {target} to undo to")
-            self.meta.set_current_version(dataset_row["id"], target)
-            row = self.meta.get_dataset_by_id(dataset_row["id"])
+            with self._dataset_lock(dataset_row["id"]):
+                fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+                if fresh is None:
+                    raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+                target = max(0, fresh["current_version"] - steps)
+                if self.meta.get_version(fresh["id"], target) is None:
+                    raise DataError(f"no version {target} to undo to")
+                self.meta.set_current_version(fresh["id"], target)
+                row = self.meta.get_dataset_by_id(fresh["id"])
             self._refresh_view(row)
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"undo {dataset_row['name']!r} to v{target}"
@@ -529,12 +568,16 @@ class Services:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
-            versions = [v["version"] for v in self.meta.list_versions(dataset_row["id"])]
-            target = dataset_row["current_version"] + steps
-            if target not in versions:
-                raise DataError(f"no version {target} to redo to (latest is v{max(versions)})")
-            self.meta.set_current_version(dataset_row["id"], target)
-            row = self.meta.get_dataset_by_id(dataset_row["id"])
+            with self._dataset_lock(dataset_row["id"]):
+                fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+                if fresh is None:
+                    raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+                versions = [v["version"] for v in self.meta.list_versions(fresh["id"])]
+                target = fresh["current_version"] + steps
+                if target not in versions:
+                    raise DataError(f"no version {target} to redo to (latest is v{max(versions)})")
+                self.meta.set_current_version(fresh["id"], target)
+                row = self.meta.get_dataset_by_id(fresh["id"])
             self._refresh_view(row)
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"redo {dataset_row['name']!r} to v{target}"
@@ -1398,8 +1441,9 @@ class Services:
             import json as _json
 
             steps = lab_pipeline.validate_graph(graph)
-            v0 = self._version_row(dataset_row, 0)
             if dry_run:
+                # a preview never mutates version history, so it never needs the per-dataset write lock
+                v0 = self._version_row(dataset_row, 0)
                 current_table = v0["table_name"]
                 temp_tables = []
                 row_count, columns = v0["row_count"], _json.loads(v0["columns_json"])
@@ -1418,21 +1462,26 @@ class Services:
                     for t in temp_tables:
                         self.engine.drop_table(t)
             # apply for real: branch off v0, discarding every recorded step after it (same rule as transform_apply)
-            dropped = self.meta.delete_versions_after(dataset_row["id"], 0)
-            for d in dropped:
-                self.engine.drop_table(d["table_name"])
-            current_table = v0["table_name"]
-            current_version = 0
-            for step in steps:
-                new_version = current_version + 1
-                new_table = f"ds_{dataset_row['id']}_v{new_version}"
-                select_sql, row_count, columns = self.engine.apply_step(current_table, new_table, step["op"],
-                                                                          step["params"], self._resolve_table_by_name)
-                self.meta.add_version(dataset_row["id"], new_version, current_version, step["op"], step["params"],
-                                        select_sql, new_table, row_count, columns)
-                self.meta.set_current_version(dataset_row["id"], new_version)
-                current_table, current_version = new_table, new_version
-            row = self.meta.get_dataset_by_id(dataset_row["id"])
+            with self._dataset_lock(dataset_row["id"]):
+                fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+                if fresh is None:
+                    raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+                v0 = self._version_row(fresh, 0)
+                dropped = self.meta.delete_versions_after(fresh["id"], 0)
+                for d in dropped:
+                    self.engine.drop_table(d["table_name"])
+                current_table = v0["table_name"]
+                current_version = 0
+                for step in steps:
+                    new_version = current_version + 1
+                    new_table = f"ds_{fresh['id']}_v{new_version}"
+                    select_sql, row_count, columns = self.engine.apply_step(current_table, new_table, step["op"],
+                                                                              step["params"], self._resolve_table_by_name)
+                    self.meta.add_version(fresh["id"], new_version, current_version, step["op"], step["params"],
+                                            select_sql, new_table, row_count, columns)
+                    self.meta.set_current_version(fresh["id"], new_version)
+                    current_table, current_version = new_table, new_version
+                row = self.meta.get_dataset_by_id(fresh["id"])
             self._refresh_view(row)
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"applied pipeline graph to {dataset_row['name']!r}: {len(steps)} step(s) -> v{current_version}"
