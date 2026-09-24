@@ -102,6 +102,17 @@ def test_evaluate_missing_target_column_raises():
         diagnostics.evaluate_model(saved, df.drop(columns=["y"]))
 
 
+def test_evaluate_missing_feature_column_raises_clear_lab_error():
+    # Evaluating against a dataset that lacks one of the model's training
+    # feature columns used to fall through to a raw pandas KeyError
+    # ("None of [Index(...)] are in the [columns]") instead of a clear
+    # LabError -- confusing even though it happens to map to a 4xx by
+    # accident (KeyError is a LookupError subclass).
+    saved, df = _saved_regression()
+    with pytest.raises(LabError, match="x2"):
+        diagnostics.evaluate_model(saved, df.drop(columns=["x2"]))
+
+
 def test_evaluate_unknown_group_col_raises():
     saved, df = _saved_regression()
     with pytest.raises(LabError):

@@ -43,6 +43,9 @@ def _py(v: Any) -> Any:
 def _prepare_xy(saved: SavedModel, df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     if saved.target not in df.columns:
         raise LabError(f"evaluation data has no target column {saved.target!r}")
+    missing_features = [c for c in saved.features if c not in df.columns]
+    if missing_features:
+        raise LabError(f"evaluation data is missing feature column(s) the model was trained on: {missing_features}")
     work = df.dropna(subset=[saved.target])
     if work.empty:
         raise LabError("evaluation data has no non-null target rows")
