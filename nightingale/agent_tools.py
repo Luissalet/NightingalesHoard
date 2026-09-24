@@ -136,12 +136,31 @@ class ChartArgs(BaseModel):
 
 
 class DashboardArgs(BaseModel):
-    action: Literal["create", "add", "list", "get"] = "list"
+    action: Literal["create", "add", "list", "get",
+                     "semantic_get", "semantic_put", "semantic_suggest",
+                     "code_list", "code_get", "code_put", "code_validate", "code_render", "code_export"] = Field(
+        "list", description="Item-based dashboards (original): create/add/list/get. Dashboards as code: "
+                              "'semantic_get'/'semantic_put' (read/write the semantic layer YAML; put also "
+                              "validates), 'semantic_suggest' (propose a semantic model from a dataset's columns), "
+                              "'code_list'/'code_get' (list/read a code dashboard YAML), 'code_put' (save one, "
+                              "returns validation issues with a hint per issue — fix and retry), 'code_validate' "
+                              "(check a dashboard's YAML, or `text` before saving it, without saving), "
+                              "'code_render' (run it and return each widget's data/SQL/errors), 'code_export' "
+                              "(best-effort copy into an item-based dashboard so the plain Dashboards page can "
+                              "show it too).")
     dashboard_id: Optional[int] = None
     name: Optional[str] = None
     item: Optional[dict[str, Any]] = Field(None, description='{"type":"chart","chart_id":N} or {"type":"kpi","dataset":...,"expr":"AVG(x)","label":...}')
     items: Optional[list[dict[str, Any]]] = None
     filter: Optional[dict[str, Any]] = None
+    slug: Optional[str] = Field(None, description="code_get/code_put/code_validate/code_render/code_export: the "
+                                  "code dashboard's slug (from code_list). Omit on code_put to create a new one "
+                                  "from `name`.")
+    text: Optional[str] = Field(None, description="semantic_put: the semantic layer YAML. code_put/code_validate: "
+                                  "the dashboard YAML.")
+    dataset: Optional[str] = Field(None, description="semantic_suggest: the dataset to propose a semantic model for.")
+    filters: Optional[dict[str, Any]] = Field(None, description="code_render/code_export: filter values keyed by "
+                                                "the dashboard's declared filter names (defaults are used for the rest).")
 
 
 class ModelTrainArgs(BaseModel):
@@ -349,7 +368,7 @@ def _run_chart(s: Services, a: ChartArgs) -> dict:
     return s.chart_create(a.dataset, a.kind, a.x, a.y, a.agg, a.color, a.filter, a.title, a.name, a.image, source="agent")
 
 
-def _run_dashboard(s: Services, a: DashboardArgs) -> dict:
+def _run_dashboard(s: Services, a: DashboardArgs) -> dict:  # noqa: C901 - one dispatcher keeps the 18-tool cap
     if a.action == "create":
         if not a.name:
             raise ValueError("create needs name")
@@ -362,6 +381,36 @@ def _run_dashboard(s: Services, a: DashboardArgs) -> dict:
         if not a.dashboard_id:
             raise ValueError("get needs dashboard_id")
         return s.dashboard_get(a.dashboard_id)
+    if a.action == "semantic_get":
+        return s.dac_semantic_get()
+    if a.action == "semantic_put":
+        if not a.text:
+            raise ValueError("semantic_put needs text")
+        return s.dac_semantic_put(a.text, source="agent")
+    if a.action == "semantic_suggest":
+        if not a.dataset:
+            raise ValueError("semantic_suggest needs dataset")
+        return s.dac_semantic_suggest(a.dataset, source="agent")
+    if a.action == "code_list":
+        return s.dac_list()
+    if a.action == "code_get":
+        if not a.slug:
+            raise ValueError("code_get needs slug")
+        return s.dac_get(a.slug)
+    if a.action == "code_put":
+        if not a.text:
+            raise ValueError("code_put needs text")
+        return s.dac_put(a.text, a.slug, source="agent")
+    if a.action == "code_validate":
+        return s.dac_validate(a.slug, a.text)
+    if a.action == "code_render":
+        if not a.slug:
+            raise ValueError("code_render needs slug")
+        return s.dac_render(a.slug, a.filters)
+    if a.action == "code_export":
+        if not a.slug:
+            raise ValueError("code_export needs slug")
+        return s.dac_export(a.slug, a.filters, source="agent")
     return s.dashboard_list()
 
 
@@ -499,8 +548,14 @@ TOOLS: list[Tool] = [
     Tool("data_chart", "Build and save a chart from a dataset (aggregated in SQL); image=true also returns a PNG (write).\n"
          "Sinónimos: crear gráfico, gráfica de barras, histograma, dispersión, mapa de calor.",
          ChartArgs, _ann(False, False, False), _run_chart),
-    Tool("data_dashboard", "Create a dashboard, add a chart/KPI item to it, or list/get dashboards (write on create/add).\n"
-         "Sinónimos: panel de control, cuadro de mando, dashboard.",
+    Tool("data_dashboard", "Create a dashboard, add a chart/KPI item to it, list/get dashboards (write on "
+         "create/add) — or work with dashboards as code: a semantic layer of named metrics/dimensions over a "
+         "dataset (semantic_get/semantic_put/semantic_suggest) and a YAML dashboard spec compiled against it "
+         "(code_list/code_get/code_put/code_validate/code_render/code_export). A failed code_put/code_validate "
+         "comes back with one issue per problem, each carrying a `hint` — fix the YAML and call again; "
+         "code_render never fails the whole dashboard, a broken widget just carries its own `error`.\n"
+         "Sinónimos: panel de control, cuadro de mando, dashboard, dashboards como código, capa semántica, "
+         "métricas y dimensiones, validar dashboard, renderizar dashboard, exportar dashboard.",
          DashboardArgs, _ann(False, False, False), _run_dashboard),
     Tool("data_model", "Train/tune/explain/evaluate/optimize a model, or list/compare the Lab registry (write on "
          "most actions).\nSinónimos: entrenar modelo, predecir, clasificación, regresión, importancia de variables, "

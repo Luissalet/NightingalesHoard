@@ -22,6 +22,10 @@ from typing import Any, Callable, Literal, Optional
 
 from . import __version__, backend, db
 from .config import Config
+from .dac import render as dac_render
+from .dac import semantic as dac_semantic
+from .dac import spec as dac_spec
+from .dac import store as dac_store
 from .lab import LabError
 from .lab import diagnostics as lab_diagnostics
 from .lab import drift as lab_drift
@@ -809,6 +813,82 @@ class Services:
     def dashboard_list(self) -> dict:
         return {"dashboards": [{"id": r["id"], "name": r["name"], "updated_at": r["updated_at"]}
                                  for r in self.meta.list_dashboards()]}
+
+    # ---- dashboards as code ----------------------------------------------------
+    def dac_semantic_get(self) -> dict:
+        doc = dac_semantic.load(self.config)
+        path = self.config.data_dir / "semantic.yaml"
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        return {"doc": doc, "text": text}
+
+    def dac_semantic_put(self, text: str, source: str = "ui") -> dict:
+        def do():
+            doc = dac_semantic.save(self.config, text)
+            issues = dac_semantic.validate(doc, self.engine)
+            n_err = sum(1 for i in issues if i["level"] == "error")
+            return {"doc": doc, "issues": issues, "_log_summary": f"semantic layer saved ({n_err} error(s))"}
+
+        return self._log("dac_semantic", source, None, {"chars": len(text or "")}, do)
+
+    def dac_semantic_validate(self, text: Optional[str] = None) -> dict:
+        doc = dac_semantic.parse(text) if text is not None else dac_semantic.load(self.config)
+        return {"issues": dac_semantic.validate(doc, self.engine)}
+
+    def dac_semantic_suggest(self, dataset_name: str, source: str = "ui") -> dict:
+        dataset_row = self._dataset_row(dataset_name)
+        prof = self.profile(dataset_row["name"])
+        doc = dac_semantic.suggest(dataset_row["name"], prof["columns"], prof["profile"], prof["row_count"])
+        return self._log("dac_semantic_suggest", source, dataset_row["name"], {},
+                          lambda: {"doc": doc, "_log_summary": f"suggested a semantic model for {dataset_row['name']!r}"})
+
+    def dac_list(self) -> dict:
+        return {"dashboards": dac_store.list_dashboards(self.config)}
+
+    def dac_get(self, slug: str) -> dict:
+        return dac_store.get(self.config, slug)
+
+    def dac_put(self, text: str, slug: Optional[str] = None, source: str = "ui") -> dict:
+        def do():
+            result = dac_store.put(self.config, text, slug)
+            issues = dac_spec.validate(result["doc"], dac_semantic.load(self.config))
+            n_err = sum(1 for i in issues if i["level"] == "error")
+            return {**result, "issues": issues, "_log_summary": f"dashboard {result['slug']!r} saved ({n_err} error(s))"}
+
+        return self._log("dac_dashboard", source, None, {"slug": slug}, do)
+
+    def dac_delete(self, slug: str, source: str = "ui") -> dict:
+        def do():
+            dac_store.delete(self.config, slug)
+            return {"ok": True, "_log_summary": f"deleted code dashboard {slug!r}"}
+
+        return self._log("dac_dashboard", source, None, {"slug": slug, "action": "delete"}, do)
+
+    def dac_rename(self, slug: str, name: str, source: str = "ui") -> dict:
+        return self._log("dac_dashboard", source, None, {"slug": slug, "action": "rename", "name": name},
+                          lambda: {**dac_store.rename(self.config, slug, name), "_log_summary": f"renamed to {name!r}"})
+
+    def dac_validate(self, slug: Optional[str] = None, text: Optional[str] = None) -> dict:
+        doc = dac_spec.parse(text) if text is not None else dac_store.get(self.config, slug)["doc"]
+        return {"issues": dac_spec.validate(doc, dac_semantic.load(self.config))}
+
+    def dac_render(self, slug: str, filters: Optional[dict] = None) -> dict:
+        doc = dac_store.get(self.config, slug)["doc"]
+        return dac_render.render(self, doc, filters or {})
+
+    def dac_history(self, slug: str) -> dict:
+        return {"slug": slug, "history": dac_store.history(self.config, slug)}
+
+    def dac_diff(self, slug: str, a: str, b: str) -> dict:
+        return dac_store.diff(self.config, slug, a, b)
+
+    def dac_export(self, slug: str, filters: Optional[dict] = None, source: str = "ui") -> dict:
+        doc = dac_store.get(self.config, slug)["doc"]
+        return self._log("dac_export", source, None, {"slug": slug},
+                          lambda: {**dac_store.export_to_items(self, doc, filters or {})})
+
+    def dac_import(self, dashboard_id: int, source: str = "ui") -> dict:
+        return self._log("dac_import", source, None, {"dashboard_id": dashboard_id},
+                          lambda: {**dac_store.import_from_items(self, dashboard_id), "_log_summary": "imported (best effort)"})
 
     # ---- models --------------------------------------------------------------
     WRITE_TO_CHOICES = ("new_dataset", "new_version", "none")
