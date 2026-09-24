@@ -51,6 +51,16 @@ def test_explain_row_index_out_of_range_raises():
         explain.explain_model(saved, df, row_index=10_000)
 
 
+def test_explain_missing_feature_column_raises_clear_lab_error():
+    # Explaining against a dataset missing one of the model's training
+    # feature columns used to fall through to a raw pandas KeyError
+    # instead of a clear LabError naming the missing column.
+    df = make_regression_df()
+    saved = _saved(df)
+    with pytest.raises(LabError, match="x2"):
+        explain.explain_model(saved, df.drop(columns=["x2"]))
+
+
 @pytest.mark.skipif(not explain.HAVE_SHAP, reason="shap not installed in this environment")
 def test_explain_shap_tree_explainer_on_tree_model():
     df = make_regression_df()

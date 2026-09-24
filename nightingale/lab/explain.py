@@ -131,6 +131,9 @@ def _permutation_explain(saved: SavedModel, X: pd.DataFrame, sample_size: int, r
 def explain_model(saved: SavedModel, df: pd.DataFrame, sample_size: int = 200, row_index: Optional[int] = None,
                    seed: int = 42) -> dict:
     """Global feature importance + (optionally) a single row's explanation."""
+    missing_features = [c for c in saved.features if c not in df.columns]
+    if missing_features:
+        raise LabError(f"dataset is missing feature column(s) the model was trained on: {missing_features}")
     work = df[saved.features].copy()
     X, _ = prep_features(work, saved.features)
     X = X.reindex(columns=saved.X_columns, fill_value=0)
