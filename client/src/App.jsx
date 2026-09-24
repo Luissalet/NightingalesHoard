@@ -8,6 +8,7 @@ import DatasetsPage from "./pages/DatasetsPage.jsx";
 import QualityPage from "./pages/QualityPage.jsx";
 import ChartsPage from "./pages/ChartsPage.jsx";
 import DashboardsPage from "./pages/DashboardsPage.jsx";
+import DashboardCodePage from "./pages/DashboardCodePage.jsx";
 import ModelsPage from "./pages/ModelsPage.jsx";
 import LogPage from "./pages/LogPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
@@ -19,6 +20,7 @@ const PAGES = [
   { path: "quality", labelKey: "nav_quality", icon: "M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z", component: QualityPage },
   { path: "charts", labelKey: "nav_charts", icon: "M4 20V10m5 10V4m5 16v-8m5 8V7", component: ChartsPage },
   { path: "dashboards", labelKey: "nav_dashboards", icon: "M4 4h7v7H4zM13 4h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z", component: DashboardsPage },
+  { path: "dashboards-code", labelKey: "nav_dashboards_code", icon: "M8 4l-5 8 5 8M16 4l5 8-5 8M13 3l-2 18", component: DashboardCodePage, hidden: true },
   { path: "models", labelKey: "nav_models", icon: "M12 2v6m0 8v6m10-10h-6M8 12H2m14.95-7.05l-4.24 4.24M9.3 14.7l-4.24 4.24m0-13.9l4.24 4.24m5.4 5.4l4.25 4.25", component: ModelsPage },
   { path: "lab", labelKey: "nav_lab", icon: "M9 3v6.5L4.5 18a1.8 1.8 0 001.6 2.6h11.8a1.8 1.8 0 001.6-2.6L15 9.5V3M9 3h6M8.5 15h7", component: LabPage },
   { path: "log", labelKey: "nav_log", icon: "M8 4h13M8 12h13M8 20h13M3 4h.01M3 12h.01M3 20h.01", component: LogPage },
@@ -109,7 +111,7 @@ export default function App() {
             </div>
           </div>
           <nav aria-label="Sections" className="flex gap-1 overflow-x-auto px-3 pb-2 md:flex-col md:px-3">
-            {PAGES.map((p) => (
+            {PAGES.filter((p) => !p.hidden).map((p) => (
               <a key={p.path} href={`#/${p.path}`} className="nav-link shrink-0" aria-current={p.path === page.path ? "page" : undefined}>
                 <Icon d={p.icon} />
                 {t(p.labelKey)}
