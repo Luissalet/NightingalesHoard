@@ -149,12 +149,78 @@ def capped_json(value: Any) -> str:
     return json.dumps({"truncated": True, "preview": text[: MAX_LOG_JSON - 200]}, ensure_ascii=False)
 
 
+class _Rows:
+    """A statement's result, fetched while the connection lock was held.
+
+    A cursor fetched after the lock is released shares the connection with
+    whatever another request thread is executing, which is exactly the race
+    that raised ``sqlite3.InterfaceError: bad parameter or other API misuse``
+    when the browser loaded a dataset's recipe, lineage and profile at once.
+    """
+
+    __slots__ = ("_rows", "lastrowid", "rowcount", "description")
+
+    def __init__(self, cursor: sqlite3.Cursor):
+        self._rows = cursor.fetchall()
+        self.lastrowid = cursor.lastrowid
+        self.rowcount = cursor.rowcount
+        self.description = cursor.description
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _SerializedConnection:
+    """One sqlite connection shared by the request threads, one statement at
+    a time. Reads used to go straight to the shared connection while only
+    writes took the lock."""
+
+    def __init__(self, conn: sqlite3.Connection, lock: "threading.RLock"):
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, sql: str, params: Any = ()) -> _Rows:
+        with self._lock:
+            return _Rows(self._conn.execute(sql, params))
+
+    def executemany(self, sql: str, seq: Any) -> _Rows:
+        with self._lock:
+            return _Rows(self._conn.executemany(sql, seq))
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            self._conn.executescript(script)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def rollback(self) -> None:
+        with self._lock:
+            self._conn.rollback()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
 class Meta:
     """Thin, lock-protected wrapper around the metadata database."""
 
     def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
-        self._lock = threading.Lock()
+        # Re-entrant: the write methods hold it across several statements
+        # and every statement takes it again.
+        self._lock = threading.RLock()
+        self.conn = _SerializedConnection(conn, self._lock)
 
     def close(self) -> None:
         self.conn.close()
