@@ -153,3 +153,33 @@ def test_pareto_front_directions_length_must_match():
     saved, df = _saved_gp_on_known_max()
     with pytest.raises(LabError):
         optimize.pareto_front([saved, saved], df, ["maximize"])
+
+
+def test_predict_with_std_surrogate_gp_is_seeded(monkeypatch):
+    """`_predict_with_std`'s fallback GP surrogate must be seeded from the
+    caller's `seed`: with n_restarts_optimizer=1 sklearn still draws an extra
+    hyperparameter restart from its own RNG, which defaults to the unseeded
+    global numpy state when `random_state` isn't passed -- so two `optimize()`
+    calls with the same seed could silently converge the surrogate to
+    different kernel hyperparameters (and so different reported uncertainty)
+    even though every other input was identical."""
+    import sklearn.gaussian_process as gp_module
+
+    captured = {}
+    real_init = gp_module.GaussianProcessRegressor.__init__
+
+    def _spy_init(self, **kwargs):
+        captured["random_state"] = kwargs.get("random_state")
+        real_init(self, **kwargs)
+
+    monkeypatch.setattr(gp_module.GaussianProcessRegressor, "__init__", _spy_init)
+
+    df = pd.DataFrame({"x1": np.linspace(0, 10, 60), "x2": np.linspace(-5, 5, 60)})
+    df["y"] = df["x1"] * 2 - df["x2"]
+    result = registry.train_model(df, "y", ["x1", "x2"], "regression", "random_forest", seed=0)
+    saved = registry.SavedModel(model=result["_model"], encoders=result["_encoders"],
+                                 label_encoder=result["_label_encoder"], X_columns=result["_X_columns"],
+                                 features=result["features"], target="y", task="regression", backend="random_forest")
+
+    optimize._predict_with_std(saved, df[["x1", "x2"]], seed=123)
+    assert captured["random_state"] == 123

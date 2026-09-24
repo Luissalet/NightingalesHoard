@@ -127,7 +127,13 @@ def _predict_with_std(saved: SavedModel, rows: pd.DataFrame, seed: int = 0) -> t
         fit_idx = np.random.RandomState(seed).choice(len(Xs), _MAX_SURROGATE_FIT_ROWS, replace=False)
     else:
         fit_idx = np.arange(len(Xs))
-    surrogate = GaussianProcessRegressor(kernel=RBF() + WhiteKernel(), normalize_y=True, n_restarts_optimizer=1)
+    # `random_state` matters here even with n_restarts_optimizer=1: sklearn's
+    # extra restart draws its starting hyperparameters from an unseeded
+    # global RNG when this is left at its default `None`, so two calls with
+    # the same `seed` could still converge the kernel fit to a different
+    # local optimum and return different uncertainty estimates.
+    surrogate = GaussianProcessRegressor(kernel=RBF() + WhiteKernel(), normalize_y=True, n_restarts_optimizer=1,
+                                          random_state=seed)
     surrogate.fit(Xs[fit_idx], y[fit_idx])
     mu, std = surrogate.predict(Xs, return_std=True)
     return np.asarray(mu, dtype=float), np.asarray(std, dtype=float)
