@@ -100,6 +100,7 @@ export default function DashboardsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-semibold">{t("dashboards_title")}</h1>
+        <a href="#/dashboards-code" className="btn btn-sm" data-testid="dashboards-code-tab">{t("dashboards_code_tab")}</a>
         {dashboards.length > 0 && (
           <select className="field" style={{ width: "auto" }} value={active || ""} onChange={(e) => setActive(Number(e.target.value))}>
             {dashboards.map((d) => (

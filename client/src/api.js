@@ -62,6 +62,26 @@ export const api = {
   dashboardGet: (id) => get(`/api/dashboards/${id}`),
   dashboardAddItem: (id, item) => post(`/api/dashboards/${id}/items`, { item }),
 
+  dac: {
+    semanticGet: () => get("/api/dac/semantic"),
+    semanticPut: (text) => request("PUT", "/api/dac/semantic", { body: { text } }),
+    semanticValidate: (text) => post("/api/dac/semantic/validate", { text }),
+    semanticSuggest: (dataset) => get("/api/dac/semantic/suggest", { dataset }),
+
+    list: () => get("/api/dac/dashboards"),
+    create: (text) => post("/api/dac/dashboards", { text }),
+    get: (slug) => get(`/api/dac/dashboards/${encodeURIComponent(slug)}`),
+    put: (slug, text) => request("PUT", `/api/dac/dashboards/${encodeURIComponent(slug)}`, { body: { text } }),
+    delete: (slug) => del(`/api/dac/dashboards/${encodeURIComponent(slug)}`),
+    rename: (slug, name) => post(`/api/dac/dashboards/${encodeURIComponent(slug)}/rename`, { name }),
+    validate: (slug, text) => post(`/api/dac/dashboards/${encodeURIComponent(slug)}/validate`, text !== undefined ? { text } : {}),
+    render: (slug, filters) => post(`/api/dac/dashboards/${encodeURIComponent(slug)}/render`, { filters: filters || {} }),
+    history: (slug) => get(`/api/dac/dashboards/${encodeURIComponent(slug)}/history`),
+    diff: (slug, a, b) => get(`/api/dac/dashboards/${encodeURIComponent(slug)}/diff`, { a, b }),
+    export: (slug, filters) => post(`/api/dac/dashboards/${encodeURIComponent(slug)}/export`, { filters: filters || {} }),
+    importFromItems: (dashboardId) => post("/api/dac/dashboards/import", { dashboard_id: dashboardId }),
+  },
+
   modelTrain: (body) => post("/api/models/train", body),
   modelCluster: (body) => post("/api/models/cluster", body),
   modelPca: (body) => post("/api/models/pca", body),
