@@ -511,9 +511,9 @@ def _run_ask(s: Services, a: AskArgs):
 
 
 TOOLS: list[Tool] = [
-    Tool("data_ingest", "Load a file/folder/URL/pasted text into the workbench as a new dataset (write); "
-         "action='delete' permanently removes a dataset and everything derived from it instead (write, "
-         "destructive).\nSinónimos: importar datos, cargar archivo, cargar csv, cargar datos, carga el csv, "
+    Tool("data_ingest", "Load a file, folder, URL or pasted text as a new dataset; or delete one. Cargar/borrar datos.\n"
+         "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
+         "(destructive; force=true skips the dependency warning).\nSinónimos: importar datos, cargar archivo, cargar csv, cargar datos, carga el csv, "
          "ingerir csv, subir excel, cargar excel, leer carpeta, importar url, load csv, import data, "
          "borrar dataset, eliminar tabla.",
          IngestArgs, _ann(False, True, False), _run_ingest),
@@ -542,13 +542,14 @@ TOOLS: list[Tool] = [
     Tool("data_query", "Run one read-only SQL SELECT over registered dataset views (DuckDB dialect).\n"
          "Sinónimos: consulta sql, ejecutar select, preguntar con sql.",
          QueryArgs, _ann(True), _run_query),
-    Tool("data_quality", "Define, run or report data-quality rules (not_null/unique/range/regex/row_count/"
-         "freshness/referential/custom_sql) (write on define/delete).\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
+    Tool("data_quality", "Define, run or report data-quality rules on a dataset. Reglas de calidad, validar datos.\n"
+         "Rule kinds: not_null/unique/range/regex/row_count/freshness/referential/custom_sql (write on define/delete).\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
          QualityArgs, _ann(False, False, False), _run_quality),
     Tool("data_chart", "Build and save a chart from a dataset (aggregated in SQL); image=true also returns a PNG (write).\n"
          "Sinónimos: crear gráfico, gráfica de barras, histograma, dispersión, mapa de calor.",
          ChartArgs, _ann(False, False, False), _run_chart),
-    Tool("data_dashboard", "Create a dashboard, add a chart/KPI item to it, list/get dashboards (write on "
+    Tool("data_dashboard", "Dashboards: create, add charts/KPIs, list; or dashboards as code (YAML + metrics). Panel.\n"
+         "Create a dashboard, add a chart/KPI item to it, list/get dashboards (write on "
          "create/add) — or work with dashboards as code: a semantic layer of named metrics/dimensions over a "
          "dataset (semantic_get/semantic_put/semantic_suggest) and a YAML dashboard spec compiled against it "
          "(code_list/code_get/code_put/code_validate/code_render/code_export). A failed code_put/code_validate "
@@ -565,7 +566,8 @@ TOOLS: list[Tool] = [
     Tool("data_cluster", "K-means clustering with an elbow/silhouette scan; writes cluster labels back (write).\n"
          "Sinónimos: agrupar datos, clustering, segmentación, k-means.",
          ClusterArgs, _ann(False, False, False), _run_cluster),
-    Tool("data_forecast", "Time-series forecast with a confidence interval (write). Resamples onto a regular "
+    Tool("data_forecast", "Time-series forecast with a confidence interval. Pronóstico, previsión, serie temporal.\n"
+         "Writes the forecast. Resamples onto a regular "
          "calendar grain first (freq: auto/day/week/month/quarter — auto picks by span/density so gappy, "
          "irregular daily data aggregates to a coarser series that Holt-Winters/ETS can actually fit), and "
          "prefers Holt-Winters/ETS whenever statsmodels is available and the resampled series is long enough, "
@@ -579,8 +581,8 @@ TOOLS: list[Tool] = [
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
-    Tool("data_ask", "Ask a question in plain language; a shared model writes one SQL query, shown before running "
-         "(needs a resolved language model).\nSinónimos: pregunta a mis datos, ask my data, analiza esto por mí.",
+    Tool("data_ask", "Ask your data a question in plain language; one SQL query, shown. Pregunta a mis datos.\n"
+         "A shared language model writes one SQL query, shown before running (needs a resolved language model).\nSinónimos: pregunta a mis datos, ask my data, analiza esto por mí.",
          AskArgs, _ann(True), _run_ask),
 ]
 
