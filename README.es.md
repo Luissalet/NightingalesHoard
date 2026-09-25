@@ -148,14 +148,14 @@ nombre de un conjunto de datos (`data_list` primero), y que cite el id del regis
 venv/bin/python -m pytest -q     # Windows: venv\Scripts\python -m pytest -q
 ```
 
-127 pruebas que cubren el motor del banco de trabajo (cada vía de ingesta, cada paso de
+Las pruebas cubren el motor del banco de trabajo (cada vía de ingesta, cada paso de
 transformación, versionado y deshacer/rehacer/reproducción), reglas de calidad, gráficos y paneles,
 modelos (incluida la exclusión de columnas de tipo identificador, la corrección de previsión con
-marcas de tiempo duplicadas, y la salida por defecto a un conjunto de datos nuevo frente a la opción
-`write_to="new_version"` que conserva los tipos), la eliminación de conjuntos de datos (comprobación
-de dependencias, cascada, forzado), la API HTTP, las herramientas del agente a través de
-`/api/agent/call`, la protección de peticiones, los puntos finales de la PWA, y una prueba de
-extremo a extremo en subproceso a través del puente MCP por stdio.
+marcas de tiempo duplicadas, y que tanto la salida por defecto a un conjunto de datos nuevo como la
+opción `write_to="new_version"` conservan el tipo exacto de cada columna copiada), la eliminación de
+conjuntos de datos (comprobación de dependencias, cascada, forzado), la API HTTP, las herramientas
+del agente a través de `/api/agent/call`, la protección de peticiones, los puntos finales de la PWA,
+y una prueba de extremo a extremo en subproceso a través del puente MCP por stdio.
 
 ## Licencia
 

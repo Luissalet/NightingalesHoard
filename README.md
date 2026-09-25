@@ -140,12 +140,13 @@ cite the analysis-log id (`N-000123`) when reporting a result back.
 venv/bin/python -m pytest -q     # Windows: venv\Scripts\python -m pytest -q
 ```
 
-127 tests covering the workbench engine (every ingestion path, every transform step, versioning and
+Tests cover the workbench engine (every ingestion path, every transform step, versioning and
 undo/redo/replay), quality rules, charts and dashboards, models (including the id-like-column
-exclusion, the duplicate-timestamp forecasting fix, the default new-dataset output vs. the
-type-preserving `write_to="new_version"` opt-in), dataset deletion (dependents check, cascade,
-force), the HTTP API, agent tools through `/api/agent/call`, the request guard, the PWA endpoints,
-and a subprocess end-to-end test through the MCP stdio bridge.
+exclusion, the duplicate-timestamp forecasting fix, and that both the default new-dataset output
+and the `write_to="new_version"` opt-in preserve every copied column's exact type), dataset
+deletion (dependents check, cascade, force), the HTTP API, agent tools through `/api/agent/call`,
+the request guard, the PWA endpoints, and a subprocess end-to-end test through the MCP stdio
+bridge.
 
 ## License
 

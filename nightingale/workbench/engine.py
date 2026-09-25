@@ -238,6 +238,39 @@ class Engine:
             columns = [{"name": r[0], "type": r[1]} for r in self._conn.execute(f"DESCRIBE {q(new_table)}").fetchall()]
             return int(row_count), columns
 
+    def select_columns_with_extra(self, prev_table: str, new_table: str, columns: list[str], extra) -> tuple[int, list[dict]]:
+        """Like `append_columns`, but keep only `columns` from `prev_table`
+        (not all of it), straight from DuckDB so their exact types are
+        preserved — never round-tripped through pandas. Used for
+        `write_to="new_dataset"` side outputs (a model's key/input columns
+        plus its prediction/label columns): only the new columns (`extra`)
+        come from pandas. Rows are matched to `extra` by position; if
+        `extra` has fewer rows than `prev_table` (e.g. the model ran on a
+        capped sample), the join naturally keeps just that many rows, in
+        the same order `to_dataframe` would have returned them in. When
+        `columns` is empty, a generated `_row_index` (0-based) stands in for
+        a natural key so the output can still be matched back to the source."""
+        with self._lock:
+            self._conn.register("__extra_in", extra)
+            try:
+                for stmt in (f"DROP TABLE IF EXISTS {q(new_table)}", f"DROP VIEW IF EXISTS {q(new_table)}"):
+                    try:
+                        self._conn.execute(stmt)
+                    except duckdb.Error:
+                        pass
+                select_cols = ", ".join(f"p.{q(c)}" for c in columns) if columns else "p.__rn - 1 AS _row_index"
+                self._conn.execute(
+                    f"CREATE TABLE {q(new_table)} AS "
+                    f"SELECT {select_cols}, x.* EXCLUDE (__rn) FROM "
+                    f"(SELECT *, row_number() OVER () AS __rn FROM {q(prev_table)}) p JOIN "
+                    f"(SELECT *, row_number() OVER () AS __rn FROM __extra_in) x USING (__rn)"
+                )
+            finally:
+                self._conn.unregister("__extra_in")
+            row_count = self._conn.execute(f"SELECT COUNT(*) FROM {q(new_table)}").fetchone()[0]
+            columns_out = [{"name": r[0], "type": r[1]} for r in self._conn.execute(f"DESCRIBE {q(new_table)}").fetchall()]
+            return int(row_count), columns_out
+
     def set_view(self, view_name: str, table_name: str) -> None:
         """Point the friendly view name (the dataset's slug) at its current version's table,
         so `data_query`/quality/ask can address a dataset by name instead of an internal id."""

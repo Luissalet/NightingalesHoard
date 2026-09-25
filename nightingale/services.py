@@ -935,17 +935,18 @@ class Services:
             self.meta.set_current_version(dataset_row["id"], new_version)
             self._refresh_view(self.meta.get_dataset_by_id(dataset_row["id"]))
             return {"write_to": "new_version", "dataset": dataset_row["name"], "version": new_version}
-        # default: a separate dataset, source untouched
+        # default: a separate dataset, source untouched. The carried source
+        # columns are selected straight from the source table in DuckDB (not
+        # from the in-memory `df`), so they keep their exact type (a DATE
+        # stays a DATE, a DECIMAL stays a DECIMAL) instead of being re-typed
+        # by a round trip through pandas -- only the new columns in `extra`
+        # (the model's own output) come from pandas.
         carried = [c for c in dict.fromkeys([*key_cols, *inputs]) if c in df.columns]
-        out_df = df[carried].copy() if carried else pd.DataFrame(index=range(len(df)))
-        if not carried:
-            out_df.insert(0, "_row_index", range(len(df)))
-        for col_name, values in extra.items():
-            out_df[col_name] = values
+        extra_df = pd.DataFrame(extra)
         out_name = slugify_name(f"{dataset_row['name']}__{suffix}_{model_id}")
         out_id = self.meta.add_dataset(out_name, None)
         out_table = f"ds_{out_id}_v0"
-        row_count, columns = self.engine.materialize_from_dataframe(out_table, out_df)
+        row_count, columns = self.engine.select_columns_with_extra(v["table_name"], out_table, carried, extra_df)
         self.meta.add_version(out_id, 0, None, op, {"model_id": model_id, "source_dataset": dataset_row["name"]},
                                 f"({op})", out_table, row_count, columns)
         self.meta.set_current_version(out_id, 0)
