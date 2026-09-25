@@ -7,7 +7,7 @@ import { formatNumber } from "../../format.js";
 import { SectionCard, ColumnSelect, StatTile } from "./labShared.jsx";
 import {
   scatterSpec, histogramSpec, qqSpec, barSpec, lineSpec, fitBarSpec, learningCurveSpec,
-  confusionMatrixSpec, calibrationSpec,
+  confusionMatrixSpec, calibrationSpec, rocCurveSpec,
 } from "./vegaSpecs.js";
 
 export default function LabDiagnose({ datasets }) {
@@ -147,6 +147,30 @@ function RegressionResult({ result, lang, t }) {
   );
 }
 
+function RocCurveCard({ roc, lang, t }) {
+  if (!roc) return null;
+  if (roc.note) {
+    return (
+      <SectionCard title={t("lab_diagnose_roc")}>
+        <div className="help">{roc.note}</div>
+      </SectionCard>
+    );
+  }
+  const curves = roc.points
+    ? [{ series: roc.positive_class, points: roc.points }]
+    : (roc.one_vs_rest || []).map((c) => ({
+        series: `${c.class}${typeof c.auc === "number" ? ` (AUC ${formatNumber(c.auc, lang, { maximumFractionDigits: 3 })})` : ""}`,
+        points: c.points,
+      }));
+  if (curves.length === 0) return null;
+  return (
+    <SectionCard title={t("lab_diagnose_roc")} testId="lab-diagnose-roc">
+      {roc.one_vs_rest && <div className="help">{t("lab_diagnose_roc_multiclass_note")}</div>}
+      <VegaChart spec={rocCurveSpec(curves)} height={300} />
+    </SectionCard>
+  );
+}
+
 function ClassificationResult({ result, lang, t }) {
   const cm = result.metrics.confusion_matrix;
   const fit = result.fit_diagnosis || {};
@@ -156,7 +180,6 @@ function ClassificationResult({ result, lang, t }) {
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {Object.entries(result.metrics || {}).map(([k, v]) => (typeof v === "number" ? <StatTile key={k} label={k} value={formatNumber(v, lang, { maximumFractionDigits: 4 })} /> : null))}
         </div>
-        {typeof result.metrics.roc_auc === "number" && <div className="help">{t("lab_diagnose_roc")}: {t("lab_diagnose_roc_note")}</div>}
       </SectionCard>
 
       {cm && (
@@ -164,6 +187,8 @@ function ClassificationResult({ result, lang, t }) {
           <VegaChart spec={confusionMatrixSpec(cm.labels, cm.matrix)} height={Math.max(220, cm.labels.length * 46)} />
         </SectionCard>
       )}
+
+      <RocCurveCard roc={result.roc_curve} lang={lang} t={t} />
 
       {result.calibration && (
         <SectionCard title={t("lab_diagnose_calibration")}>

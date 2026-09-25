@@ -248,8 +248,8 @@ export const dict = {
     lab_diagnose_fit_holdout: "Holdout",
     lab_diagnose_learning_curve: "Learning curve",
     lab_diagnose_confusion_matrix: "Confusion matrix",
-    lab_diagnose_roc: "ROC",
-    lab_diagnose_roc_note: "shown as the AUC score above; the diagnostics endpoint doesn't return per-threshold points to plot a curve",
+    lab_diagnose_roc: "ROC curve",
+    lab_diagnose_roc_multiclass_note: "one curve per class, one-vs-rest",
     lab_diagnose_calibration: "Calibration",
     lab_diagnose_none: "Train a model in the Models tab first.",
 
@@ -555,8 +555,8 @@ export const dict = {
     lab_diagnose_fit_holdout: "Retención",
     lab_diagnose_learning_curve: "Curva de aprendizaje",
     lab_diagnose_confusion_matrix: "Matriz de confusión",
-    lab_diagnose_roc: "ROC",
-    lab_diagnose_roc_note: "se muestra como la puntuación AUC de arriba; el endpoint de diagnóstico no devuelve puntos por umbral para trazar una curva",
+    lab_diagnose_roc: "Curva ROC",
+    lab_diagnose_roc_multiclass_note: "una curva por clase, uno contra el resto",
     lab_diagnose_calibration: "Calibración",
     lab_diagnose_none: "Entrena un modelo en la pestaña Modelos primero.",
 

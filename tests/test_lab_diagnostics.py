@@ -31,6 +31,15 @@ def make_classification_df(n=300, seed=1):
                           "date": pd.date_range("2023-01-01", periods=n, freq="D")})
 
 
+def make_multiclass_df(n=300, seed=2):
+    rng = np.random.default_rng(seed)
+    x1 = rng.normal(0, 1, n)
+    x2 = rng.normal(0, 1, n)
+    score = x1 + x2
+    label = np.where(score > 0.5, "high", np.where(score < -0.5, "low", "mid"))
+    return pd.DataFrame({"x1": x1, "x2": x2, "label": label})
+
+
 def _saved_regression():
     df = make_regression_df()
     result = registry.train_model(df, "y", ["x1", "x2"], "regression", "random_forest", seed=0)
@@ -39,8 +48,8 @@ def _saved_regression():
                                 features=result["features"], target="y", task="regression", backend="random_forest"), df
 
 
-def _saved_classification():
-    df = make_classification_df()
+def _saved_classification(n=300):
+    df = make_classification_df(n=n)
     result = registry.train_model(df, "label", ["x1", "x2"], "classification", "logistic", seed=0)
     return registry.SavedModel(model=result["_model"], encoders=result["_encoders"],
                                 label_encoder=result["_label_encoder"], X_columns=result["_X_columns"],
@@ -86,6 +95,47 @@ def test_evaluate_classification_metrics_and_confusion():
     assert result["metrics"]["accuracy"] > 0.6
     assert result["metrics"]["confusion_matrix"]["matrix"]
     assert "roc_auc" in result["metrics"]
+
+
+def test_evaluate_classification_binary_roc_curve():
+    saved, df = _saved_classification()
+    result = diagnostics.evaluate_model(saved, df)
+    roc = result["roc_curve"]
+    assert roc["positive_class"] in ("yes", "no")
+    points = roc["points"]
+    assert len(points) <= 100
+    assert points[0]["fpr"] == pytest.approx(0.0)
+    assert points[-1]["fpr"] == pytest.approx(1.0)
+    assert points[-1]["tpr"] == pytest.approx(1.0)
+    for p in points:
+        assert 0.0 <= p["fpr"] <= 1.0
+        assert 0.0 <= p["tpr"] <= 1.0
+
+
+def test_evaluate_classification_multiclass_roc_curve_one_vs_rest():
+    df = make_multiclass_df()
+    result = registry.train_model(df, "label", ["x1", "x2"], "classification", "logistic", seed=0)
+    saved = registry.SavedModel(model=result["_model"], encoders=result["_encoders"],
+                                 label_encoder=result["_label_encoder"], X_columns=result["_X_columns"],
+                                 features=result["features"], target="label", task="classification",
+                                 backend="logistic")
+    out = diagnostics.evaluate_model(saved, df)
+    assert out["metrics"]["roc_auc"] is not None
+    curves = out["roc_curve"]["one_vs_rest"]
+    assert {c["class"] for c in curves} == {"high", "low", "mid"}
+    for c in curves:
+        assert 0.0 <= c["auc"] <= 1.0
+        assert len(c["points"]) <= 100
+        assert c["points"][-1]["fpr"] == pytest.approx(1.0)
+        assert c["points"][-1]["tpr"] == pytest.approx(1.0)
+
+
+def test_evaluate_classification_roc_curve_downsampled_to_100_points():
+    # A large evaluation set produces many more raw threshold points than
+    # the cap; the curve payload must stay bounded regardless.
+    saved, df = _saved_classification(n=2000)
+    result = diagnostics.evaluate_model(saved, df)
+    assert len(result["roc_curve"]["points"]) <= 100
 
 
 def test_evaluate_classification_calibration_and_error_by_group():

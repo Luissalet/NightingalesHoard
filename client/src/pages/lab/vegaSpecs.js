@@ -163,6 +163,33 @@ export function calibrationSpec(meanPredicted, fractionPositive) {
   return scatterSpec(rows, "x", "y", { identityLine: true, xTitle: "mean predicted probability", yTitle: "observed fraction positive" });
 }
 
+/** ROC curve(s): `curves` = [{series, points: [{fpr, tpr}]}], plus the
+ * diagonal no-skill reference line. One series for a binary classifier,
+ * one per class (one-vs-rest) for a multiclass one. */
+export function rocCurveSpec(curves) {
+  const rows = [];
+  curves.forEach((c) => {
+    c.points.forEach((p) => rows.push({ x: p.fpr, y: p.tpr, series: c.series }));
+  });
+  const spec = base(rows, 300);
+  spec.layer = [
+    {
+      mark: { type: "line", tooltip: true },
+      encoding: {
+        x: { field: "x", type: "quantitative", title: "false positive rate", scale: { domain: [0, 1] } },
+        y: { field: "y", type: "quantitative", title: "true positive rate", scale: { domain: [0, 1] } },
+        color: curves.length > 1 ? { field: "series", type: "nominal", legend: { title: null } } : { value: ACCENT },
+      },
+    },
+    {
+      data: { values: [{ v: 0 }, { v: 1 }] },
+      mark: { type: "line", strokeDash: [4, 3], color: "#9c8790" },
+      encoding: { x: { field: "v", type: "quantitative" }, y: { field: "v", type: "quantitative" } },
+    },
+  ];
+  return spec;
+}
+
 /** Confusion matrix as a labeled heatmap. */
 export function confusionMatrixSpec(labels, matrix) {
   const values = [];
