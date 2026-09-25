@@ -316,6 +316,8 @@ Request: `{"dataset": "sales", "model_id": 7, "eval_dataset": null, "optimize": 
 
 Response: `{"path": "/abs/path/to/data/exports/lab_report_sales_1234567.pdf", "log_id": "N-000050"}`
 
+Through MCP (`data_model`, action `report`) `dataset` can be left out when `model_id` is given: the report then covers the dataset the model was trained on.
+
 ## 3. Visual pipeline (node editor)
 
 ### `GET /api/lab/datasets/{name}/pipeline`
