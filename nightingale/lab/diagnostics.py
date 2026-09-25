@@ -21,6 +21,7 @@ from sklearn.metrics import (
     r2_score,
     recall_score,
     roc_auc_score,
+    roc_curve,
 )
 from sklearn.model_selection import learning_curve
 
@@ -32,12 +33,25 @@ __all__ = ["evaluate_model"]
 _MAX_POINTS = 500  # cap payload size for predicted-vs-actual / residual point clouds
 
 
+_MAX_ROC_POINTS = 100  # cap ROC curve payload size
+
+
 def _py(v: Any) -> Any:
     if isinstance(v, (np.floating,)):
-        return None if np.isnan(v) else round(float(v), 6)
+        # sklearn's roc_curve prepends an infinite threshold; NaN/inf don't
+        # survive JSON round-tripping cleanly, so both come back as None.
+        return None if (np.isnan(v) or np.isinf(v)) else round(float(v), 6)
     if isinstance(v, (np.integer,)):
         return int(v)
     return v
+
+
+def _roc_points(fpr: np.ndarray, tpr: np.ndarray, thresholds: np.ndarray, max_points: int = _MAX_ROC_POINTS) -> list[dict]:
+    """Downsample an ROC curve to at most `max_points` points, always keeping
+    the first and last (the curve's endpoints at (0,0) and (1,1))."""
+    n = len(fpr)
+    idx = np.linspace(0, n - 1, num=min(max_points, n), dtype=int) if n > max_points else np.arange(n)
+    return [{"fpr": _py(fpr[i]), "tpr": _py(tpr[i]), "threshold": _py(thresholds[i])} for i in idx]
 
 
 def _prepare_xy(saved: SavedModel, df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
@@ -142,6 +156,7 @@ def _classification_diagnostics(saved: SavedModel, X: pd.DataFrame, y: np.ndarra
             proba = saved.model.predict_proba(X)
         except Exception:  # noqa: BLE001
             proba = None
+    roc_curve_out: Optional[dict] = None
     if proba is not None:
         try:
             # Branch on how many classes the model was actually trained on
@@ -156,8 +171,44 @@ def _classification_diagnostics(saved: SavedModel, X: pd.DataFrame, y: np.ndarra
                 metrics["roc_auc"] = _py(roc_auc_score(y, proba, multi_class="ovr", average="macro"))
         except Exception:  # noqa: BLE001
             pass
+        # ROC curve points, computed from the model's own class order
+        # (proba's columns), independent of whether roc_auc succeeded above.
+        try:
+            model_classes = np.asarray(saved.model.classes_)
+
+            def _class_name(encoded: Any) -> str:
+                if saved.label_encoder is not None:
+                    return str(saved.label_encoder.classes_[int(encoded)])
+                return str(encoded)
+
+            if proba.shape[1] == 2:
+                fpr, tpr, thr = roc_curve(y, proba[:, 1], pos_label=model_classes[1])
+                roc_curve_out = {
+                    "positive_class": _class_name(model_classes[1]),
+                    "points": _roc_points(fpr, tpr, thr),
+                }
+            else:
+                curves = []
+                for i, cls in enumerate(model_classes):
+                    y_bin = (y == cls).astype(int)
+                    if len(np.unique(y_bin)) < 2:
+                        continue  # this class never appears (or is universal) in the eval slice
+                    fpr, tpr, thr = roc_curve(y_bin, proba[:, i])
+                    try:
+                        auc_i = _py(roc_auc_score(y_bin, proba[:, i]))
+                    except Exception:  # noqa: BLE001
+                        auc_i = None
+                    curves.append({"class": _class_name(cls), "auc": auc_i, "points": _roc_points(fpr, tpr, thr)})
+                if curves:
+                    roc_curve_out = {"one_vs_rest": curves}
+                else:
+                    roc_curve_out = {"note": "no class had both positive and negative examples in this evaluation slice"}
+        except Exception:  # noqa: BLE001
+            roc_curve_out = None
 
     out: dict[str, Any] = {"metrics": metrics}
+    if roc_curve_out is not None:
+        out["roc_curve"] = roc_curve_out
     if group_col:
         if group_col not in work.columns:
             raise LabError(f"unknown group_col: {group_col}")
