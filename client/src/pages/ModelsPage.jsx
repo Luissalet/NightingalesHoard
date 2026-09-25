@@ -46,6 +46,7 @@ export default function ModelsPage() {
   const [valueCol, setValueCol] = useState("");
   const [horizon, setHorizon] = useState(12);
   const [freq, setFreq] = useState("auto");
+  const [writeTo, setWriteTo] = useState("new_dataset");
   const [result, setResult] = useState(null);
   const [models, setModels] = useState([]);
   const [error, setError] = useState(null);
@@ -54,6 +55,13 @@ export default function ModelsPage() {
   useEffect(() => {
     if (!active && datasets.length > 0) setActive(datasets[0].name);
   }, [datasets, active]);
+
+  useEffect(() => {
+    // forecast doesn't support "new_version" (there's no natural row-for-row
+    // join back onto the source), so drop back to the default if it was set
+    // on another tab before switching here.
+    if (tab === "forecast" && writeTo === "new_version") setWriteTo("new_dataset");
+  }, [tab, writeTo]);
 
   const loadModels = async () => {
     try {
@@ -78,15 +86,15 @@ export default function ModelsPage() {
     try {
       let r;
       if (tab === "supervised") {
-        r = await api.modelTrain({ dataset: active, target, features: features.length ? features : undefined, algorithm: algorithm || undefined });
+        r = await api.modelTrain({ dataset: active, target, features: features.length ? features : undefined, algorithm: algorithm || undefined, write_to: writeTo });
       } else if (tab === "clustering") {
-        r = await api.modelCluster({ dataset: active, features, k: k ? Number(k) : undefined });
+        r = await api.modelCluster({ dataset: active, features, k: k ? Number(k) : undefined, write_to: writeTo });
       } else if (tab === "pca") {
         r = await api.modelPca({ dataset: active, features });
       } else if (tab === "anomaly") {
-        r = await api.modelAnomaly({ dataset: active, features, contamination: Number(contamination) });
+        r = await api.modelAnomaly({ dataset: active, features, contamination: Number(contamination), write_to: writeTo });
       } else {
-        r = await api.modelForecast({ dataset: active, date_col: dateCol, value_col: valueCol, horizon: Number(horizon), freq });
+        r = await api.modelForecast({ dataset: active, date_col: dateCol, value_col: valueCol, horizon: Number(horizon), freq, write_to: writeTo });
       }
       setResult(r);
       notify(t("common_train"));
@@ -187,6 +195,23 @@ export default function ModelsPage() {
                 <option value="quarter">quarter</option>
               </select>
               <div className="help">auto picks a grain from how far the dates span and how densely they fill it.</div>
+            </div>
+          </div>
+        )}
+        {tab !== "pca" && (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <div>
+              <label className="label">Write results to</label>
+              <select className="field" value={writeTo} onChange={(e) => setWriteTo(e.target.value)} data-testid="model-write-to">
+                <option value="new_dataset">New dataset</option>
+                {tab !== "forecast" && <option value="new_version">New version of source dataset</option>}
+                <option value="none">Don't save (just show the result)</option>
+              </select>
+              <div className="help">
+                {writeTo === "new_version"
+                  ? "Writes onto the source dataset as a new version, adding the result columns to it — nothing else about the source changes."
+                  : "New dataset creates a separate dataset with the source columns plus the result columns."}
+              </div>
             </div>
           </div>
         )}
