@@ -83,6 +83,10 @@ The full bundle: correlation, null patterns, outliers, encoding suggestions, qua
   }
 }
 ```
+`score` only reaches 100 when every component is exactly 1.0 (no nulls, no duplicate rows, no
+placeholder-looking values, no IQR outliers, no constant columns) — the weighted sum is capped at
+99 whenever any single component falls short, even a lightly-weighted one like `outliers`, so a
+dataset that isn't actually perfect can't round up to a perfect-looking 100.
 
 ### `GET /api/lab/datasets/{name}/quality-score`
 
@@ -236,7 +240,7 @@ Classification swaps `metrics` for `{accuracy, f1, precision, recall, roc_auc, c
 and (binary only) adds `calibration: {mean_predicted: [...], fraction_positive: [...]}`. When the
 model exposes `predict_proba`, it also adds a `roc_curve`: for a binary classifier,
 `{"positive_class": "yes", "points": [{"fpr": 0.0, "tpr": 0.0, "threshold": 1.9}, "..."]}`
-(downsampled to at most 100 points); for multiclass, one-vs-rest curves per class instead â€”
+(downsampled to at most 100 points); for multiclass, one-vs-rest curves per class instead —
 `{"one_vs_rest": [{"class": "north", "auc": 0.88, "points": ["..."]}, "..."]}`. If an evaluation
 slice leaves some class with no positive or no negative examples, that class's curve is skipped
 (or `roc_curve` becomes `{"note": "..."}` when this happens for every class).
