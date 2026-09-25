@@ -65,6 +65,40 @@ def test_model_train_new_version_preserves_types(services, tmp_path):
     assert "predicted_target" in after
 
 
+def test_model_train_new_dataset_preserves_types(services, tmp_path):
+    # The default write_to="new_dataset" path used to copy the carried
+    # source columns through pandas (df[carried].copy()) before writing the
+    # side dataset, which re-typed them the same way the old new_version
+    # path used to: DATE -> TIMESTAMP, DECIMAL -> DOUBLE. It must build the
+    # side dataset from the source table in DuckDB instead, keeping every
+    # copied column's exact type -- only the new prediction column comes
+    # from pandas.
+    df = pd.DataFrame({
+        "fecha": pd.date_range("2024-01-01", periods=40, freq="D").date,  # unique -> carried as a key column
+        "importe": [round(x, 2) for x in np.random.default_rng(1).uniform(10, 1000, 40)],
+        "target": np.random.default_rng(1).normal(0, 1, 40),
+    })
+    path = tmp_path / "sales2.csv"
+    df.to_csv(path, index=False)
+    services.ingest_file(str(path), "sales2")
+    services.transform_apply("sales2", "cast", {"column": "fecha", "to": "date"})
+    services.transform_apply("sales2", "cast", {"column": "importe", "to": "decimal"})
+    before = {c["name"]: c["type"] for c in services.dataset_summary(services._dataset_row("sales2"))["columns"]}
+    assert before["fecha"] == "DATE"
+    assert before["importe"].startswith("DECIMAL")
+
+    result = services.model_train("sales2", "target", ["importe"], seed=0, write_to="new_dataset")
+    assert result["write_to"] == "new_dataset"
+    after = {c["name"]: c["type"] for c in services.preview(result["dataset"], limit=1)["columns"]}
+    assert "fecha" in after, "the id-like DATE column should have been carried as a key column"
+    assert after["fecha"] == before["fecha"], "DATE must not become TIMESTAMP"
+    assert after["importe"] == before["importe"], "DECIMAL must not become DOUBLE"
+    assert "predicted_target" in after
+    # source dataset itself is untouched
+    source_after = {c["name"]: c["type"] for c in services.dataset_summary(services._dataset_row("sales2"))["columns"]}
+    assert source_after == before
+
+
 def test_model_train_write_to_none(services, numeric_ds):
     before = services.list_datasets()["datasets"]
     result = services.model_train(numeric_ds, "y", ["x1", "x2"], seed=0, write_to="none")
