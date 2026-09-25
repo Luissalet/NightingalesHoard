@@ -174,7 +174,8 @@ class ModelTrainArgs(BaseModel):
                                "importance. 'optimize': suggest input values that maximize/minimize the target. "
                                "'pareto': non-dominated front across 2-3 models' predictions. 'compare': curve/series "
                                "comparison (with x/y/group), or model_ids to compare saved models' metrics side by "
-                               "side. 'report': render a PDF report (profile + quality + model + diagnostics).")
+                               "side. 'report': render a PDF report (profile + quality + model + diagnostics); "
+                               "with only model_id it covers the dataset the model was trained on.")
     dataset: Optional[str] = None
     target: Optional[str] = None
     features: Optional[list[str]] = None
@@ -474,10 +475,14 @@ def _run_model(s: Services, a: ModelTrainArgs) -> dict:  # noqa: C901 - one disp
         return s.lab_pareto(a.model_ids, directions, p.get("bounds"), p.get("fixed"),
                              int(p.get("n_candidates", 1000)), a.seed, p.get("write_to", a.write_to), source="agent")
     if a.action == "report":
-        if not a.dataset:
-            raise ValueError("report needs dataset")
+        dataset = a.dataset
+        if not dataset and a.model_id:
+            # A report about a model defaults to the dataset it was trained on.
+            dataset = str(s.lab_registry_get(a.model_id)["dataset_id"])
+        if not dataset:
+            raise ValueError("report needs dataset or model_id")
         p = a.params
-        return s.lab_report(a.dataset, a.model_id, a.eval_dataset, bool(p.get("optimize")),
+        return s.lab_report(dataset, a.model_id, a.eval_dataset, bool(p.get("optimize")),
                              p.get("optimize_params"), source="agent")
     # action == "train"
     if not (a.dataset and a.target):

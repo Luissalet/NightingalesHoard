@@ -111,6 +111,10 @@ def test_data_model_full_lab_flow(services, reg_ds):
                                                        "model_id": model_id}))
     assert report["path"].endswith(".pdf")
 
+    # With only the model, the report uses the dataset the model was trained on.
+    by_model = run(call_tool(services, "data_model", {"action": "report", "model_id": model_id}))
+    assert by_model["path"].endswith(".pdf")
+
     deleted = run(call_tool(services, "data_model", {"action": "registry", "registry_action": "delete",
                                                         "model_id": model_id}))
     assert deleted["ok"] is True
