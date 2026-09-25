@@ -302,6 +302,12 @@ def quality_score(df: pd.DataFrame) -> dict:
     components = {"completeness": completeness, "uniqueness": uniqueness, "validity": validity,
                   "outliers": outliers_component, "constant_columns": constant_component}
     score = sum(components[k] * weights[k] for k in weights) * 100
+    # A component's small weight can hide a real imperfection under rounding
+    # (e.g. outliers=0.983 at weight 0.15 only costs ~0.25 points, which still
+    # rounds/displays as a perfect 100). A score of 100 must mean every
+    # component is actually perfect; otherwise cap the display at 99.
+    if any(v < 1.0 for v in components.values()):
+        score = min(score, 99.0)
     return {
         "score": round(score, 1),
         "weights": weights,

@@ -120,6 +120,28 @@ def test_quality_score_flags_constant_columns():
     assert result["components"]["constant_columns"] < 1.0
 
 
+def test_quality_score_only_shows_100_when_every_component_is_perfect():
+    # A clean dataset (no nulls, no dupes, no placeholders, no constant
+    # columns) can still have a handful of natural IQR outliers -- that
+    # component then sits just under 1.0 (e.g. 0.983). Because it's only
+    # weighted 0.15, the weighted score used to round to a display of 100
+    # even though the dataset was not, in fact, perfect on every axis.
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame({"a": rng.normal(0, 1, 500), "b": rng.normal(0, 1, 500),
+                        "c": rng.choice(["x", "y", "z"], 500)})
+    result = eda.quality_score(df)
+    assert result["components"]["outliers"] < 1.0
+    assert result["score"] < 100
+    assert round(result["score"]) <= 99  # must not display as a perfect 100
+
+
+def test_quality_score_is_100_only_when_every_component_is_1():
+    df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": ["x", "y", "z", "w", "v"]})
+    result = eda.quality_score(df)
+    assert all(v == 1.0 for v in result["components"].values())
+    assert result["score"] == 100.0
+
+
 def test_eda_profile_bundle_has_every_section():
     df = make_df()
     result = eda.eda_profile(df)
