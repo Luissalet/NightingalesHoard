@@ -57,7 +57,8 @@ tooltip) and a double-click away (copies it to the clipboard).
 - Ask an assistant to "look at this data and tell me what's off" — it can profile, run quality
   checks, and cite the exact `N-000123` log entry for whatever it found.
 - Keep a recipe against a source file that updates weekly: refresh re-applies every step to the new
-  data in one call.
+  data in one call, runs saved quality rules, and reports failing rules with sample rows. Pass
+  `check_quality=false` to skip the checks for a particular refresh.
 - Train a same-afternoon model on a dataset you just finished cleaning, without leaving the app or
   writing a notebook.
 

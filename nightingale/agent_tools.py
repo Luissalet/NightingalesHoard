@@ -59,6 +59,7 @@ class IngestArgs(BaseModel):
 
 class RefreshArgs(BaseModel):
     dataset: str = Field(..., description="Dataset name.")
+    check_quality: bool = Field(True, description="Run saved quality rules after refresh and include any failures. Set false to skip.")
 
 
 class DatasetArgs(BaseModel):
@@ -300,7 +301,7 @@ def _run_ingest(s: Services, a: IngestArgs) -> dict:
 
 
 def _run_refresh(s: Services, a: RefreshArgs) -> dict:
-    return s.refresh(a.dataset, source="agent")
+    return s.refresh(a.dataset, source="agent", check_quality=a.check_quality)
 
 
 def _run_list(s: Services, _: Empty) -> dict:
@@ -522,7 +523,7 @@ TOOLS: list[Tool] = [
          "ingerir csv, subir excel, cargar excel, leer carpeta, importar url, load csv, import data, "
          "borrar dataset, eliminar tabla.",
          IngestArgs, _ann(False, True, False), _run_ingest),
-    Tool("data_refresh", "Re-ingest a dataset's source and replay its recorded recipe on the fresh data (write).\n"
+    Tool("data_refresh", "Re-ingest a source, replay its recipe, and check saved quality rules (write).\n"
          "Sinónimos: actualizar datos, releer archivo, refrescar fuente.",
          RefreshArgs, _ann(False, False, False), _run_refresh),
     Tool("data_list", "List every registered dataset with row/column counts and last update time.\n"

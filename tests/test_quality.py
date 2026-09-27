@@ -1,6 +1,9 @@
 """Quality rules: define/run/report for every rule kind."""
 
+import asyncio
 import pytest
+
+from nightingale.agent_tools import call_tool
 
 
 @pytest.fixture
@@ -28,6 +31,50 @@ def test_unique(services, ds):
     services.quality_define(ds, "id unique", "unique", {"columns": ["id"]})
     result = services.quality_run(ds)
     assert result["results"][0]["passed"] is True
+
+
+def test_refresh_runs_saved_rules_and_reports_new_failures(services, tmp_path):
+    path = tmp_path / "weekly.csv"
+    path.write_text("id,status\n1,active\n2,active\n", encoding="utf-8")
+    services.ingest_file(str(path), "weekly")
+    rule = services.quality_define("weekly", "id unique", "unique", {"column": "id"})
+    path.write_text("id,status\n1,active\n1,active\n", encoding="utf-8")
+    refreshed = services.refresh("weekly", source="agent")
+    assert refreshed["row_count"] == 2
+    assert refreshed["quality"]["checked_rules"] == 1
+    failure = refreshed["quality"]["failed_rules"][0]
+    assert failure["rule_id"] == rule["rule_id"] and failure["failed"] == 2
+    assert failure["sample"]
+    latest = services.quality_report("weekly")["rules"][0]["last_result"]
+    assert latest["passed"] == 0 and latest["failed"] == 2
+    path.write_text("id,status\n1,active\n2,active\n", encoding="utf-8")
+    repaired = services.refresh("weekly")
+    assert repaired["quality"]["passed_rules"] == 1
+    assert repaired["quality"]["failed_rules"] == []
+    assert services.quality_report("weekly")["rules"][0]["last_result"]["passed"] == 1
+
+
+def test_agent_refresh_can_skip_quality_checks(services, tmp_path):
+    path = tmp_path / "weekly.csv"
+    path.write_text("id\n1\n", encoding="utf-8")
+    services.ingest_file(str(path), "weekly")
+    services.quality_define("weekly", "id unique", "unique", {"column": "id"})
+    path.write_text("id\n1\n1\n", encoding="utf-8")
+    result = asyncio.run(call_tool(services, "data_refresh", {"dataset": "weekly", "check_quality": False}))
+    assert result["row_count"] == 2 and "quality" not in result
+    assert services.quality_report("weekly")["rules"][0]["last_result"] is None
+
+
+def test_refresh_keeps_new_data_when_saved_rule_no_longer_applies(services, tmp_path):
+    path = tmp_path / "weekly.csv"
+    path.write_text("id\n1\n", encoding="utf-8")
+    services.ingest_file(str(path), "weekly")
+    services.quality_define("weekly", "id unique", "unique", {"column": "id"})
+    path.write_text("key\na\nb\n", encoding="utf-8")
+    result = services.refresh("weekly")
+    assert result["row_count"] == 2
+    assert result["quality"]["error"]
+    assert services.preview("weekly")["rows"][0]["key"] == "a"
 
 
 def test_accepted_values(services, ds):
