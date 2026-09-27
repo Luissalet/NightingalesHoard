@@ -395,7 +395,7 @@ class Services:
 
         return self._log("ingest", source, name, {"fmt": fmt, "chars": len(text)}, do)
 
-    def refresh(self, dataset_name: str, source: str = "ui") -> dict:
+    def refresh(self, dataset_name: str, source: str = "ui", check_quality: bool = True) -> dict:
         dataset_row = self._dataset_row(dataset_name)
         source_row = self.meta.get_source(dataset_row["source_id"]) if dataset_row["source_id"] else None
         if source_row is None:
@@ -468,9 +468,24 @@ class Services:
             summary = self.dataset_summary(row)
             summary["_log_summary"] = f"refreshed {dataset_row['name']!r}: {row_count} raw rows, replayed {replayed} step(s)"
             summary["steps_replayed"] = replayed
+            if check_quality and self.meta.list_rules(row["id"]):
+                try:
+                    quality = self.quality_run(row["name"], source=source)
+                    failures = [r for r in quality["results"] if not r["passed"]]
+                    summary["quality"] = {
+                        "version": quality["version"],
+                        "checked_rules": len(quality["results"]),
+                        "passed_rules": len(quality["results"]) - len(failures),
+                        "failed_rules": [{"rule_id": r["rule_id"], "name": r["name"], "kind": r["kind"],
+                                          "failed": r["failed"], "sample": r["sample"][:3],
+                                          "message": r["message"]} for r in failures],
+                    }
+                except (DataError, StepError, QualityError) as exc:
+                    summary["quality"] = {"error": str(exc), "checked_rules": 0}
             return summary
 
-        return self._log("refresh", source, dataset_row["name"], {}, lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
+        return self._log("refresh", source, dataset_row["name"], {"check_quality": check_quality},
+                         lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
 
     # ---- profile / preview / query ------------------------------------------
     def profile(self, dataset_name: str, version: Optional[int] = None) -> dict:

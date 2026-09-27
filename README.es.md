@@ -61,7 +61,8 @@ a un doble clic (lo copia al portapapeles).
 - Pide a un asistente que "mire estos datos y te diga qué falla" — puede perfilar, ejecutar
   comprobaciones de calidad, y citar la entrada exacta `N-000123` del registro de lo que encontró.
 - Mantén una receta contra un archivo de origen que se actualiza cada semana: actualizar vuelve a
-  aplicar todos los pasos a los datos nuevos en una sola llamada.
+  aplicar todos los pasos a los datos nuevos en una sola llamada, ejecuta las reglas de calidad
+  guardadas y muestra los fallos con ejemplos. Puedes omitir esa comprobación con `check_quality=false`.
 - Entrena un modelo la misma tarde sobre un conjunto de datos que acabas de terminar de limpiar,
   sin salir de la aplicación ni escribir un cuaderno.
 

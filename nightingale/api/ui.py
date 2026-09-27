@@ -77,8 +77,8 @@ def dataset_delete(request: Request, name: str, force: bool = False):
 
 @router.post("/datasets/{name}/refresh")
 @api_errors
-def refresh(request: Request, name: str):
-    return services(request).refresh(name)
+def refresh(request: Request, name: str, check_quality: bool = True):
+    return services(request).refresh(name, check_quality=check_quality)
 
 
 @router.get("/datasets/{name}/profile")

@@ -19,6 +19,7 @@ export default function DatasetsPage({ param }) {
   const [busy, setBusy] = useState(false);
   const [deleteDeps, setDeleteDeps] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [refreshQuality, setRefreshQuality] = useState(null);
 
   useEffect(() => {
     if (!active && datasets.length > 0) setActive(datasets[0].name);
@@ -63,6 +64,8 @@ export default function DatasetsPage({ param }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, dataset?.current_version]);
 
+  useEffect(() => setRefreshQuality(null), [active]);
+
   const onStepApplied = async () => {
     await refreshDatasets();
     notify("Step applied");
@@ -91,6 +94,22 @@ export default function DatasetsPage({ param }) {
       setError(e.message);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const refreshSource = async () => {
+    if (!active || busy) return;
+    setBusy(true);
+    setRefreshQuality(null);
+    try {
+      const result = await api.refresh(active);
+      await refreshDatasets();
+      setRefreshQuality(result.quality || null);
+      notify(lang === "es" ? "Datos actualizados" : "Data refreshed");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -126,7 +145,7 @@ export default function DatasetsPage({ param }) {
             {t("lab_open_in_lab")}
           </a>
         )}
-        <button type="button" className="btn btn-sm" onClick={() => api.refresh(active).then(() => { refreshDatasets(); notify("Refreshed"); }).catch((e) => setError(e.message))}
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={refreshSource}
                 data-testid="dataset-refresh-source">
           {t("common_refresh")}
         </button>
@@ -134,6 +153,24 @@ export default function DatasetsPage({ param }) {
           {t("datasets_delete")}
         </button>
       </div>
+
+      {refreshQuality && (
+        <section className="panel text-[13px]" aria-live="polite" data-testid="dataset-refresh-quality">
+          {refreshQuality.error ? (
+            <p>{lang === "es" ? "Datos actualizados; no se pudieron ejecutar las reglas:" : "Data refreshed; quality rules could not run:"} {refreshQuality.error}</p>
+          ) : (
+            <>
+              <strong>{lang === "es" ? "Calidad tras actualizar" : "Quality after refresh"}: {refreshQuality.passed_rules}/{refreshQuality.checked_rules}</strong>
+              {refreshQuality.failed_rules.map((rule) => (
+                <p key={rule.rule_id} className="mt-2">
+                  {rule.name}: {formatNumber(rule.failed, lang)} {lang === "es" ? "filas fallidas" : "failing rows"}
+                  {rule.sample?.[0] && <span className="help"> · {JSON.stringify(rule.sample[0])}</span>}
+                </p>
+              ))}
+            </>
+          )}
+        </section>
+      )}
 
       {deleteDeps && (
         <Modal title={t("datasets_delete_confirm_title")} onClose={() => setDeleteDeps(null)}>
