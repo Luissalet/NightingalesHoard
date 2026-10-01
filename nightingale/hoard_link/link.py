@@ -30,6 +30,7 @@ from .config import CapabilityConfig, LinkConfig
 from .errors import BackendError, Unavailable
 from .gpu import GpuMemory, gpu_free_mb
 from .lease import Lease, LeaseError, LeaseTimeout
+from . import reasoning as _reasoning
 from .types import CAPABILITIES, ChatResult, Resolution, Usage
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
@@ -758,8 +759,36 @@ class Link:
         except httpx.HTTPError as exc:
             raise BackendError(provider, 0, f"{type(exc).__name__} at {_host(url)}: {exc}"[:200]) from exc
         if resp.status_code >= 400:
-            raise BackendError(provider, resp.status_code, resp.text[:200])
+            err = BackendError(provider, resp.status_code, resp.text[:200])
+            err.body = resp.text[:4000]
+            raise err
         return resp
+
+    async def _post_chat(
+        self, provider: Optional[str], url: str, payload: dict[str, Any], level: Optional[str]
+    ) -> httpx.Response:
+        """A chat POST whose timeout grows with the reasoning asked for; a
+        server that refuses the reasoning fields (400 naming them) gets the
+        call once more without them, at its own default."""
+        try:
+            return await self._post_json(provider, url, payload, timeout=_reasoning.timeout_for(120.0, level))
+        except BackendError as exc:
+            body = getattr(exc, "body", None) or exc.body_excerpt
+            if level is None or not _reasoning.looks_like_reasoning_error(exc.status, body):
+                raise
+            # A chat template that only knows some effort names says which;
+            # ask again with the nearest one before giving the reasoning up.
+            if _reasoning.remap_effort(payload, _reasoning.supported_efforts(body)):
+                try:
+                    return await self._post_json(provider, url, payload,
+                                                 timeout=_reasoning.timeout_for(120.0, level))
+                except BackendError as exc2:
+                    body2 = getattr(exc2, "body", None) or exc2.body_excerpt
+                    if not _reasoning.looks_like_reasoning_error(exc2.status, body2):
+                        raise
+            if not _reasoning.strip(payload):
+                raise
+            return await self._post_json(provider, url, payload, timeout=_reasoning.timeout_for(120.0, level))
 
     @staticmethod
     def _json(provider: Optional[str], resp: httpx.Response) -> Any:
@@ -776,7 +805,19 @@ class Link:
         temperature: Optional[float] = None,
         capability: str = "llm",
         response_format: Optional[dict[str, Any]] = None,
+        effort: Optional[str] = None,
     ) -> ChatResult:
+        """One chat call to the resolved model.
+
+        `effort` (``off`` / ``low`` / ``medium`` / ``high`` / ``max``) is how
+        hard the model reasons before answering; None or ``auto`` uses the
+        capability's configured default (``HOARD_LLM_EFFORT``), and with none
+        configured the server's own. Quality work (a graded answer, a report,
+        a plan) should ask for ``max``; titles and tags ``off``. See
+        :mod:`hoard_link.reasoning`."""
+        level = _reasoning.normalize(effort)
+        if level is None and (effort is None or str(effort).strip().lower() in ("", "auto")):
+            level = _reasoning.normalize(self.config.capability(capability).effort)
         res = await self.resolve(capability)
         if not res.resolved:
             raise Unavailable(capability, res.details.get("reasons", [res.reason]))
@@ -787,11 +828,11 @@ class Link:
         async with self._load_lease(res):
             if res.api == "ollama":
                 text, extra_reasoning, raw = await self._chat_ollama(
-                    res, messages, images, max_tokens, temperature, response_format
+                    res, messages, images, max_tokens, temperature, response_format, level
                 )
             else:
                 text, extra_reasoning, raw = await self._chat_openai(
-                    res, messages, images, max_tokens, temperature, response_format
+                    res, messages, images, max_tokens, temperature, response_format, level
                 )
         elapsed_ms = (self._now() - start) * 1000.0
 
@@ -804,6 +845,7 @@ class Link:
             usage=usage,
             elapsed_ms=elapsed_ms,
             reasoning=_join_reasoning(extra_reasoning, think),
+            effort=level,
         )
 
     async def _chat_openai(
@@ -814,6 +856,7 @@ class Link:
         max_tokens: Optional[int],
         temperature: Optional[float],
         response_format: Optional[dict[str, Any]],
+        level: Optional[str] = None,
     ) -> tuple[str, Optional[str], dict]:
         msgs = [dict(m) for m in messages]
         if images:
@@ -848,8 +891,10 @@ class Link:
         if response_format is not None:
             payload["response_format"] = response_format
 
+        _reasoning.apply_openai(payload, level)
+
         endpoint = _openai_endpoint(res.url or "", "/chat/completions")
-        resp = await self._post_json(res.provider, endpoint, payload, timeout=120.0)
+        resp = await self._post_chat(res.provider, endpoint, payload, level)
         data = self._json(res.provider, resp)
         try:
             message = data["choices"][0]["message"]
@@ -871,6 +916,7 @@ class Link:
         max_tokens: Optional[int],
         temperature: Optional[float],
         response_format: Optional[dict[str, Any]] = None,
+        level: Optional[str] = None,
     ) -> tuple[str, Optional[str], dict]:
         msgs = [dict(m) for m in messages]
         if images:
@@ -897,8 +943,10 @@ class Link:
         if fmt is not None:
             payload["format"] = fmt
 
+        _reasoning.apply_ollama(payload, level)
+
         endpoint = _ollama_endpoint(res.url or "", "/api/chat")
-        resp = await self._post_json(res.provider, endpoint, payload, timeout=120.0)
+        resp = await self._post_chat(res.provider, endpoint, payload, level)
         data = self._json(res.provider, resp)
         message = data.get("message") if isinstance(data, dict) else None
         if not isinstance(message, dict):
