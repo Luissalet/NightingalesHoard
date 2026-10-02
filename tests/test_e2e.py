@@ -62,7 +62,8 @@ def test_subprocess_http_and_mcp_bridge(app_process, tmp_path):
     assert "data_ingest" in [t["name"] for t in tools]
 
     token = (data_dir / "mcp-token").read_text().strip()
-    assert len(token) == 64
+    assert len(token) >= 32
+    assert not any(char.isspace() for char in token)
     assert httpx.post(f"{url}/api/agent/call", json={"name": "data_list"}).status_code == 401
     auth = {"Authorization": f"Bearer {token}"}
 

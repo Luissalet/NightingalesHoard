@@ -153,3 +153,10 @@ bridge.
 ## License
 
 MIT — Luis María Salete Cuartero.
+
+
+## Shared services (HoardLink 0.8.1)
+
+URL imports use the shared Web client and the Hub catalogue bridge. Import and analysis behavior remains in the app.
+
+The vendored copy is maintained by HoardLink’s sync script. Windows validation and the family service contract are documented in HoardLink’s `docs/commons/windows-validation.md` and `docs/commons/services.md`.
