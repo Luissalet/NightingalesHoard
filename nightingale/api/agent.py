@@ -1,42 +1,34 @@
-"""/api/agent/* — the bridge used by mcp_server.py (Bearer token from <DATA_DIR>/mcp-token)."""
+"""/api/agent/* — the bridge used by mcp_server.py (Bearer token from <DATA_DIR>/mcp-token). The routes, the token check, the
+error envelope and the audit event are the shared agent router; this file only says how a call reaches the tools."""
 
 from __future__ import annotations
 
-import secrets
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import Request
+from fastapi.concurrency import run_in_threadpool
 
-from ..agent_tools import AGENT_INSTRUCTIONS, call_tool, tool_catalog
+from ..agent_tools import AGENT_INSTRUCTIONS, ASYNC_TOOLS, call_tool, call_tool_sync, tool_catalog
+from ..hoard_link.agentkit import AppError, make_agent_router
 from .deps import services
 
-router = APIRouter(prefix="/api/agent")
 
-
-class CallBody(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    arguments: dict[str, Any] | None = None
-
-
-@router.get("/tools")
-def tools():
-    return {"instructions": AGENT_INSTRUCTIONS, "tools": tool_catalog()}
-
-
-@router.post("/call")
-async def call(request: Request, body: CallBody):
+async def _call(name: str, arguments: dict[str, Any], request: Request) -> Any:
     svc = services(request)
-    header = request.headers.get("authorization", "")
-    given = header[7:].strip() if header.startswith("Bearer ") else ""
-    if not given or not secrets.compare_digest(given, svc.token):
-        raise HTTPException(401, "Invalid MCP token.")
     try:
-        return await call_tool(svc, body.name, body.arguments)
-    except KeyError as error:
-        raise HTTPException(404, str(error.args[0])) from error
-    except ValidationError as error:
-        issues = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'input'}: {e['msg']}" for e in error.errors())
-        raise HTTPException(400, issues) from error
-    except (ValueError, LookupError) as error:
-        raise HTTPException(400 if isinstance(error, ValueError) else 404, str(error)) from error
+        if name in ASYNC_TOOLS:
+            return await call_tool(svc, name, arguments)
+        return await run_in_threadpool(call_tool_sync, svc, name, arguments)  # blocking tools stay off the event loop
+    except KeyError:
+        raise
+    except LookupError as error:  # NotFoundError: a missing dataset, model, chart...
+        raise AppError("not_found", str(error)) from error
+
+
+router = make_agent_router(
+    tools_fn=tool_catalog,
+    call_fn=_call,
+    token_fn=lambda request: services(request).token,
+    instructions=AGENT_INSTRUCTIONS,
+    app_name="nightingale",
+)

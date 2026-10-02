@@ -19,6 +19,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import FuncFormatter
 
+from ..hoard_link.atomic import write_bytes_atomic
 from .engine import Engine, is_numeric_type, is_temporal_type, json_safe, q
 
 __all__ = ["ChartError", "CHART_KINDS", "build_chart_query", "render_png", "to_vega_lite"]
@@ -251,7 +252,7 @@ def render_png(spec: ChartSpec, data: dict, lang: str = "en", out_path=None) -> 
         plt.close(fig)
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(png_bytes)
+        write_bytes_atomic(out_path, png_bytes)
     return png_bytes
 
 

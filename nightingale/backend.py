@@ -8,7 +8,6 @@ model and keeps working with nothing resolved.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Any, Mapping, Optional
 import httpx
 
 from .hoard_link import Link, LinkConfig
+from .hoard_link.atomic import read_json, write_json_atomic
 
 __all__ = ["USED_CAPABILITIES", "load_link", "config_error", "save_config", "saved_overrides", "app_backends"]
 
@@ -31,13 +31,7 @@ def _backend_path(data_dir: Path) -> Path:
 
 
 def _read_raw(data_dir: Path) -> dict[str, Any]:
-    path = _backend_path(data_dir)
-    if not path.is_file():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8-sig"))
-    except ValueError:
-        return {}
+    raw = read_json(_backend_path(data_dir), {})
     return raw if isinstance(raw, dict) else {}
 
 
@@ -105,7 +99,7 @@ def save_config(data_dir: Path, *, faustus_url: Optional[str] = None, faustus_to
             raw["capabilities"] = caps
         else:
             raw.pop("capabilities", None)
-    _backend_path(data_dir).write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_json_atomic(_backend_path(data_dir), raw)  # a crash can no longer leave a half-written backend.json
 
 
 def saved_overrides(data_dir: Path) -> dict[str, Any]:

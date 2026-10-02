@@ -19,6 +19,7 @@ import yaml
 
 from . import semantic as semantic_mod
 from . import spec as spec_mod
+from ..hoard_link.atomic import replace_with_retry, write_text_atomic
 from ..workbench.engine import slugify_name
 
 __all__ = ["StoreError", "list_dashboards", "get", "put", "delete", "rename",
@@ -83,7 +84,7 @@ def get(config, slug: str) -> dict:
 def _snapshot(config, slug: str, text: str) -> None:
     hdir = _history_dir(config, slug)
     stamp = f"{int(time.time() * 1000)}"
-    (hdir / f"{stamp}.yaml").write_text(text, encoding="utf-8")
+    write_text_atomic(hdir / f"{stamp}.yaml", text)
     versions = sorted(hdir.glob("*.yaml"), key=lambda p: p.stat().st_mtime)
     for old in versions[:-MAX_HISTORY]:
         old.unlink(missing_ok=True)
@@ -96,7 +97,7 @@ def put(config, text: str, slug: Optional[str] = None) -> dict:
     path = _path(config, slug)
     if path.exists():
         _snapshot(config, slug, path.read_text(encoding="utf-8"))
-    path.write_text(text, encoding="utf-8")
+    write_text_atomic(path, text)
     return {"slug": slug, "name": doc.get("name", slug), "doc": doc}
 
 
@@ -113,10 +114,10 @@ def rename(config, slug: str, new_name: str) -> dict:
     doc["name"] = new_name
     new_slug = _unique_slug(config, slugify_name(new_name), exclude=slug)
     text = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
-    _path(config, new_slug).write_text(text, encoding="utf-8")
+    write_text_atomic(_path(config, new_slug), text)
     old_history = _dir(config) / "history" / slug
     if old_history.exists():
-        old_history.rename(_dir(config) / "history" / new_slug)
+        replace_with_retry(old_history, _dir(config) / "history" / new_slug)
     _path(config, slug).unlink()
     return {"slug": new_slug, "name": new_name, "doc": doc}
 
