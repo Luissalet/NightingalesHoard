@@ -7,12 +7,12 @@ hints, as required by the family contract. Every tool proxies straight to a
 
 from __future__ import annotations
 
-import inspect
-from dataclasses import dataclass
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from .hoard_link import agentkit
+from .hoard_link.agentkit import Empty, Tool, ann as _ann, cap_result
 from .services import Services
 
 AGENT_INSTRUCTIONS = (
@@ -25,15 +25,6 @@ AGENT_INSTRUCTIONS = (
     "dataset name: call data_list first if unsure. This app never reads files or the database directly outside "
     "these tools."
 )
-
-
-def _ann(read_only: bool, destructive: bool = False, idempotent: bool | None = None) -> dict[str, bool]:
-    return {"readOnlyHint": read_only, "destructiveHint": destructive,
-            "idempotentHint": read_only if idempotent is None else idempotent, "openWorldHint": False}
-
-
-class Empty(BaseModel):
-    pass
 
 
 class IngestArgs(BaseModel):
@@ -279,15 +270,6 @@ class LogArgs(BaseModel):
 class AskArgs(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     datasets: Optional[list[str]] = Field(None, description="Restrict to these datasets; default is every registered one.")
-
-
-@dataclass(frozen=True)
-class Tool:
-    name: str
-    description: str
-    input_model: type[BaseModel]
-    annotations: dict[str, bool]
-    run: Callable[[Services, Any], Any]
 
 
 def _run_ingest(s: Services, a: IngestArgs) -> dict:
@@ -612,21 +594,30 @@ TOOLS: list[Tool] = [
 TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
 assert len(TOOLS) <= 18, "keep the MCP surface at or under 18 tools"
 
+#: tools whose handler is a coroutine (they await the language model); every other one is plain blocking code
+ASYNC_TOOLS = frozenset({"data_ask"})
+
 
 def tool_catalog() -> list[dict]:
-    return [
-        {"name": t.name, "description": t.description, "annotations": t.annotations,
-         "inputSchema": t.input_model.model_json_schema(by_alias=True)}
-        for t in TOOLS
-    ]
+    return agentkit.tool_catalog(TOOLS)
+
+
+def call_tool_sync(services: Services, name: str, arguments: dict | None) -> Any:
+    """Run a blocking tool: validate the arguments, call it and cap the result for the assistant's context
+    (the shared kit). Raises ``UnknownTool`` (a ``KeyError``) for an unknown name and pydantic's ``ValidationError``
+    for bad arguments."""
+    if name in ASYNC_TOOLS:
+        raise ValueError(f"{name} is async: use call_tool")
+    return agentkit.call_tool(TOOLS, services, name, arguments)
 
 
 async def call_tool(services: Services, name: str, arguments: dict | None) -> Any:
-    tool = TOOLS_BY_NAME.get(name)
-    if tool is None:
-        raise KeyError(f"Unknown tool: {name}")
+    """Run any tool from async code (the blocking ones run in place; use ``call_tool_sync`` in a worker thread)."""
+    if name not in ASYNC_TOOLS:
+        return call_tool_sync(services, name, arguments)
+    tool = TOOLS_BY_NAME[name]
     args = tool.input_model.model_validate(arguments or {})
-    result = tool.run(services, args)
-    if inspect.isawaitable(result):
-        result = await result
-    return result
+    result = await tool.run(services, args)
+    if not isinstance(result, dict):
+        result = {"result": result}
+    return cap_result(result)

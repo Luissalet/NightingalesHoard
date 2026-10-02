@@ -36,6 +36,7 @@ from typing import Any, Optional
 import duckdb
 import yaml
 
+from ..hoard_link.atomic import write_text_atomic
 from ..sqlgate import SQLGateError, gate_sql
 from ..workbench.engine import Engine, q
 
@@ -100,7 +101,7 @@ def save(config, text: str) -> dict:
     doc = parse(text)
     path = config.data_dir / "semantic.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text if text.strip() else yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    write_text_atomic(path, text if text.strip() else yaml.safe_dump(doc, sort_keys=False, allow_unicode=True))
     return doc
 
 

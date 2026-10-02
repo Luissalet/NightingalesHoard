@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from nightingale.port import free_port
+from nightingale.hoard_link.net import free_port
 
 ROOT = Path(__file__).resolve().parent.parent
 

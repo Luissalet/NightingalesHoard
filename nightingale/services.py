@@ -15,12 +15,15 @@ import logging
 import secrets
 import sqlite3
 import threading
+import shutil
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
 from . import __version__, backend, db
+from .hoard_link import fam_web, tokens
+from .hoard_link import paths as hl_paths
+from .hoard_link.tokens import read_or_create_token
 from .config import Config
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
@@ -50,6 +53,10 @@ MAX_INGEST_TIMEOUT_S = 300
 MAX_MODEL_TIMEOUT_S = 180
 MAX_LAB_TIMEOUT_S = 240
 MAX_CHART_ROWS_FOR_DF = 1_000_000
+#: data folders a user may read from on purpose (the demo files, a file this app exported, a drop folder)
+OWN_DATA_FOLDERS = ("files", "exports", "inbox")
+MAX_URL_BYTES = 100 * 1024 * 1024  # the largest file a URL ingest or refresh downloads
+URL_TIMEOUT_S = 30
 
 
 def _json_loads(text) -> dict:
@@ -67,14 +74,17 @@ class NotFoundError(LookupError):
 
 
 def write_token(config: Config) -> str:
+    """The MCP token is persistent: created once, reused on every later start (the shared token file helper)."""
     config.data_dir.mkdir(parents=True, exist_ok=True)
-    token = secrets.token_hex(32)
-    config.token_path.write_text(token, encoding="utf-8")
+    return read_or_create_token(config.token_path)
+
+
+def write_url(config: Config) -> None:
+    """Tell the MCP bridge where the app listens (the ``url`` file next to the token)."""
     try:
-        config.token_path.chmod(0o600)
+        tokens.write_url(config.url_path, f"http://127.0.0.1:{config.port}")
     except OSError:
-        pass
-    return token
+        log.warning("could not write %s", config.url_path)
 
 
 class Services:
@@ -84,9 +94,11 @@ class Services:
         self.started_at = self.clock()
         config.data_dir.mkdir(parents=True, exist_ok=True)
         self.token = write_token(config)
+        write_url(config)
         self.meta = db.Meta(db.connect(config.data_dir))
         self.engine = Engine(config.duckdb_path)
         self.link = backend.load_link(config.data_dir)
+        self.web_fetcher = None  # a hoard_link.web.fetch.Fetcher for the local fallback of URL downloads (tests inject one)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="nightingale-work")
         self._dataset_locks: dict[int, threading.Lock] = {}
         self._dataset_locks_guard = threading.Lock()
@@ -297,11 +309,15 @@ class Services:
     def ingest_file(self, path: str, name: Optional[str] = None, options: Optional[dict] = None,
                      source: str = "ui") -> dict:
         options = dict(options or {})
-        p = Path(str(path).strip().strip('"')).expanduser()
+        p = Path(hl_paths.clean_user_path(path)).expanduser()  # pasted quotes of any kind ("Copy as path") are removed
         if not p.is_absolute():
             p = (self.config.data_dir / p).resolve()
         if not p.exists():
             raise DataError(f"path does not exist: {p}")
+        if p.is_file():
+            problem = hl_paths.unsafe_file(p, data_dir=self.config.data_dir, allow_data_subdir=OWN_DATA_FOLDERS, lang="en")
+            if problem:
+                raise DataError(problem)
         suffix = p.suffix.lower()
 
         def do():
@@ -348,11 +364,14 @@ class Services:
                           lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
 
     def ingest_folder(self, path: str, name: Optional[str] = None, glob: str = "*.csv", source: str = "ui") -> dict:
-        p = Path(str(path).strip()).expanduser()
+        p = Path(hl_paths.clean_user_path(path)).expanduser()
         if not p.is_absolute():
             p = (self.config.data_dir / p).resolve()
         if not p.is_dir():
             raise DataError(f"not a folder: {p}")
+        problem = hl_paths.unsafe_folder(p, data_dir=self.config.data_dir, allow_data_subdir=OWN_DATA_FOLDERS, lang="en")
+        if problem:
+            raise DataError(problem)
 
         def do():
             dataset_name = slugify_name(name or p.name)
@@ -365,6 +384,29 @@ class Services:
         return self._log("ingest", source, name, {"path": str(p), "glob": glob},
                           lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
 
+    def _download(self, url: str, dest: Path) -> None:
+        """Save what ``url`` serves at ``dest``: through the hub when it answers, else with the shared polite fetcher. Either way
+        private and loopback addresses are refused (also after a redirect), the download is capped at ``MAX_URL_BYTES`` and a
+        failure says why."""
+        if not url.startswith(("http://", "https://")):
+            raise DataError("only http(s) URLs are supported")
+        res = fam_web.fetch_or_local(url, local_fetcher=self.web_fetcher, accept="any", max_bytes=MAX_URL_BYTES,
+                                     respect_robots=False, timeout=URL_TIMEOUT_S)
+        if not res.get("ok"):
+            raise DataError(f"could not download {url}: {res.get('error') or 'unknown error'}")
+        if res.get("truncated"):
+            raise DataError(f"{url} is larger than {MAX_URL_BYTES // (1024 * 1024)} MB; download it and ingest the file instead")
+        body = res.get("body")
+        if body is None and res.get("body_omitted"):  # a body the hub does not inline: it saves it in a folder we chose
+            big = fam_web.fetch_file(url, dest_dir=str(dest.parent), max_bytes=MAX_URL_BYTES, timeout=120)
+            if not big.get("ok") or not big.get("path"):
+                raise DataError(f"could not download {url}: {big.get('error') or 'unknown error'}")
+            shutil.move(str(big["path"]), str(dest))
+            return
+        if body is None:
+            raise DataError(f"{url} returned no content")
+        dest.write_bytes(body)
+
     def ingest_url(self, url: str, name: Optional[str] = None, fmt: str = "csv", options: Optional[dict] = None,
                     source: str = "ui") -> dict:
         options = dict(options or {})
@@ -375,9 +417,8 @@ class Services:
             dataset_name = slugify_name(name or url.rsplit("/", 1)[-1].split("?")[0] or "url_dataset")
             suffix = ".json" if fmt == "json" else ".csv"
             tmp_path = self.engine.cache_dir / f"__url_{secrets.token_hex(6)}{suffix}"
-            with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 - explicit http(s)-only check above
-                tmp_path.write_bytes(resp.read())
             try:
+                self._download(url, tmp_path)
                 source_id = self.meta.add_source(dataset_name, f"url_{fmt}", url, options)
                 if fmt == "json":
                     result = self.engine.ingest_json(tmp_path, options)
@@ -513,9 +554,8 @@ class Services:
                 elif kind.startswith("url_"):
                     fmt = "json" if kind.endswith("json") else "csv"
                     tmp_path = self.engine.cache_dir / f"__refresh_{secrets.token_hex(6)}.{fmt}"
-                    with urllib.request.urlopen(path, timeout=30) as resp:  # noqa: S310
-                        tmp_path.write_bytes(resp.read())
                     try:
+                        self._download(path, tmp_path)
                         result = self.engine.ingest_json(tmp_path, options) if fmt == "json" \
                             else self.engine.ingest_delimited(tmp_path, options)
                     finally:
@@ -1217,7 +1257,7 @@ class Services:
                 raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
             filename = path or f"{dataset_row['name']}.{fmt_l}"
             out_path = (self.config.exports_dir / filename).resolve()
-            if self.config.exports_dir.resolve() not in out_path.parents and out_path != self.config.exports_dir:
+            if not hl_paths.is_inside(out_path, self.config.exports_dir):
                 raise DataError("export path must stay inside the app's exports folder")
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with self.engine.lock() as conn:
