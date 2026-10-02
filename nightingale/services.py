@@ -36,6 +36,7 @@ from .lab import pipeline as lab_pipeline
 from .lab import registry as lab_registry
 from .lab import report as lab_report_mod
 from .lab import tuning as lab_tuning
+from . import hoard_source
 from .workbench import ask as ask_engine
 from .workbench.charts import ChartSpec, render_png, run_chart, to_vega_lite
 from .workbench.engine import DataError, Engine, slugify_name
@@ -49,6 +50,16 @@ MAX_INGEST_TIMEOUT_S = 300
 MAX_MODEL_TIMEOUT_S = 180
 MAX_LAB_TIMEOUT_S = 240
 MAX_CHART_ROWS_FOR_DF = 1_000_000
+
+
+def _json_loads(text) -> dict:
+    import json
+
+    try:
+        value = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 class NotFoundError(LookupError):
@@ -395,6 +406,72 @@ class Services:
 
         return self._log("ingest", source, name, {"fmt": fmt, "chars": len(text)}, do)
 
+    def ingest_hoard(self, app: Optional[str] = None, tool: Optional[str] = None, args: Optional[dict] = None,
+                      list_path: Optional[str] = None, name: Optional[str] = None, preset: Optional[str] = None,
+                      options: Optional[dict] = None, source: str = "ui") -> dict:
+        """Ingest the records another app returns from one of its tools (called through the hub).
+
+        A dataset that already came from the same app and tool gets a NEW VERSION (op "ingest") on top of its
+        current one, so undo returns to the previous snapshot; any other taken name is refused, as for every ingest."""
+        spec = hoard_source.resolve_spec(preset, app, tool, args, list_path, options)
+        base = hoard_source.PRESETS.get(preset or "", {})
+        dataset_name = slugify_name(name or base.get("name") or f"{spec['app']}_{spec['tool']}")
+
+        def do():
+            fetched = hoard_source.fetch(spec)
+            rows = fetched["rows"]
+            if not rows:
+                raise DataError(f"{spec['app']}.{spec['tool']} returned no records")
+            tmp_path = self.engine.cache_dir / f"__hoard_{secrets.token_hex(6)}.ndjson"
+            import json as _json
+
+            tmp_path.write_text("\n".join(_json.dumps(r, ensure_ascii=False, default=str) for r in rows), encoding="utf-8")
+            try:
+                result = self.engine.ingest_json(tmp_path, {})
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            used = {**spec, "list_path": fetched["list_path"] or spec["list_path"]}
+            extra = {"from": f"hoard://{spec['app']}/{spec['tool']}", "list_path": fetched["list_path"], "pages": fetched["pages"],
+                     "truncated": fetched["truncated"], "unverified": bool(base) and not base.get("verified", True)}
+            existing = self.meta.get_dataset(dataset_name)
+            existing_source = self.meta.get_source(existing["source_id"]) if existing and existing["source_id"] else None
+            if existing is not None and existing_source is not None and existing_source["kind"] == "hoard":
+                old = _json_loads(existing_source["options_json"])
+                if (old.get("app"), old.get("tool")) == (spec["app"], spec["tool"]):
+                    return self._add_ingest_version(existing, result, used, extra)
+            source_id = self.meta.add_source(dataset_name, "hoard", f"hoard://{spec['app']}/{spec['tool']}", used)
+            return self._finish_ingest(dataset_name, source_id, result.select_sql, result.row_count, result.columns,
+                                        "ingest", used, extra, probe_table=result.table_name)
+
+        return self._log("ingest", source, dataset_name, {"hoard": {k: spec[k] for k in ("app", "tool", "args", "list_path")}},
+                          lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
+
+    def _add_ingest_version(self, dataset_row: sqlite3.Row, result, used: dict, extra: dict) -> dict:
+        """A re-run of a hoard ingest: the fresh records become the next version of the same dataset."""
+        with self._dataset_lock(dataset_row["id"]):
+            fresh = self.meta.get_dataset_by_id(dataset_row["id"])
+            if fresh is None:
+                self.engine.drop_table(result.table_name)
+                raise NotFoundError(f"dataset {dataset_row['name']!r} no longer exists")
+            current = self._version_row(fresh)
+            for dropped in self.meta.delete_versions_after(fresh["id"], current["version"]):
+                self.engine.drop_table(dropped["table_name"])
+            new_version = max(r["version"] for r in self.meta.list_versions(fresh["id"])) + 1
+            table = f"ds_{fresh['id']}_v{new_version}"
+            self.engine.rename_table(result.table_name, table)
+            self.meta.add_version(fresh["id"], new_version, current["version"], "ingest", used, result.select_sql, table,
+                                   result.row_count, result.columns)
+            self.meta.set_current_version(fresh["id"], new_version)
+            if fresh["source_id"]:
+                self.meta.touch_source(fresh["source_id"])
+            row = self.meta.get_dataset_by_id(fresh["id"])
+        self._refresh_view(row)
+        summary = self.dataset_summary(row)
+        summary.update(extra)
+        summary["new_version"] = new_version
+        summary["_log_summary"] = f"re-ingested {row['name']!r} from {extra['from']}: v{new_version}, {result.row_count} rows"
+        return summary
+
     def refresh(self, dataset_name: str, source: str = "ui", check_quality: bool = True) -> dict:
         dataset_row = self._dataset_row(dataset_name)
         source_row = self.meta.get_source(dataset_row["source_id"]) if dataset_row["source_id"] else None
@@ -422,6 +499,17 @@ class Services:
                     result = self.engine.ingest_parquet(p)
                 elif kind in ("json", "ndjson", "jsonl"):
                     result = self.engine.ingest_json(p, options)
+                elif kind == "hoard":
+                    fetched = hoard_source.fetch(hoard_source.resolve_spec(None, options.get("app"), options.get("tool"), options.get("args"),
+                                                                            options.get("list_path"), options))
+                    if not fetched["rows"]:
+                        raise DataError("the source app returned no records")
+                    tmp_path = self.engine.cache_dir / f"__refresh_{secrets.token_hex(6)}.ndjson"
+                    tmp_path.write_text("\n".join(_json.dumps(r, ensure_ascii=False, default=str) for r in fetched["rows"]), encoding="utf-8")
+                    try:
+                        result = self.engine.ingest_json(tmp_path, {})
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
                 elif kind.startswith("url_"):
                     fmt = "json" if kind.endswith("json") else "csv"
                     tmp_path = self.engine.cache_dir / f"__refresh_{secrets.token_hex(6)}.{fmt}"
