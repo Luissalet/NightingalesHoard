@@ -18,7 +18,12 @@ router = APIRouter(prefix="/api")
 # ---- sources / ingestion ----------------------------------------------------
 
 class IngestBody(BaseModel):
-    kind: str = Field("file", pattern="^(file|folder|url|paste)$")
+    kind: str = Field("file", pattern="^(file|folder|url|paste|hoard)$")
+    app: Optional[str] = None  # kind=hoard: the family app and its tool
+    tool: Optional[str] = None
+    args: Optional[dict[str, Any]] = None
+    list_path: Optional[str] = None
+    preset: Optional[str] = None
     path: Optional[str] = None
     url: Optional[str] = None
     text: Optional[str] = None
@@ -32,6 +37,8 @@ class IngestBody(BaseModel):
 @api_errors
 def ingest(request: Request, body: IngestBody):
     svc = services(request)
+    if body.kind == "hoard":
+        return svc.ingest_hoard(body.app, body.tool, body.args, body.list_path, body.name, body.preset, body.options)
     if body.kind == "file":
         if not body.path:
             raise ValueError("path is required")
@@ -47,6 +54,15 @@ def ingest(request: Request, body: IngestBody):
     if not (body.text and body.name):
         raise ValueError("text and name are required")
     return svc.ingest_text(body.text, body.name, body.fmt, body.options)
+
+
+@router.get("/sources/hoard-presets")
+@api_errors
+def hoard_presets(request: Request, lang: str = ""):
+    """Ready-made 'from the family' ingests (ledger transactions, shipments, screen time)."""
+    from .. import hoard_source
+
+    return {"presets": hoard_source.list_presets(lang)}
 
 
 @router.get("/sources")

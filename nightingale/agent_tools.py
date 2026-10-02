@@ -41,7 +41,10 @@ class IngestArgs(BaseModel):
         "ingest", description="'ingest' (default) loads a new dataset. 'delete' permanently removes an existing "
                                "one (its versions, quality rules, charts and models) — pass `name` as the dataset "
                                "to delete; other ingest-only fields are ignored.")
-    kind: Literal["file", "folder", "url", "paste"] = Field("file", description="What to ingest (action=ingest).")
+    kind: Literal["file", "folder", "url", "paste", "hoard"] = Field(
+        "file", description="What to ingest (action=ingest). 'hoard' = the records another Hoard app returns from one of "
+                             "its tools, called through the hub: give `preset` (ledger_transactions, phileas_shipments, "
+                             "argus_app_time [tool name unverified]) or `app` + `tool` (+ `args`, `list_path`).")
     path: Optional[str] = Field(None, description="Absolute path to a file or folder (kind=file/folder).")
     url: Optional[str] = Field(None, description="http(s) URL to a CSV/JSON resource (kind=url).")
     text: Optional[str] = Field(None, description="Pasted CSV/JSON text (kind=paste).")
@@ -50,9 +53,20 @@ class IngestArgs(BaseModel):
         "delete (required)."))
     fmt: Literal["csv", "json"] = Field("csv", description="Format for kind=url/paste.")
     glob: str = Field("*.csv", description="File pattern for kind=folder, e.g. '*.csv' or '*.parquet'.")
+    app: Optional[str] = Field(None, max_length=60, description="kind=hoard: the app id, e.g. 'ledger', 'phileas'.")
+    tool: Optional[str] = Field(None, max_length=100, description="kind=hoard: the tool of that app, e.g. 'list_entries'.")
+    args: Optional[dict[str, Any]] = Field(None, description="kind=hoard: arguments for that tool (a preset brings its own).")
+    list_path: Optional[str] = Field(None, max_length=200, description=(
+        "kind=hoard: where the list of records is in the answer, e.g. 'items' or 'data.rows'. Omitted: it is found "
+        "by itself. A path to an object of objects gives one row per key."))
+    preset: Optional[str] = Field(None, max_length=60, description=(
+        "kind=hoard: ledger_transactions (every entry, amounts in cents), phileas_shipments (delivered parcels with "
+        "transit_days), argus_app_time (screen time per app; unverified tool name). Re-running a hoard ingest of the "
+        "same dataset adds a new version (undo goes back); data_refresh rebuilds it and replays the recipe."))
     options: dict[str, Any] = Field(default_factory=dict, description=(
         "delimiter, header, encoding (utf-8/utf-16/latin-1), date_format, decimal_separator, thousands_separator, "
-        "sheet/sheets/skip_rows (Excel), tables (SQLite), flatten (JSON)."))
+        "sheet/sheets/skip_rows (Excel), tables (SQLite), flatten (JSON); kind=hoard: paginate {size, max_rows}, "
+        "max_rows, epoch_columns (suffix of columns holding epoch seconds), derive [{name, from, to}] (days between two epoch columns)."))
     force: bool = Field(False, description="action=delete only: delete even if charts/dashboards/models depend on "
                                              "this dataset (otherwise the call fails and lists them).")
 
@@ -281,6 +295,8 @@ def _run_ingest(s: Services, a: IngestArgs) -> dict:
         if not a.name:
             raise ValueError("name is required for action=delete")
         return s.dataset_delete(a.name, a.force, source="agent")
+    if a.kind == "hoard":
+        return s.ingest_hoard(a.app, a.tool, a.args, a.list_path, a.name, a.preset, a.options, source="agent")
     if a.kind == "file":
         if not a.path:
             raise ValueError("path is required for kind=file")
@@ -517,10 +533,11 @@ def _run_ask(s: Services, a: AskArgs):
 
 
 TOOLS: list[Tool] = [
-    Tool("data_ingest", "Load a file, folder, URL or pasted text as a new dataset; or delete one. Cargar/borrar datos.\n"
+    Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
          "(destructive; force=true skips the dependency warning).\nSinónimos: importar datos, cargar archivo, cargar csv, cargar datos, carga el csv, "
          "ingerir csv, subir excel, cargar excel, leer carpeta, importar url, load csv, import data, "
+         "datos de otra app, movimientos de Ledger, envíos de Phileas, tiempo de pantalla, desde la familia, "
          "borrar dataset, eliminar tabla.",
          IngestArgs, _ann(False, True, False), _run_ingest),
     Tool("data_refresh", "Re-ingest a source, replay its recipe, and check saved quality rules (write).\n"

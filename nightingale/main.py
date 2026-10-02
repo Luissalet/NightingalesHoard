@@ -15,6 +15,7 @@ from . import __version__
 from .api import ROUTERS
 from .config import Config
 from .guard import install_guard
+from .hoard_link import family
 from .services import Services
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -27,6 +28,7 @@ def create_app(config: Config | None = None, services: Services | None = None) -
     async def lifespan(app: FastAPI):
         svc = services or Services(config)
         app.state.services = svc
+        family.configure("nightingale", str(config.data_dir), token_file=str(config.token_path))  # calls to sibling apps through the hub
         logging.getLogger("nightingale").info("Nightingale's Hoard %s — data in %s", __version__, config.data_dir)
         try:
             yield

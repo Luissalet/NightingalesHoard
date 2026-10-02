@@ -4,10 +4,10 @@ import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import { displaySource } from "../format.js";
 
-const KINDS = ["file", "folder", "url", "paste"];
+const KINDS = ["file", "folder", "url", "paste", "hoard"];
 
 export default function SourcesPage() {
-  const { t, act } = useApp();
+  const { t, act, lang } = useApp();
   const [sources, setSources] = useState([]);
   const [kind, setKind] = useState("file");
   const [path, setPath] = useState("");
@@ -18,6 +18,12 @@ export default function SourcesPage() {
   const [fmt, setFmt] = useState("csv");
   const [optionsRaw, setOptionsRaw] = useState("");
   const [busy, setBusy] = useState(false);
+  const [presets, setPresets] = useState([]);
+  const [preset, setPreset] = useState("");
+  const [hoardApp, setHoardApp] = useState("");
+  const [hoardTool, setHoardTool] = useState("");
+  const [hoardArgs, setHoardArgs] = useState("");
+  const [listPath, setListPath] = useState("");
 
   const load = async () => {
     const { sources } = await api.sources();
@@ -26,6 +32,9 @@ export default function SourcesPage() {
   useEffect(() => {
     load();
   }, []);
+  useEffect(() => {
+    api.hoardPresets(lang).then((r) => setPresets(r.presets || [])).catch(() => setPresets([]));
+  }, [lang]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -39,6 +48,22 @@ export default function SourcesPage() {
       }
     }
     const body = { kind, name: name || undefined, options };
+    if (kind === "hoard") {
+      if (preset) body.preset = preset;
+      else {
+        body.app = hoardApp.trim();
+        body.tool = hoardTool.trim();
+        if (hoardArgs.trim()) {
+          try {
+            body.args = JSON.parse(hoardArgs);
+          } catch {
+            act(() => Promise.reject(new Error("Arguments must be valid JSON")));
+            return;
+          }
+        }
+        if (listPath.trim()) body.list_path = listPath.trim();
+      }
+    }
     if (kind === "file" || kind === "folder") body.path = path;
     if (kind === "folder") body.glob = glob;
     if (kind === "url") {
@@ -56,7 +81,10 @@ export default function SourcesPage() {
       setName("");
       setUrl("");
       setText("");
+      setPreset("");
       await load();
+    } catch {
+      /* the toast already shows the reason; the form keeps what was typed */
     } finally {
       setBusy(false);
     }
@@ -112,6 +140,55 @@ export default function SourcesPage() {
               <option value="csv">CSV</option>
               <option value="json">JSON</option>
             </select>
+          </div>
+        )}
+        {kind === "hoard" && (
+          <div className="flex flex-col gap-3" data-testid="hoard-source">
+            <p className="help">{t("sources_hoard_help")}</p>
+            <div role="radiogroup" aria-label={t("sources_hoard_preset")} className="flex flex-col gap-2">
+              {presets.map((p) => (
+                <label key={p.id} className="row" style={{ cursor: "pointer", alignItems: "flex-start" }}>
+                  <input type="radio" name="hoard-preset" value={p.id} checked={preset === p.id}
+                         onChange={() => setPreset(p.id)} />
+                  <span className="flex flex-col">
+                    <span className="font-medium">
+                      {p.title} <span className="chip">{p.app}.{p.tool}</span>
+                      {!p.verified && <span className="chip">{t("sources_hoard_unverified")}</span>}
+                    </span>
+                    <span className="help">{p.description}</span>
+                  </span>
+                </label>
+              ))}
+              <label className="row" style={{ cursor: "pointer" }}>
+                <input type="radio" name="hoard-preset" value="" checked={preset === ""} onChange={() => setPreset("")} />
+                <span className="font-medium">{t("sources_hoard_custom")}</span>
+              </label>
+            </div>
+            {preset === "" && (
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="label" htmlFor="src-hoard-app">{t("sources_hoard_app")}</label>
+                  <input id="src-hoard-app" className="field" value={hoardApp} onChange={(e) => setHoardApp(e.target.value)}
+                         placeholder="ledger" required />
+                </div>
+                <div>
+                  <label className="label" htmlFor="src-hoard-tool">{t("sources_hoard_tool")}</label>
+                  <input id="src-hoard-tool" className="field" value={hoardTool} onChange={(e) => setHoardTool(e.target.value)}
+                         placeholder="list_entries" required />
+                </div>
+                <div>
+                  <label className="label" htmlFor="src-hoard-args">{t("sources_hoard_args")}</label>
+                  <textarea id="src-hoard-args" className="field" rows={2} value={hoardArgs} onChange={(e) => setHoardArgs(e.target.value)}
+                            placeholder='{"limit": 200}' />
+                </div>
+                <div>
+                  <label className="label" htmlFor="src-hoard-list">{t("sources_hoard_list_path")}</label>
+                  <input id="src-hoard-list" className="field" value={listPath} onChange={(e) => setListPath(e.target.value)}
+                         placeholder="items" />
+                </div>
+              </div>
+            )}
+            <p className="help">{t("sources_hoard_rerun")}</p>
           </div>
         )}
         <div>

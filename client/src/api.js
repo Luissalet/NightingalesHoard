@@ -30,6 +30,7 @@ export const api = {
 
   sources: () => get("/api/sources"),
   ingest: (body) => post("/api/sources/ingest", body),
+  hoardPresets: (lang) => get("/api/sources/hoard-presets", { lang }),
 
   datasets: () => get("/api/datasets"),
   refresh: (name) => post(`/api/datasets/${encodeURIComponent(name)}/refresh`),
