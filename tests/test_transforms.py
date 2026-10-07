@@ -89,6 +89,87 @@ def test_replace_missing_pattern_error_is_clear_on_rest_and_mcp(client, sales):
     assert "replace requires parameter(s): pattern" in mcp.json()["error"]
 
 
+@pytest.mark.parametrize("transport", ["rest", "mcp"])
+@pytest.mark.parametrize("preview", [True, False], ids=["preview", "apply"])
+@pytest.mark.parametrize(
+    "op,bad_params,good_params,expected_values",
+    [
+        ("text", {"column": "name", "op": "title"},
+         {"column": "phrase", "op": "title"}, ["Lumiere", "Nightingale", "Lumiere"]),
+        ("group", {"group_by": ["name"], "aggregations": [
+            {"column": "row_id", "fn": "count", "alias": "n"}]},
+         {"group_by": ["phrase"], "aggregations": [
+             {"column": "row_id", "fn": "count", "alias": "n"}]}, None),
+    ],
+)
+def test_unknown_transform_columns_report_schema_and_allow_recovery(
+        client, tmp_path, transport, preview, op, bad_params, good_params, expected_values):
+    path = tmp_path / "column-feedback.csv"
+    path.write_text(
+        "row_id,phrase\n1,lumiere\n2,nightingale\n3,lumiere\n", encoding="utf-8")
+    client.services.ingest_file(str(path), "column_feedback")
+    dataset = client.services._dataset_row("column_feedback")
+    dataset_id = dataset["id"]
+    before_version = dataset["current_version"]
+    before_versions = client.services.meta.list_versions(dataset_id)
+    before_preview = client.services.preview("column_feedback", limit=10)
+    arguments = {"op": op, "params": bad_params, "preview": preview}
+
+    if transport == "rest":
+        response = client.post("/api/datasets/column_feedback/transform", json=arguments)
+    else:
+        response = client.post("/api/agent/call", headers={
+            "Authorization": f"Bearer {client.services.token}"}, json={
+                "name": "data_transform",
+                "arguments": {"dataset": "column_feedback", **arguments},
+            })
+
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert "name" in error
+    assert "available" in error
+    assert "row_id" in error and "phrase" in error
+    assert client.services._dataset_row("column_feedback")["current_version"] == before_version
+    assert client.services.meta.list_versions(dataset_id) == before_versions
+    after_preview = client.services.preview("column_feedback", limit=10)
+    assert {key: value for key, value in after_preview.items() if key != "elapsed_ms"} == {
+        key: value for key, value in before_preview.items() if key != "elapsed_ms"}
+
+    recovery_args = {"op": op, "params": good_params, "preview": False}
+    if transport == "rest":
+        recovered = client.post("/api/datasets/column_feedback/transform", json=recovery_args)
+    else:
+        recovered = client.post("/api/agent/call", headers={
+            "Authorization": f"Bearer {client.services.token}"}, json={
+                "name": "data_transform",
+                "arguments": {"dataset": "column_feedback", **recovery_args},
+            })
+    assert recovered.status_code == 200, recovered.text
+    assert client.services._dataset_row("column_feedback")["current_version"] == 1
+    if op == "text":
+        rows = client.services.preview("column_feedback", limit=10)["rows"]
+        assert [row["phrase"] for row in rows] == expected_values
+    else:
+        rows = client.services.preview("column_feedback", limit=10)["rows"]
+        assert {row["phrase"]: row["n"] for row in rows} == {
+            "lumiere": 2, "nightingale": 1}
+
+
+def test_scalar_and_group_column_errors_include_available_columns():
+    ctx = StepContext("prev", ["row_id", "phrase"], lambda _name: "other")
+    cases = [
+        ("text", {"column": "name", "op": "title"}, "unknown column: ['name']"),
+        ("group", {"group_by": ["name"], "aggregations": []}, "unknown group_by column(s): ['name']"),
+        ("group", {"group_by": [], "aggregations": [{"column": "name", "fn": "sum"}]},
+         "unknown aggregation column: ['name']"),
+    ]
+    for op, params, message in cases:
+        with pytest.raises(StepError) as exc:
+            build_step_sql(op, ctx, params)
+        assert message in str(exc.value)
+        assert "available: ['row_id', 'phrase']" in str(exc.value)
+
+
 def test_preview_does_not_create_a_version(services, sales):
     before = services.list_datasets()["datasets"][0]["current_version"]
     preview = services.transform_preview(sales, "filter", {"expr": "qty > 1"})

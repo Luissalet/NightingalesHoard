@@ -48,6 +48,11 @@ def _require(params: dict, key: str) -> Any:
     return params[key]
 
 
+def _unknown_columns(columns: list[str], missing: list[str], label: str = "unknown column(s)") -> None:
+    if missing:
+        raise StepError(f"{label}: {missing}; available: {columns}")
+
+
 def _cols_except(columns: list[str], names: list[str]) -> list[str]:
     drop = {n for n in names}
     missing = [n for n in names if n not in columns]
@@ -79,7 +84,7 @@ def _select(ctx: StepContext, p: dict) -> str:
     cols = _require(p, "columns")
     missing = [c for c in cols if c not in ctx.columns]
     if missing:
-        raise StepError(f"unknown column(s): {missing}; available: {ctx.columns}")
+        _unknown_columns(ctx.columns, missing)
     return f"SELECT {', '.join(q(c) for c in cols)} FROM {q(ctx.prev_table)}"
 
 
@@ -95,7 +100,7 @@ def _rename(ctx: StepContext, p: dict) -> str:
     mapping: dict = _require(p, "mapping")
     missing = [c for c in mapping if c not in ctx.columns]
     if missing:
-        raise StepError(f"unknown column(s): {missing}; available: {ctx.columns}")
+        _unknown_columns(ctx.columns, missing)
     parts = []
     for c in ctx.columns:
         new_name = mapping.get(c)
@@ -111,7 +116,7 @@ def _cast(ctx: StepContext, p: dict) -> str:
     col = _require(p, "column")
     to = str(_require(p, "to")).lower()
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     sql_type = _CAST_TYPES.get(to)
     if not sql_type:
         raise StepError(f"unsupported target type: {to}; choose one of {sorted(_CAST_TYPES)}")
@@ -134,7 +139,7 @@ def _fill_null(ctx: StepContext, p: dict) -> str:
     col = _require(p, "column")
     strategy = p.get("strategy", "value")
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     if strategy == "value":
         fill = lit(_require(p, "value"))
         expr = f"COALESCE({q(col)}, {fill})"
@@ -163,7 +168,7 @@ def _drop_duplicates(ctx: StepContext, p: dict) -> str:
     subset = p.get("subset") or ctx.columns
     missing = [c for c in subset if c not in ctx.columns]
     if missing:
-        raise StepError(f"unknown column(s): {missing}")
+        _unknown_columns(ctx.columns, missing)
     part_by = ", ".join(q(c) for c in subset)
     cols = ", ".join(q(c) for c in ctx.columns)
     return (
@@ -186,7 +191,7 @@ def _split_column(ctx: StepContext, p: dict) -> str:
     delimiter = p.get("delimiter", ",")
     into = _require(p, "into")
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     extras = ", ".join(f"NULLIF(split_part({q(col)}, {lit(delimiter)}, {i + 1}), '') AS {q(name)}"
                         for i, name in enumerate(into))
     return f"SELECT *, {extras} FROM {q(ctx.prev_table)}"
@@ -211,7 +216,7 @@ def _text(ctx: StepContext, p: dict) -> str:
     col = _require(p, "column")
     op = _require(p, "op")
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     fn = _TEXT_OPS.get(op)
     if not fn:
         raise StepError(f"unknown text op: {op}; choose one of {sorted(_TEXT_OPS)}")
@@ -229,7 +234,7 @@ def _replace(ctx: StepContext, p: dict) -> str:
     replacement = p.get("replacement", "")
     regex = bool(p.get("regex"))
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     expr = f"regexp_replace({q(col)}, {lit(pattern)}, {lit(replacement)}, 'g')" if regex \
         else f"REPLACE({q(col)}, {lit(pattern)}, {lit(replacement)})"
     parts = [f"{expr} AS {q(col)}" if c == col else q(c) for c in ctx.columns]
@@ -240,7 +245,7 @@ def _bin(ctx: StepContext, p: dict) -> str:
     col = _require(p, "column")
     new_col = p.get("new_column") or f"{col}_bin"
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     edges = p.get("edges")
     labels = p.get("labels")
     if edges:
@@ -270,7 +275,7 @@ def _date_parts(ctx: StepContext, p: dict) -> str:
     col = _require(p, "column")
     parts = _require(p, "parts")
     if col not in ctx.columns:
-        raise StepError(f"unknown column: {col}")
+        _unknown_columns(ctx.columns, [col], "unknown column")
     bad = [x for x in parts if x not in _DATE_PARTS]
     if bad:
         raise StepError(f"unknown date part(s): {bad}; choose from {sorted(_DATE_PARTS)}")
@@ -286,7 +291,7 @@ def _group(ctx: StepContext, p: dict) -> str:
     aggs = _require(p, "aggregations")
     missing = [c for c in group_by if c not in ctx.columns]
     if missing:
-        raise StepError(f"unknown group_by column(s): {missing}")
+        _unknown_columns(ctx.columns, missing, "unknown group_by column(s)")
     select_parts = [q(c) for c in group_by]
     for agg in aggs:
         col = agg.get("column")
@@ -298,7 +303,7 @@ def _group(ctx: StepContext, p: dict) -> str:
             select_parts.append(f"COUNT(*) AS {q(alias)}")
             continue
         if col not in ctx.columns:
-            raise StepError(f"unknown aggregation column: {col}")
+            _unknown_columns(ctx.columns, [col], "unknown aggregation column")
         if fn == "count_distinct":
             select_parts.append(f"COUNT(DISTINCT {q(col)}) AS {q(alias)}")
         else:
@@ -317,7 +322,7 @@ def _pivot(ctx: StepContext, p: dict) -> str:
     fn = p.get("fn", "sum").upper()
     group_by = p.get("group_by") or []
     if on not in ctx.columns or value not in ctx.columns:
-        raise StepError(f"unknown column(s): {[c for c in (on, value) if c not in ctx.columns]}")
+        _unknown_columns(ctx.columns, [c for c in (on, value) if c not in ctx.columns])
     sql = f"PIVOT {q(ctx.prev_table)} ON {q(on)} USING {fn}({q(value)})"
     if group_by:
         sql += f" GROUP BY {', '.join(q(c) for c in group_by)}"
@@ -330,7 +335,7 @@ def _unpivot(ctx: StepContext, p: dict) -> str:
     value_col = p.get("value_col", "value")
     missing = [c for c in on if c not in ctx.columns]
     if missing:
-        raise StepError(f"unknown column(s): {missing}")
+        _unknown_columns(ctx.columns, missing)
     return (
         f"UNPIVOT {q(ctx.prev_table)} ON {', '.join(q(c) for c in on)} "
         f"INTO NAME {q(name_col)} VALUE {q(value_col)}"
@@ -377,7 +382,7 @@ def _sort(ctx: StepContext, p: dict) -> str:
         col = entry["column"] if isinstance(entry, dict) else entry
         desc = entry.get("desc") if isinstance(entry, dict) else False
         if col not in ctx.columns:
-            raise StepError(f"unknown column: {col}")
+            _unknown_columns(ctx.columns, [col], "unknown column")
         parts.append(f"{q(col)} {'DESC' if desc else 'ASC'}")
     return f"SELECT * FROM {q(ctx.prev_table)} ORDER BY {', '.join(parts)}"
 

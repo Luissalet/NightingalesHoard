@@ -15,6 +15,11 @@ or apply. They are never silently ignored: for example, `replace` uses
 means an empty string (delete the matched text). Existing documented fields,
 including conditional fields and `sample`'s `n`/`frac`, retain their behavior.
 
+When a transform names a column that is not in the current version, the error
+lists the dataset's available columns. Use one of those exact names, then
+preview again; Nightingale reports the mismatch and does not guess or rename
+the requested column.
+
 | Operation | Required `params` | Optional fields and rules | Example |
 | --- | --- | --- | --- |
 | `filter` | `expr` | One SQL predicate. | `{"expr":"amount > 0"}` |
