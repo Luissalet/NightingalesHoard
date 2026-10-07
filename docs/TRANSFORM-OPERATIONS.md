@@ -9,6 +9,12 @@ add `?op=replace` to retrieve just one contract. MCP-only clients can call
 `help_for` for the full read-only catalog. This lookup does not create a dataset
 version or analysis entry.
 
+Unknown top-level fields inside `params` return a contract error before preview
+or apply. They are never silently ignored: for example, `replace` uses
+`replacement`, not `new_value`. Omitting `replacement` intentionally still
+means an empty string (delete the matched text). Existing documented fields,
+including conditional fields and `sample`'s `n`/`frac`, retain their behavior.
+
 | Operation | Required `params` | Optional fields and rules | Example |
 | --- | --- | --- | --- |
 | `filter` | `expr` | One SQL predicate. | `{"expr":"amount > 0"}` |
