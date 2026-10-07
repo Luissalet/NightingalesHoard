@@ -673,16 +673,28 @@ class Services:
         return result
 
     # ---- transforms ----------------------------------------------------------
-    def transform_operations(self, op: Optional[str] = None) -> dict:
+    def transform_operations(self, op: Optional[str] = None, dataset_name: Optional[str] = None) -> dict:
         catalog = step_parameter_catalog()
         if op is not None and op not in catalog:
             raise DataError(f"unknown transform operation {op!r}; choose from {STEP_KINDS}")
         selected = [op] if op is not None else list(STEP_KINDS)
-        return {"read_only": True,
-                "operations": [{"op": name, **catalog[name]} for name in selected],
-                "notes": ["Parameters are JSON fields inside data_transform.params.",
-                          "Every transform should be previewed before applying when the effect is uncertain.",
-                          "The SQL step accepts one read-only query and uses __prev__ for the current dataset version."]}
+        result = {"read_only": True,
+                  "operations": [{"op": name, **catalog[name]} for name in selected],
+                  "notes": ["Parameters are JSON fields inside data_transform.params.",
+                            "Every transform should be previewed before applying when the effect is uncertain.",
+                            "The SQL step accepts one read-only query and uses __prev__ for the current dataset version."]}
+        if dataset_name is not None:
+            dataset = self._dataset_row(dataset_name)
+            version = self._version_row(dataset)
+            import json as _json
+
+            result["dataset_schema"] = {
+                "name": dataset["name"],
+                "version": version["version"],
+                "row_count": version["row_count"],
+                "columns": _json.loads(version["columns_json"] or "[]"),
+            }
+        return result
 
     def transform_preview(self, dataset_name: str, op: str, params: dict, n: int = 20) -> dict:
         dataset_row = self._dataset_row(dataset_name)

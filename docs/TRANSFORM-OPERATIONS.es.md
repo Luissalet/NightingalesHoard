@@ -4,10 +4,12 @@
 Primero usa la vista previa con `preview=true` (valor predeterminado); aplica
 con `preview=false` cuando el resultado sea correcto. `GET /api/transforms`
 devuelve este inventario en JSON; añade `?op=replace` para consultar una sola
-operación. Desde MCP se puede llamar a `data_transform(op="help",
-help_for="replace")` sin dataset, u omitir `help_for` para obtener el catálogo
-completo de solo lectura. Esta consulta no crea una versión ni una entrada de
-análisis.
+operación. Añade `&dataset=ventas` para incluir los nombres y tipos de columna,
+la versión actual y el número de filas de ese conjunto. Desde MCP, usa
+`data_transform(op="help", help_for="replace", dataset="ventas")` para obtener
+el mismo contexto, u omite `dataset` para conservar la respuesta del catálogo.
+La ayuda contextual devuelve metadatos, nunca valores de celdas, y no crea una
+versión ni una entrada de análisis.
 
 Los campos desconocidos del primer nivel de `params` devuelven un error antes
 de previsualizar o aplicar. Nunca se ignoran: por ejemplo, `replace` usa

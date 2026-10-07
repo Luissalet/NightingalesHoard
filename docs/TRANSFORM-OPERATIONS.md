@@ -4,10 +4,12 @@
 Preview first with `preview=true` (the default), then apply with `preview=false`
 when the proposed result is correct. `GET /api/transforms` returns this
 operation inventory as JSON for clients that need machine-readable guidance;
-add `?op=replace` to retrieve just one contract. MCP-only clients can call
-`data_transform(op="help", help_for="replace")` without a dataset, or omit
-`help_for` for the full read-only catalog. This lookup does not create a dataset
-version or analysis entry.
+add `?op=replace` to retrieve just one contract. Add `&dataset=sales` to include
+that dataset's current column names and types, version, and row count. MCP-only
+clients can call `data_transform(op="help", help_for="replace", dataset="sales")`
+for the same context, or omit `dataset` to preserve the catalog-only response.
+Contextual help returns metadata, never cell values, and does not create a
+dataset version or analysis entry.
 
 Unknown top-level fields inside `params` return a contract error before preview
 or apply. They are never silently ignored: for example, `replace` uses

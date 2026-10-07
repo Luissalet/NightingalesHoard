@@ -63,6 +63,62 @@ def test_mcp_transform_help_is_filterable_and_has_no_dataset_side_effect(client,
     assert len(client.services.log_search(limit=200)["entries"]) == log_count_before
 
 
+def test_contextual_transform_help_exposes_only_current_schema_without_side_effects(client, tmp_path):
+    path = tmp_path / "context-help.csv"
+    path.write_text("phrase,amount\nSECRET_CELL_VALUE,1.5\nother,2.5\n", encoding="utf-8")
+    client.services.ingest_file(str(path), "context_help")
+    dataset = client.services._dataset_row("context_help")
+
+    # No-dataset REST and MCP help retain the existing catalog-only response.
+    catalog = client.services.transform_operations()
+    assert client.get("/api/transforms").json() == catalog
+    no_context = client.post("/api/agent/call", headers={
+        "Authorization": f"Bearer {client.services.token}"}, json={
+            "name": "data_transform", "arguments": {"op": "help", "help_for": "text"}})
+    assert no_context.status_code == 200
+    assert no_context.json() == client.services.transform_operations("text")
+    assert "dataset_schema" not in no_context.json()
+
+    # Filtered REST and MCP help expose column names/types, not records.
+    rest = client.get("/api/transforms", params={"op": "text", "dataset": "context_help"})
+    assert rest.status_code == 200
+    contextual = rest.json()
+    assert [item["op"] for item in contextual["operations"]] == ["text"]
+    schema = contextual["dataset_schema"]
+    assert schema["name"] == "context_help" and schema["version"] == 0 and schema["row_count"] == 2
+    assert [(column["name"], column["type"]) for column in schema["columns"]] == [
+        ("phrase", "VARCHAR"), ("amount", "DOUBLE")]
+    assert "SECRET_CELL_VALUE" not in rest.text
+    mcp = client.post("/api/agent/call", headers={
+        "Authorization": f"Bearer {client.services.token}"}, json={
+            "name": "data_transform", "arguments": {
+                "op": "help", "help_for": "group", "dataset": "context_help"}})
+    assert mcp.status_code == 200, mcp.text
+    assert [item["op"] for item in mcp.json()["operations"]] == ["group"]
+    assert mcp.json()["dataset_schema"] == schema
+    assert "SECRET_CELL_VALUE" not in mcp.text
+
+    # A genuine transform changes the contextual schema; subsequent help is still read-only.
+    client.services.transform_apply("context_help", "rename", {"mapping": {"phrase": "utterance"}})
+    fresh = client.services._dataset_row("context_help")
+    versions_before = client.services.meta.list_versions(dataset["id"])
+    logs_before = client.services.log_search(limit=200)["entries"]
+    updated = client.get("/api/transforms", params={"dataset": "context_help"})
+    assert updated.status_code == 200
+    assert updated.json()["dataset_schema"]["version"] == fresh["current_version"] == 1
+    assert [column["name"] for column in updated.json()["dataset_schema"]["columns"]] == ["utterance", "amount"]
+    assert client.services.meta.list_versions(dataset["id"]) == versions_before
+    assert client.services.log_search(limit=200)["entries"] == logs_before
+
+    missing_rest = client.get("/api/transforms", params={"dataset": "unknown_context_dataset"})
+    assert missing_rest.status_code == 404
+    missing_mcp = client.post("/api/agent/call", headers={
+        "Authorization": f"Bearer {client.services.token}"}, json={
+            "name": "data_transform", "arguments": {
+                "op": "help", "dataset": "unknown_context_dataset"}})
+    assert missing_mcp.status_code == 404
+
+
 def test_transform_missing_parameter_errors_name_the_native_contract():
     ctx = StepContext("prev", ["amount"], lambda _name: "other")
     with pytest.raises(StepError, match=r"replace requires parameter\(s\): column, pattern"):
