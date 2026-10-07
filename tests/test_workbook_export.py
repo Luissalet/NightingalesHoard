@@ -21,7 +21,7 @@ from nightingale.workbook_export import _cell_xml, _excel_value, _patch_workshee
 
 
 def _rich_workbook(path: Path, *, target_formula: bool = False, target_validation: bool = False,
-                   date1904: bool = False) -> Path:
+                   date1904: bool = False, include_inventory: bool = False) -> Path:
     wb = openpyxl.Workbook()
     if date1904:
         wb.epoch = openpyxl.utils.datetime.CALENDAR_MAC_1904
@@ -55,6 +55,15 @@ def _rich_workbook(path: Path, *, target_formula: bool = False, target_validatio
         data["C2"].comment = openpyxl.comments.Comment("Keep this note while editing.", "Nightingale QA")
         data["C2"].hyperlink = "https://example.invalid/category"
 
+    if include_inventory:
+        inventory_sheet = wb.create_sheet("Inventario")
+        inventory_sheet.append(["sku", "stock", "categoria"])
+        inventory_sheet.append(["A-01", 4, "inicial"])
+        inventory_sheet.append(["B-02", 9, "inicial"])
+        inventory_sheet.append(["C-03", 2, "reserva"])
+        inventory_table = Table(displayName="InventoryTable", ref="A1:C4")
+        inventory_table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium4", showRowStripes=True)
+        inventory_sheet.add_table(inventory_table)
     summary = wb.create_sheet("Resumen")
     summary["A1"] = "Total de ventas"
     summary["B1"] = "=SUM(Ventas!B2:B4)"
@@ -226,6 +235,12 @@ def test_api_mcp_version_selection_and_undo_are_logged(client, tmp_path):
     inventory_agent = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
                                   json={"name": "data_export", "arguments": {"dataset": dataset, "mode": "inventory"}})
     assert inventory_agent.status_code == 200 and inventory_agent.json()["source_matches_snapshot"]
+    invalid_inventory_batch = {"dataset": dataset, "format": "xlsx", "mode": "inventory",
+                               "workbook_updates": [{"dataset": dataset, "version": 0}]}
+    assert client.post("/api/export", json=invalid_inventory_batch).status_code == 400
+    inventory_batch_agent = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_export", "arguments": invalid_inventory_batch})
+    assert inventory_batch_agent.status_code == 400
     response = client.post("/api/export", json={"dataset": dataset, "format": "xlsx", "mode": "preserve_workbook", "version": 1})
     assert response.status_code == 200, response.text
     api_result = response.json()
@@ -247,6 +262,119 @@ def test_api_mcp_version_selection_and_undo_are_logged(client, tmp_path):
     flat_wb = openpyxl.load_workbook(flat["path"], data_only=True)
     assert flat_wb.sheetnames == ["data"]
     flat_wb.close()
+
+
+def test_multisheet_mcp_export_preflights_then_publishes_one_workbook(client, tmp_path, monkeypatch):
+    source = _rich_workbook(tmp_path / "multi.xlsx", include_inventory=True)
+    source_before = source.read_bytes()
+    ingested = client.services.ingest_file(str(source), "multi", {"sheets": ["Ventas", "Inventario"]})
+    sales, stock = [item["name"] for item in ingested["datasets"]]
+    client.services.transform_apply(sales, "replace", {"column": "categoria", "pattern": "café", "replacement": "té"})
+    client.services.transform_apply(stock, "replace", {"column": "categoria", "pattern": "inicial", "replacement": "revisado"})
+    body = {"dataset": sales, "format": "xlsx", "mode": "preserve_workbook", "version": 1,
+            "path": "multi-batch.xlsx", "workbook_updates": [{"dataset": stock, "version": 1}]}
+    batch_started = time.perf_counter()
+    response = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+                           json={"name": "data_export", "arguments": body})
+    batch_elapsed = time.perf_counter() - batch_started
+    assert response.status_code == 200, response.text
+    result = response.json()
+    output = Path(result["path"])
+    receipt_path = Path(result["receipt_path"])
+    receipt_bytes = receipt_path.read_bytes()
+    receipt = json.loads(receipt_bytes)
+    assert [item["sheet"] for item in receipt["sheets"]] == ["Ventas", "Inventario"]
+    assert [item["dataset_version"] for item in receipt["sheets"]] == [1, 1]
+    assert receipt["cells_written"] == sum(item["cells_written"] for item in receipt["sheets"]) == 3
+    log_entry = client.services.log_get(result["log_id"])
+    assert "Ventas v1" in log_entry["output_summary"] and "Inventario v1" in log_entry["output_summary"]
+    assert set(receipt["changed_package_parts"]) == {"xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml", "xl/workbook.xml"}
+    wb = openpyxl.load_workbook(output, data_only=False)
+    assert wb.sheetnames == ["Ventas", "Inventario", "Resumen", "Notas"]
+    assert wb["Ventas"]["C2"].value == "té" and wb["Inventario"]["C2"].value == "revisado"
+    assert wb["Ventas"]["E2"].data_type == "s" and wb["Ventas"]["F2"].value == "00123"
+    assert wb["Resumen"]["B1"].value == "=SUM(Ventas!B2:B4)"
+    assert wb["Notas"]["A2"].comment.text == "Comentario no afectado."
+    assert len(wb["Notas"]._charts) == 1
+    assert wb["Inventario"].tables["InventoryTable"].ref == "A1:C4"
+    wb.close()
+    assert source.read_bytes() == source_before
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(output) as dst:
+        for name in src.namelist():
+            if name not in receipt["changed_package_parts"]:
+                assert src.read(name) == dst.read(name), name
+
+    # REST uses the same multi-sheet contract; repeat exports are deterministic.
+    rest_body = {**body, "path": "multi-rest.xlsx"}
+    rest = client.post("/api/export", json=rest_body)
+    assert rest.status_code == 200, rest.text
+    assert rest.json()["output_sha256"] == result["output_sha256"]
+
+    # Record measured batch-versus-single effects without asserting a speedup.
+    singles_started = time.perf_counter()
+    single_sales_response = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_export", "arguments": {"dataset": sales, "format": "xlsx", "mode": "preserve_workbook", "version": 1, "path": "single-sales.xlsx"}})
+    single_stock_response = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_export", "arguments": {"dataset": stock, "format": "xlsx", "mode": "preserve_workbook", "version": 1, "path": "single-stock.xlsx"}})
+    singles_elapsed = time.perf_counter() - singles_started
+    assert single_sales_response.status_code == single_stock_response.status_code == 200
+    single_sales, single_stock = single_sales_response.json(), single_stock_response.json()
+    assert len(receipt["sheets"]) == 2 and single_sales["dataset"] == sales and single_stock["dataset"] == stock
+    with zipfile.ZipFile(source) as package:
+        package_bytes = sum(info.file_size for info in package.infolist())
+    batch_artifacts = [output, receipt_path]
+    single_artifacts = [Path(single_sales["path"]), Path(single_sales["receipt_path"]),
+                        Path(single_stock["path"]), Path(single_stock["receipt_path"])]
+    evidence_path = os.environ.get("NIGHTINGALE_MULTISHEET_EVIDENCE")
+    if evidence_path:
+        evidence = {"source_bytes": source.stat().st_size, "uncompressed_package_bytes": package_bytes,
+                    "batch": {"mcp_calls": 1, "elapsed_seconds": batch_elapsed,
+                              "workbooks": 1, "artifacts": len(batch_artifacts),
+                              "bytes_written": sum(p.stat().st_size for p in batch_artifacts)},
+                    "individual": {"mcp_calls": 2, "elapsed_seconds": singles_elapsed,
+                                   "workbooks": 2, "artifacts": len(single_artifacts),
+                                   "bytes_written": sum(p.stat().st_size for p in single_artifacts)},
+                    "interpretation": "One real fixture measurement only; no performance speedup claim."}
+        Path(evidence_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(evidence_path).write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+
+    # An invalid second version must not replace either an existing workbook or its receipt.
+    prior_output, prior_receipt = output.read_bytes(), receipt_path.read_bytes()
+    bad = {**body, "workbook_updates": [{"dataset": stock, "version": 999}]}
+    rejected = client.post("/api/export", json=bad)
+    assert rejected.status_code >= 400
+    assert output.read_bytes() == prior_output and receipt_path.read_bytes() == prior_receipt
+
+    # An invalid data shape in a later sheet is also found before publication.
+    client.services.transform_apply(stock, "filter", {"expr": "sku = 'A-01'"})
+    bad_shape = {**body, "workbook_updates": [{"dataset": stock, "version": 2}]}
+    rejected_shape = client.post("/api/export", json=bad_shape)
+    assert rejected_shape.status_code >= 400
+    assert output.read_bytes() == prior_output and receipt_path.read_bytes() == prior_receipt
+
+    duplicate = {**body, "workbook_updates": [{"dataset": stock, "version": 1},
+                                                  {"dataset": stock, "version": 1}]}
+    rejected_duplicate = client.post("/api/export", json=duplicate)
+    assert rejected_duplicate.status_code >= 400
+    assert output.read_bytes() == prior_output and receipt_path.read_bytes() == prior_receipt
+
+    # A malformed second patched worksheet is rejected before publication too.
+    from nightingale import workbook_export
+    real_patch = workbook_export._patch_worksheet_cells
+    patch_count = 0
+    def malformed_second_sheet(xml, replacements, date_system):
+        nonlocal patch_count
+        patch_count += 1
+        if patch_count == 2:
+            return "<worksheet"
+        return real_patch(xml, replacements, date_system)
+    monkeypatch.setattr(workbook_export, "_patch_worksheet_cells", malformed_second_sheet)
+    malformed = client.post("/api/export", json={**body, "path": "multi-batch.xlsx"})
+    assert malformed.status_code == 400
+    assert output.read_bytes() == prior_output and receipt_path.read_bytes() == prior_receipt
+
+    catalog = next(item for item in tool_catalog() if item["name"] == "data_export")
+    assert "workbook_updates" in catalog["inputSchema"]["properties"]
 
 
 def test_preserving_export_uses_source_1904_date_epoch(services, tmp_path):

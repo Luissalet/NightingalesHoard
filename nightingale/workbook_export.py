@@ -335,104 +335,127 @@ def _set_full_recalc(xml: str) -> str:
     return xml[:closing.start()] + recalc + xml[closing.start():]
 
 
-def export_copy(source_path: Path, output_path: Path, snapshot: dict, *, sheet_name: str,
-                header_row: int, row_count: int, columns: list[str], rows: list[tuple[Any, ...]],
-                original_rows: list[tuple[Any, ...]], dataset: str, version: int, source_id: int) -> dict[str, Any]:
-    """Patch an imported dataset into a copy of its original XLSX workbook."""
+def export_many_copy(source_path: Path, output_path: Path, snapshot: dict, updates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Preflight and patch several imported sheets into one workbook copy."""
     source_path, output_path = Path(source_path), Path(output_path)
-    if source_path.suffix.lower() != ".xlsx":
-        raise DataError("workbook-preserving export currently supports .xlsx only; macro-enabled .xlsm is not supported")
-    if snapshot.get("format") != ".xlsx" or not snapshot.get("sha256"):
-        raise DataError("this dataset has no recorded .xlsx source snapshot; re-ingest the workbook")
+    if source_path.suffix.lower() != ".xlsx" or snapshot.get("format") != ".xlsx" or not snapshot.get("sha256"):
+        raise DataError("workbook-preserving export currently supports imported .xlsx files only; .xlsm is unsupported")
     if source_path.resolve() == output_path.resolve():
         raise DataError("workbook-preserving export cannot overwrite the source workbook")
     current_sha = sha256_file(source_path)
     if current_sha != snapshot["sha256"]:
         raise DataError("source workbook changed after ingestion; re-ingest it before preserving export")
-    sheet = next((item for item in snapshot.get("sheets", []) if item.get("name") == sheet_name), None)
-    if not sheet:
-        raise DataError(f"sheet {sheet_name!r} is not in the recorded source workbook inventory")
-    if len(rows) != row_count or len(original_rows) != row_count:
-        raise DataError(f"preserving export requires the imported row count ({row_count}); selected version has {len(rows)} rows")
-    if any(len(row) != len(columns) for row in rows) or any(len(row) != len(columns) for row in original_rows):
-        raise DataError("preserving export found an inconsistent row width")
-    replacements: dict[str, Any] = {}
-    for row_offset, (before, after) in enumerate(zip(original_rows, rows), start=header_row + 1):
-        for col_index, (original_value, current_value) in enumerate(zip(before, after), start=1):
-            if not _same_value(original_value, current_value):
-                replacements[f"{get_column_letter(col_index)}{row_offset}"] = current_value
+    if not updates:
+        raise DataError("workbook_updates must contain at least one dataset update")
+    names = [u["sheet_name"] for u in updates]
+    if len(set(names)) != len(names):
+        raise DataError("workbook_updates contains duplicate sheet updates; combine changes into one dataset version")
+
+    sheets = {item.get("name"): item for item in snapshot.get("sheets", [])}
+    prepared: list[dict[str, Any]] = []
+    # Validate every update before creating a temporary output or touching an existing one.
+    for update in updates:
+        sheet_name = update["sheet_name"]
+        sheet = sheets.get(sheet_name)
+        if not sheet:
+            raise DataError(f"sheet {sheet_name!r} is not in the recorded source workbook inventory")
+        header_row, row_count = int(update["header_row"]), int(update["row_count"])
+        columns, rows, original_rows = update["columns"], update["rows"], update["original_rows"]
+        if len(rows) != row_count or len(original_rows) != row_count:
+            raise DataError(f"preserving export requires the imported row count ({row_count}); selected version has {len(rows)} rows")
+        if any(len(r) != len(columns) for r in rows) or any(len(r) != len(columns) for r in original_rows):
+            raise DataError(f"preserving export found an inconsistent row width for {update.get('dataset')}: {len(columns)} columns, current {len(rows[0]) if rows else 0}, baseline {len(original_rows[0]) if original_rows else 0}")
+        if row_count > 100_000 or len(columns) > 16_384:
+            raise DataError("preserving export exceeds its 100,000 row / 16,384 column safety limit")
+        replacements: dict[str, Any] = {}
+        for row_offset, (before, after) in enumerate(zip(original_rows, rows), start=header_row + 1):
+            for col_index, (before_value, after_value) in enumerate(zip(before, after), start=1):
+                if not _same_value(before_value, after_value):
+                    replacements[f"{get_column_letter(col_index)}{row_offset}"] = after_value
+        prepared.append({**update, "sheet": sheet, "replacements": replacements,
+                         "min_row": header_row, "max_row": header_row + row_count,
+                         "max_col": len(columns)})
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_name(output_path.name + ".tmp-" + secrets.token_hex(6))
     try:
         with zipfile.ZipFile(source_path, "r") as src:
-            names = set(src.namelist())
-            if sheet["part"] not in names:
-                raise DataError("source worksheet part is missing; re-ingest the workbook")
-            raw_sheet = src.read(sheet["part"])
-            root = ET.fromstring(raw_sheet)
-            min_row, first_data_row = header_row, header_row + 1
-            max_row, max_col = header_row + row_count, len(columns)
-            _guard_target(root, set(replacements))
-            # A table/filter must cover the same imported rectangle. Rewriting values
-            # in a stable-sized table leaves its range, columns and filters intact.
-            for table in sheet.get("tables", []):
-                if _range_hits(table.get("ref") or "", 1, min_row, max_col, max_row):
-                    bounds = range_boundaries(table["ref"])
-                    if bounds != (1, min_row, max_col, max_row):
-                        raise DataError(f"preserving export refused: table {table.get('name')} range {table['ref']} is not exactly the imported rectangle A{min_row}:{get_column_letter(max_col)}{max_row}")
-            for auto_filter in root.findall("m:autoFilter", NS):
-                ref = auto_filter.attrib.get("ref", "")
-                if _range_hits(ref, 1, min_row, max_col, max_row) and range_boundaries(ref) != (1, min_row, max_col, max_row):
-                    raise DataError(f"preserving export refused: worksheet filter {ref} is not exactly the imported rectangle")
-
-            if len(rows) > 100_000 or len(columns) > 16_384:
-                raise DataError("preserving export exceeds its 100,000 row / 16,384 column safety limit")
-            xml = _patch_worksheet_cells(raw_sheet.decode("utf-8"), replacements, snapshot.get("date_system", "1900"))
-            patched_sheet = xml.encode("utf-8")
-            workbook_xml = _set_full_recalc(src.read("xl/workbook.xml").decode("utf-8")).encode("utf-8")
-            temp_path = output_path.with_name(output_path.name + ".tmp-" + secrets.token_hex(6))
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with zipfile.ZipFile(temp_path, "w") as dst:
-                    for info in src.infolist():
-                        if info.filename == sheet["part"]:
-                            data = patched_sheet
-                        elif info.filename == "xl/workbook.xml":
-                            data = workbook_xml
-                        else:
-                            data = src.read(info.filename)
-                        dst.writestr(info, data)
-            finally:
-                if temp_path.exists() and not zipfile.is_zipfile(temp_path):
-                    temp_path.unlink(missing_ok=True)
-            if sha256_file(source_path) != current_sha:
-                temp_path.unlink(missing_ok=True)
-                raise DataError("source workbook changed during export; no copy was published")
-            temp_path.replace(output_path)
+            names_in_zip = set(src.namelist())
+            patched_parts: dict[str, bytes] = {}
+            for item in prepared:
+                sheet = item["sheet"]
+                if sheet["part"] not in names_in_zip:
+                    raise DataError("source worksheet part is missing; re-ingest the workbook")
+                raw = src.read(sheet["part"])
+                root = ET.fromstring(raw)
+                min_row, max_row, max_col = item["min_row"], item["max_row"], item["max_col"]
+                _guard_target(root, set(item["replacements"]))
+                for table in sheet.get("tables", []):
+                    if _range_hits(table.get("ref") or "", 1, min_row, max_col, max_row):
+                        if range_boundaries(table["ref"]) != (1, min_row, max_col, max_row):
+                            raise DataError(f"preserving export refused: table {table.get('name')} range {table['ref']} is not exactly the imported rectangle")
+                for auto_filter in root.findall("m:autoFilter", NS):
+                    ref = auto_filter.attrib.get("ref", "")
+                    if _range_hits(ref, 1, min_row, max_col, max_row) and range_boundaries(ref) != (1, min_row, max_col, max_row):
+                        raise DataError(f"preserving export refused: worksheet filter {ref} is not exactly the imported rectangle")
+                item["patched"] = _patch_worksheet_cells(raw.decode("utf-8"), item["replacements"], snapshot.get("date_system", "1900")).encode("utf-8")
+                item["patched_root"] = ET.fromstring(item["patched"])
+                patched_parts[sheet["part"]] = item["patched"]
+            patched_parts["xl/workbook.xml"] = _set_full_recalc(src.read("xl/workbook.xml").decode("utf-8")).encode("utf-8")
+            parsed_workbook_root = ET.fromstring(patched_parts["xl/workbook.xml"])
+            if parsed_workbook_root is None:
+                raise DataError("workbook XML validation failed")
+            with zipfile.ZipFile(temp_path, "w") as dst:
+                for info in src.infolist():
+                    dst.writestr(info, patched_parts.get(info.filename, src.read(info.filename)))
+        if sha256_file(source_path) != current_sha:
+            raise DataError("source workbook changed during export; no copy was published")
+        temp_path.replace(output_path)
     except (OSError, zipfile.BadZipFile, ET.ParseError, UnicodeDecodeError, KeyError) as exc:
-        if "temp_path" in locals():
-            temp_path.unlink(missing_ok=True)
         raise DataError(f"workbook-preserving export failed: {exc}") from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
+
     with zipfile.ZipFile(output_path, "r") as check:
         output_hashes = {name: _sha_bytes(check.read(name)) for name in check.namelist() if not name.endswith("/")}
-    unchanged = [name for name, digest in snapshot["package_parts"].items() if name in output_hashes and output_hashes[name] == digest]
     changed_parts = sorted(name for name, digest in snapshot["package_parts"].items()
                            if name not in output_hashes or output_hashes[name] != digest)
+    receipts = []
+    for item in prepared:
+        sheet = item["sheet"]
+        root = item["patched_root"]
+        receipts.append({"dataset": item["dataset"], "dataset_version": item["version"],
+                         "source_id": item["source_id"], "sheet": item["sheet_name"],
+                         "data_range": f"A{item['min_row'] + 1}:{get_column_letter(item['max_col'])}{item['max_row']}",
+                         "header_row": item["min_row"], "row_count": item["row_count"],
+                         "columns": item["columns"], "cells_written": len(item["replacements"]),
+                         "preserved_metadata": {"table_count": len(sheet.get("tables", [])),
+                             "comment_count": sum(len(v.get("refs", [])) for v in sheet.get("comments", [])),
+                             "hyperlink_count": len(root.findall("m:hyperlinks/m:hyperlink", NS)),
+                             "data_validation_count": len(root.findall("m:dataValidations/m:dataValidation", NS)),
+                             "data_validation_policy": "Metadata is retained; edited values are not evaluated against validation rules."}})
+    primary = receipts[0]
     return {"path": str(output_path), "format": "xlsx", "mode": "preserve_workbook",
-            "dataset": dataset, "dataset_version": version, "source_id": source_id,
-            "source_workbook": str(source_path), "source_sha256": current_sha,
-            "output_sha256": sha256_file(output_path), "sheet": sheet_name,
-            "date_system": snapshot.get("date_system", "1900"),
-            "data_range": f"A{first_data_row}:{get_column_letter(max_col)}{max_row}",
-            "header_row": header_row, "row_count": row_count, "columns": columns,
-            "cells_written": len(replacements), "package_part_count": len(snapshot["package_parts"]),
-            "preserved_metadata": {"table_count": len(sheet.get("tables", [])),
-                                   "comment_count": sum(len(item.get("refs", [])) for item in sheet.get("comments", [])),
-                                   "hyperlink_count": len(root.findall("m:hyperlinks/m:hyperlink", NS)),
-                                   "data_validation_count": len(root.findall("m:dataValidations/m:dataValidation", NS)),
-                                   "data_validation_policy": "Metadata is retained; edited values are not evaluated against validation rules."},
-            "unchanged_package_parts": unchanged, "changed_package_parts": changed_parts,
+            **primary, "cells_written": sum(item["cells_written"] for item in receipts),
+            "sheets": receipts, "source_workbook": str(source_path), "source_sha256": current_sha,
+            "output_sha256": sha256_file(output_path), "date_system": snapshot.get("date_system", "1900"),
+            "package_part_count": len(snapshot["package_parts"]), "changed_package_parts": changed_parts,
+            "unchanged_package_parts": sorted(name for name, digest in snapshot["package_parts"].items()
+                                                if name in output_hashes and output_hashes[name] == digest),
             "recalculation_policy": "Workbook is marked for full recalculation on next open. Nightingale does not evaluate formulas; cached formula results may remain stale until Excel/LibreOffice recalculates.",
             "warnings": ["Only changed values are written; unchanged source cells retain their original OOXML types and content.",
                          "Comments, hyperlinks and data-validation metadata are retained; Nightingale does not enforce validation rules.",
                          "Changing a formula cell is refused; unchanged formula cells remain intact.",
                          "Workbook-level calc flags are updated to request recalculation; formula caches are not rewritten.",
                          "Macro-enabled .xlsm, row/column count changes and renamed/dropped columns are unsupported."]}
+
+
+def export_copy(source_path: Path, output_path: Path, snapshot: dict, *, sheet_name: str,
+                header_row: int, row_count: int, columns: list[str], rows: list[tuple[Any, ...]],
+                original_rows: list[tuple[Any, ...]], dataset: str, version: int, source_id: int) -> dict[str, Any]:
+    """Backward-compatible one-sheet entry point."""
+    return export_many_copy(source_path, output_path, snapshot, [{
+        "sheet_name": sheet_name, "header_row": header_row, "row_count": row_count,
+        "columns": columns, "rows": rows, "original_rows": original_rows,
+        "dataset": dataset, "version": version, "source_id": source_id,
+    }])
