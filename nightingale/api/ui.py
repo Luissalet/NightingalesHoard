@@ -395,18 +395,26 @@ def model_list(request: Request, dataset: Optional[str] = None):
 
 # ---- export ----------------------------------------------------------------
 
+class WorkbookUpdateBody(BaseModel):
+    dataset: str
+    version: Optional[int] = Field(None, ge=0)
+
+
 class ExportBody(BaseModel):
     dataset: str
     format: str = "csv"
     path: Optional[str] = None
     mode: str = "flat"
     version: Optional[int] = Field(None, ge=0)
+    workbook_updates: Optional[list[WorkbookUpdateBody]] = None
 
 
 @router.post("/export")
 @api_errors
 def export(request: Request, body: ExportBody):
-    return services(request).export(body.dataset, body.format, body.path, mode=body.mode, version=body.version)
+    updates = [item.model_dump(exclude_none=True) for item in body.workbook_updates] if body.workbook_updates is not None else None
+    return services(request).export(body.dataset, body.format, body.path, mode=body.mode,
+                                    version=body.version, workbook_updates=updates)
 
 
 # ---- log ---------------------------------------------------------------

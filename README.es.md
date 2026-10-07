@@ -45,8 +45,9 @@ aplica.
 
 Para un `.xlsx` importado, la exportación conservando el libro puede escribir las celdas cambiadas
 del conjunto de datos en una copia del original y mantener las celdas y funciones del libro que
-no cambiaron. Incluye un inventario del origen y un recibo de trazabilidad; no permite sobrescribir
-fórmulas y conserva las reglas de validación sin aplicarlas. Consulta la [guía de exportación](docs/WORKBOOK-EXPORT.es.md)
+no cambiaron. Una solicitud puede actualizar varias pestañas importadas en esa copia. Incluye un
+inventario del origen y un recibo de trazabilidad; no permite sobrescribir fórmulas y conserva las
+reglas de validación sin aplicarlas. Consulta la [guía de exportación](docs/WORKBOOK-EXPORT.es.md)
 para ver la API, MCP y los límites admitidos.
 
 La cuadrícula de datos formatea cada celda según el tipo de columna de DuckDB y el idioma de la

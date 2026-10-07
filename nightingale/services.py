@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import secrets
 import sqlite3
 import threading
@@ -1295,8 +1296,11 @@ class Services:
         return self._log("workbook_inventory", source, dataset_row["name"], {}, do)
 
     def export(self, dataset_name: str, fmt: str = "csv", path: Optional[str] = None, source: str = "ui",
-               mode: str = "flat", version: Optional[int] = None) -> dict:
+               mode: str = "flat", version: Optional[int] = None,
+               workbook_updates: Optional[list[dict[str, Any]]] = None) -> dict:
         if mode == "inventory":
+            if workbook_updates is not None:
+                raise DataError("workbook_updates cannot be used with mode='inventory'")
             return self.workbook_inventory(dataset_name, source=source)
         dataset_row = self._dataset_row(dataset_name)
 
@@ -1307,6 +1311,10 @@ class Services:
                 raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
             if mode not in ("flat", "preserve_workbook"):
                 raise DataError("export mode must be 'flat' or 'preserve_workbook'")
+            if workbook_updates is not None and mode != "preserve_workbook":
+                raise DataError("workbook_updates requires mode='preserve_workbook' and format='xlsx'")
+            if workbook_updates == []:
+                raise DataError("workbook_updates must contain at least one dataset update when supplied")
             if mode == "preserve_workbook" and fmt_l != "xlsx":
                 raise DataError("preserve_workbook mode requires format='xlsx'")
             filename = path or (f"{dataset_row['name']}_v{v['version']}_workbook.xlsx" if mode == "preserve_workbook" else f"{dataset_row['name']}.{fmt_l}")
@@ -1335,20 +1343,60 @@ class Services:
                 current_columns = [column["name"] for column in _json.loads(v["columns_json"] or "[]")]
                 if current_columns != original_columns:
                     raise DataError("preserving export requires the original columns in the original order; rename/drop/derive is unsupported")
+                selected = [(dataset_row, v, original, original_params, current_columns)]
+                for requested in workbook_updates or []:
+                    update_row = self._dataset_row(requested["dataset"])
+                    update_version = self._version_row(update_row, requested.get("version"))
+                    update_original = self.meta.get_version(update_row["id"], 0)
+                    if not update_row["source_id"] or update_original is None:
+                        raise DataError(f"dataset {update_row['name']!r} has no imported workbook baseline")
+                    update_source = self.meta.get_source(update_row["source_id"])
+                    if update_source is None:
+                        raise DataError(f"dataset {update_row['name']!r} source workbook is missing")
+                    source_path = Path(source_row["path"])
+                    candidate_path = Path(update_source["path"])
+                    if os.path.normcase(os.path.abspath(source_path)) != os.path.normcase(os.path.abspath(candidate_path)):
+                        raise DataError("all workbook_updates must come from the same original workbook path")
+                    update_options = _json_loads(update_source["options_json"] or "{}")
+                    update_snapshot = update_options.get("workbook_snapshot")
+                    if not update_snapshot or update_snapshot.get("sha256") != snapshot.get("sha256"):
+                        raise DataError("all workbook_updates must share the same original workbook snapshot")
+                    params = _json_loads(update_original["params_json"] or "{}")
+                    base_cols = [c["name"] for c in _json_loads(update_original["columns_json"] or "[]")]
+                    current_meta_cols = [c["name"] for c in _json_loads(update_version["columns_json"] or "[]")]
+                    if current_meta_cols and current_meta_cols != base_cols:
+                        raise DataError(f"dataset {update_row['name']!r} changed columns; preserving export requires the original column order")
+                    selected.append((update_row, update_version, update_original, params, base_cols))
+                update_sheets = []
+                seen_sheets = set()
                 with self.engine.lock() as conn:
-                    cur = conn.execute(f'SELECT * FROM "{v["table_name"]}"')
-                    rows = cur.fetchall()
-                    original_cur = conn.execute(f'SELECT * FROM "{original["table_name"]}"')
-                    original_rows = original_cur.fetchall()
-                skip_rows = int(original_params.get("skip_rows", 0) or 0)
-                receipt = workbook_export.export_copy(
-                    Path(source_row["path"]), out_path, snapshot, sheet_name=sheet_name,
-                    header_row=skip_rows + 1, row_count=original["row_count"], columns=current_columns,
-                    rows=rows, original_rows=original_rows, dataset=dataset_row["name"],
-                    version=v["version"], source_id=dataset_row["source_id"])
+                    for row, selected_version, baseline, params, cols in selected:
+                        selected_sheet = params.get("sheet")
+                        if not selected_sheet:
+                            raise DataError(f"dataset {row['name']!r} is not linked to an imported workbook sheet")
+                        if selected_sheet in seen_sheets:
+                            raise DataError(f"workbook_updates contains duplicate sheet {selected_sheet!r}")
+                        seen_sheets.add(selected_sheet)
+                        current_cursor = conn.execute(f'SELECT * FROM "{selected_version["table_name"]}"')
+                        rows = current_cursor.fetchall()
+                        cols = [item[0] for item in current_cursor.description]
+                        original_cursor = conn.execute(f'SELECT * FROM "{baseline["table_name"]}"')
+                        original_rows = original_cursor.fetchall()
+                        base_cols = [item[0] for item in original_cursor.description]
+                        if cols != base_cols:
+                            raise DataError(f"dataset {row['name']!r} changed columns; preserving export requires the original column order")
+                        update_sheets.append({"sheet_name": selected_sheet,
+                            "header_row": int(params.get("skip_rows", 0) or 0) + 1,
+                            "row_count": baseline["row_count"], "columns": cols,
+                            "rows": rows, "original_rows": original_rows,
+                            "dataset": row["name"], "version": selected_version["version"],
+                            "source_id": row["source_id"]})
+                receipt = workbook_export.export_many_copy(
+                    Path(source_row["path"]), out_path, snapshot, update_sheets)
                 receipt_path = out_path.with_suffix(".workbook-export.json")
                 receipt["receipt_path"] = str(receipt_path)
-                return {**receipt, "_log_summary": f"exported {dataset_row['name']!r} v{v['version']} into a copy of {sheet_name!r} in {out_path.name}"}
+                tabs = ", ".join(f"{item['sheet']} v{item['dataset_version']}" for item in receipt["sheets"])
+                return {**receipt, "_log_summary": f"exported workbook tabs {tabs} into {out_path.name}"}
             with self.engine.lock() as conn:
                 if fmt_l == "csv":
                     conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT CSV, HEADER)', [str(out_path)])
@@ -1362,7 +1410,8 @@ class Services:
                      "dataset_version": v["version"], "mode": "flat",
                      "_log_summary": f"exported {dataset_row['name']!r} to {out_path.name}"}
 
-        result = self._log("export", source, dataset_row["name"], {"format": fmt, "mode": mode, "version": version},
+        log_input = {"format": fmt, "mode": mode, "version": version, "workbook_updates": workbook_updates or []}
+        result = self._log("export", source, dataset_row["name"], log_input,
                            lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
         if result.get("mode") == "preserve_workbook":
             import json as _json

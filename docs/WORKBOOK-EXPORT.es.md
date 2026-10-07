@@ -19,6 +19,25 @@ conservando el libro:
    identificador de origen, hoja/rango, partes OOXML sin cambios y modificadas,
    avisos y el id del registro de análisis.
 
+Para modificar varias pestañas en esa misma copia, usa `dataset` y `version`
+para la primera y añade `workbook_updates`, por ejemplo:
+
+```json
+{"dataset":"ventas__Ventas","format":"xlsx","mode":"preserve_workbook","version":2,
+ "workbook_updates":[{"dataset":"ventas__Inventario","version":1}]}
+```
+
+La API REST y la herramienta MCP `data_export` aceptan el mismo formato. Todas
+las actualizaciones deben apuntar a la misma ruta del libro original (sin
+distinguir mayúsculas en Windows) y a la misma huella SHA-256. Antes de publicar
+la copia se comprueba cada versión frente a su base de versión cero, las
+columnas importadas, la hoja, el rango de tabla/filtro y las fórmulas. Se
+rechazan destinos de hoja repetidos. Se escribe un solo libro y el recibo enumera
+cada conjunto de datos, versión y cantidad de celdas modificadas. Si falla esta
+validación, un libro y recibo ya existentes quedan intactos. Esta garantía cubre
+la validación y sustitución del archivo del libro; el registro de análisis, el
+recibo y el libro no forman una transacción única entre archivos y base de datos.
+
 El modo conservador modifica solo las celdas cuyo valor cambió respecto a la
 versión importada y marca el libro para recalcular al abrirlo. Las celdas sin
 cambios conservan su XML y tipo originales, incluidos identificadores de texto

@@ -19,6 +19,25 @@ workbook-preserving copy:
    hashes, dataset/version, source id, target sheet/range, unchanged/changed
    OOXML part names, warnings and the analysis-log id.
 
+To update several imported tabs in that same copy, keep `dataset` and
+`version` for the first tab and add `workbook_updates`, for example:
+
+```json
+{"dataset":"sales__Ventas","format":"xlsx","mode":"preserve_workbook","version":2,
+ "workbook_updates":[{"dataset":"sales__Inventario","version":1}]}
+```
+
+The REST request and `data_export` MCP tool accept the same shape. Every update
+must refer to the same original workbook path (case-insensitive on Windows) and
+the same source SHA-256 snapshot. Each selected version is checked against its
+version-zero baseline, imported columns, sheet, table/filter rectangle and
+formula cells before the output workbook is published. Repeated sheet targets
+are rejected. One workbook is written and its receipt lists each dataset,
+version and changed-cell count. A preflight error leaves an existing workbook
+and its existing receipt unchanged. This guarantee covers validation and the
+workbook file replacement; the analysis log, receipt write and workbook file
+are not one cross-database transaction.
+
 This mode patches only cells whose values changed from the imported version in
 the selected worksheet and sets workbook calculation flags for a full
 recalculation on the next open. Unchanged source cells retain their original
