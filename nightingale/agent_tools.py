@@ -258,6 +258,9 @@ class ExportArgs(BaseModel):
     dataset: str
     format: Literal["csv", "xlsx", "parquet", "json"] = "csv"
     path: Optional[str] = Field(None, description="Filename inside the app's exports folder; derived if omitted.")
+    mode: Literal["flat", "preserve_workbook", "inventory"] = Field(
+        "flat", description="'flat' makes the usual single-table export. 'inventory' reads the linked workbook snapshot. 'preserve_workbook' is .xlsx-only: patch the selected imported sheet's tabular cells in a copy of its original workbook, preserving untouched package parts.")
+    version: Optional[int] = Field(None, ge=0, description="Dataset version to export; defaults to the current version.")
 
 
 class LogArgs(BaseModel):
@@ -503,7 +506,9 @@ def _run_forecast(s: Services, a: ForecastArgs) -> dict:
 
 
 def _run_export(s: Services, a: ExportArgs) -> dict:
-    return s.export(a.dataset, a.format, a.path, source="agent")
+    if a.mode == "inventory":
+        return s.workbook_inventory(a.dataset, source="agent")
+    return s.export(a.dataset, a.format, a.path, source="agent", mode=a.mode, version=a.version)
 
 
 def _run_log(s: Services, a: LogArgs) -> dict:
@@ -580,7 +585,8 @@ TOOLS: list[Tool] = [
          "and why (set on a fallback).\n"
          "Sinónimos: pronóstico, previsión, serie temporal, predecir el futuro.",
          ForecastArgs, _ann(False, False, False), _run_forecast),
-    Tool("data_export", "Export a dataset to CSV/XLSX/Parquet/JSON inside the app's exports folder (write).\n"
+    Tool("data_export", "Export a dataset as CSV, XLSX, Parquet or JSON. (write)\n"
+         "mode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\n"
          "Sinónimos: exportar datos, descargar csv, guardar excel.",
          ExportArgs, _ann(False, False, False), _run_export),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"

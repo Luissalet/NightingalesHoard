@@ -46,6 +46,7 @@ from .workbench.engine import DataError, Engine, slugify_name
 from .workbench import models as model_engine
 from .workbench.quality import QualityError, RULE_KINDS, build_check
 from .workbench.steps import StepError
+from . import workbook_export
 
 log = logging.getLogger("nightingale")
 
@@ -322,7 +323,9 @@ class Services:
 
         def do():
             dataset_name = slugify_name(name or p.stem)
-            source_id = self.meta.add_source(dataset_name, suffix.lstrip("."), str(p), options)
+            workbook_snapshot = workbook_export.inventory(p) if suffix in (".xlsx", ".xlsm") else None
+            source_options = {**options, **({"workbook_snapshot": workbook_snapshot} if workbook_snapshot else {})}
+            source_id = self.meta.add_source(dataset_name, suffix.lstrip("."), str(p), source_options)
             if suffix in (".csv", ".tsv", ".txt"):
                 result = self.engine.ingest_delimited(p, options, source_col=options.get("source_column"))
                 return self._finish_ingest(dataset_name, source_id, result.select_sql, result.row_count,
@@ -340,11 +343,23 @@ class Services:
                                             probe_table=result.table_name)
             if suffix in (".xlsx", ".xlsm"):
                 sheets = self.engine.ingest_excel(p, options)
+                if workbook_snapshot and workbook_export.sha256_file(p) != workbook_snapshot["sha256"]:
+                    for _, result in sheets:
+                        self.engine.drop_table(result.table_name)
+                    raise DataError("source workbook changed while it was being ingested; ingest it again")
                 out = []
                 for sheet_name, result in sheets:
                     dname = slugify_name(f"{dataset_name}__{sheet_name}") if len(sheets) > 1 else dataset_name
+                    sheet_options = {**options, "sheet": sheet_name,
+                                     "skip_rows": options.get("skip_rows", result.extra.get("skip_rows_detected", 0))}
+                    sheet_extra = dict(result.extra)
+                    if workbook_snapshot:
+                        sheet_extra["workbook_snapshot"] = {"sha256": workbook_snapshot["sha256"],
+                                                             "bytes": workbook_snapshot["bytes"],
+                                                             "sheet_count": workbook_snapshot["sheet_count"],
+                                                             "package_part_count": workbook_snapshot["package_part_count"]}
                     out.append(self._finish_ingest(dname, source_id, result.select_sql, result.row_count,
-                                                     result.columns, "ingest", {**options, "sheet": sheet_name}, result.extra,
+                                                     result.columns, "ingest", sheet_options, sheet_extra,
                                                      probe_table=result.table_name))
                 return out[0] if len(out) == 1 else {"datasets": out,
                                                         "_log_summary": f"ingested {len(out)} sheet(s) from {p.name}"}
@@ -1247,19 +1262,93 @@ class Services:
         return {"models": out}
 
     # ---- export --------------------------------------------------------------
-    def export(self, dataset_name: str, fmt: str = "csv", path: Optional[str] = None, source: str = "ui") -> dict:
+    def workbook_inventory(self, dataset_name: str, source: str = "ui") -> dict:
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
-            v = self._version_row(dataset_row)
+            import json as _json
+
+            if not dataset_row["source_id"]:
+                raise DataError("dataset has no linked source workbook")
+            source_row = self.meta.get_source(dataset_row["source_id"])
+            if source_row is None:
+                raise DataError("dataset's source workbook record no longer exists")
+            source_options = _json.loads(source_row["options_json"] or "{}") if source_row else {}
+            snapshot = source_options.get("workbook_snapshot")
+            if not snapshot:
+                raise DataError("dataset has no recorded workbook inventory; re-ingest its .xlsx source")
+            source_path = Path(source_row["path"])
+            current_sha = workbook_export.sha256_file(source_path) if source_path.exists() else None
+            initial = self.meta.get_version(dataset_row["id"], 0)
+            ingest = _json.loads(initial["params_json"] or "{}") if initial else {}
+            return {"dataset": dataset_row["name"], "dataset_version": dataset_row["current_version"],
+                    "source_id": dataset_row["source_id"], "source_path": str(source_path),
+                    "source_sha256": snapshot["sha256"], "current_source_sha256": current_sha,
+                    "source_matches_snapshot": current_sha == snapshot["sha256"],
+                    "format": snapshot["format"], "bytes": snapshot["bytes"],
+                    "package_part_count": snapshot["package_part_count"], "package_parts": snapshot["package_parts"],
+                    "sheets": snapshot["sheets"], "selected_sheet": ingest.get("sheet"),
+                    "selected_import_options": {"header_row": int(ingest.get("skip_rows", 0) or 0) + 1,
+                                                "initial_data_rows": initial["row_count"] if initial else None,
+                                                "columns": [c["name"] for c in _json.loads(initial["columns_json"] or "[]")] if initial else []}}
+
+        return self._log("workbook_inventory", source, dataset_row["name"], {}, do)
+
+    def export(self, dataset_name: str, fmt: str = "csv", path: Optional[str] = None, source: str = "ui",
+               mode: str = "flat", version: Optional[int] = None) -> dict:
+        if mode == "inventory":
+            return self.workbook_inventory(dataset_name, source=source)
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            v = self._version_row(dataset_row, version)
             fmt_l = fmt.lower()
             if fmt_l not in ("csv", "xlsx", "parquet", "json"):
                 raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
-            filename = path or f"{dataset_row['name']}.{fmt_l}"
+            if mode not in ("flat", "preserve_workbook"):
+                raise DataError("export mode must be 'flat' or 'preserve_workbook'")
+            if mode == "preserve_workbook" and fmt_l != "xlsx":
+                raise DataError("preserve_workbook mode requires format='xlsx'")
+            filename = path or (f"{dataset_row['name']}_v{v['version']}_workbook.xlsx" if mode == "preserve_workbook" else f"{dataset_row['name']}.{fmt_l}")
             out_path = (self.config.exports_dir / filename).resolve()
             if not hl_paths.is_inside(out_path, self.config.exports_dir):
                 raise DataError("export path must stay inside the app's exports folder")
+            if mode == "preserve_workbook" and out_path.suffix.lower() != ".xlsx":
+                raise DataError("preserving workbook output path must end in .xlsx")
             out_path.parent.mkdir(parents=True, exist_ok=True)
+            if mode == "preserve_workbook":
+                import json as _json
+
+                if not dataset_row["source_id"]:
+                    raise DataError("dataset has no original workbook source")
+                source_row = self.meta.get_source(dataset_row["source_id"])
+                source_options = _json.loads(source_row["options_json"] or "{}") if source_row else {}
+                snapshot = source_options.get("workbook_snapshot")
+                if not snapshot:
+                    raise DataError("dataset has no recorded workbook snapshot; re-ingest its .xlsx source")
+                original = self.meta.get_version(dataset_row["id"], 0)
+                original_params = _json.loads(original["params_json"] or "{}") if original else {}
+                sheet_name = original_params.get("sheet")
+                if not sheet_name:
+                    raise DataError("dataset is not linked to an imported workbook sheet")
+                original_columns = [column["name"] for column in _json.loads(original["columns_json"] or "[]")]
+                current_columns = [column["name"] for column in _json.loads(v["columns_json"] or "[]")]
+                if current_columns != original_columns:
+                    raise DataError("preserving export requires the original columns in the original order; rename/drop/derive is unsupported")
+                with self.engine.lock() as conn:
+                    cur = conn.execute(f'SELECT * FROM "{v["table_name"]}"')
+                    rows = cur.fetchall()
+                    original_cur = conn.execute(f'SELECT * FROM "{original["table_name"]}"')
+                    original_rows = original_cur.fetchall()
+                skip_rows = int(original_params.get("skip_rows", 0) or 0)
+                receipt = workbook_export.export_copy(
+                    Path(source_row["path"]), out_path, snapshot, sheet_name=sheet_name,
+                    header_row=skip_rows + 1, row_count=original["row_count"], columns=current_columns,
+                    rows=rows, original_rows=original_rows, dataset=dataset_row["name"],
+                    version=v["version"], source_id=dataset_row["source_id"])
+                receipt_path = out_path.with_suffix(".workbook-export.json")
+                receipt["receipt_path"] = str(receipt_path)
+                return {**receipt, "_log_summary": f"exported {dataset_row['name']!r} v{v['version']} into a copy of {sheet_name!r} in {out_path.name}"}
             with self.engine.lock() as conn:
                 if fmt_l == "csv":
                     conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT CSV, HEADER)', [str(out_path)])
@@ -1269,10 +1358,25 @@ class Services:
                     conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT JSON, ARRAY true)', [str(out_path)])
                 else:  # xlsx: DuckDB has no native writer; build with openpyxl from the query result
                     self._write_xlsx(v["table_name"], out_path)
-            return {"path": str(out_path), "format": fmt_l, "row_count": v["row_count"],
+            return {"path": str(out_path), "format": fmt_l, "row_count": v["row_count"], "dataset": dataset_row["name"],
+                     "dataset_version": v["version"], "mode": "flat",
                      "_log_summary": f"exported {dataset_row['name']!r} to {out_path.name}"}
 
-        return self._log("export", source, dataset_row["name"], {"format": fmt}, lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
+        result = self._log("export", source, dataset_row["name"], {"format": fmt, "mode": mode, "version": version},
+                           lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
+        if result.get("mode") == "preserve_workbook":
+            import json as _json
+
+            receipt_path = Path(result["receipt_path"])
+            result["analysis_log_id"] = result["log_id"]
+            receipt = {key: value for key, value in result.items() if key not in {"log_id", "receipt_sha256"}}
+            receipt["analysis_log_id"] = result["log_id"]
+            encoded = _json.dumps(receipt, ensure_ascii=False, indent=2).encode("utf-8")
+            temp = receipt_path.with_name(receipt_path.name + "." + secrets.token_hex(6) + ".tmp")
+            temp.write_bytes(encoded)
+            temp.replace(receipt_path)
+            result["receipt_sha256"] = workbook_export.sha256_file(receipt_path)
+        return result
 
     def _write_xlsx(self, table_name: str, out_path: Path) -> None:
         import openpyxl
