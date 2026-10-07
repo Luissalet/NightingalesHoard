@@ -71,6 +71,12 @@ def sources(request: Request):
     return {"sources": [dict(r) for r in services(request).meta.list_sources()]}
 
 
+@router.get("/workbooks/{dataset}")
+@api_errors
+def workbook_inventory(request: Request, dataset: str):
+    return services(request).workbook_inventory(dataset)
+
+
 # ---- datasets ----------------------------------------------------------------
 
 @router.get("/datasets")
@@ -393,12 +399,14 @@ class ExportBody(BaseModel):
     dataset: str
     format: str = "csv"
     path: Optional[str] = None
+    mode: str = "flat"
+    version: Optional[int] = Field(None, ge=0)
 
 
 @router.post("/export")
 @api_errors
 def export(request: Request, body: ExportBody):
-    return services(request).export(body.dataset, body.format, body.path)
+    return services(request).export(body.dataset, body.format, body.path, mode=body.mode, version=body.version)
 
 
 # ---- log ---------------------------------------------------------------

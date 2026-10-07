@@ -41,6 +41,12 @@ applies.
 | **Ask your data** | A plain-language question becomes one SQL query (shown, not hidden) run through a shared local language model via Hoard Link. | Needs a resolved LLM backend (Faustus, a local llama.cpp server, Ollama, or an OpenAI-compatible endpoint) — with none configured it says so clearly instead of guessing. |
 | **Lab** | Deeper data science on top of the workbench, with its own page (seven tabs — Explore, Models, Diagnose, Optimize, Compare & drift, Pipeline, Report): full EDA (correlation, null patterns + imputation preview, IQR/z-score outliers, encoding suggestions with one-click apply-as-step) and a 0-100 quality score (only ever shows 100 when every component is actually perfect); a pluggable model registry (linear/ridge/logistic, random forest, gradient boosting, extra trees, k-NN, MLP, Gaussian process, plus XGBoost/LightGBM if installed) with versioned, persisted models; model diagnostics (residuals, predicted-vs-actual, error by group, bias over time, over/under-fitting, calibration, and for classifiers a plotted ROC curve — one-vs-rest per class when there are more than two); hyperparameter tuning (Optuna TPE or a randomized fallback); explanations (SHAP or permutation importance + partial dependence); Bayesian optimization of a model's inputs (GP surrogate + EI/UCB) and multi-objective Pareto fronts; drift detection and curve/series comparison between datasets; a PDF report; and a visual pipeline editor (add/reorder/edit/preview steps as a node chain, applied through the same step engine as the Datasets page). See `docs/LAB.md`. Datasets and Models each link straight into it ("Open in Lab" / "Open in Lab registry"). | XGBoost/LightGBM/Optuna/SHAP are optional (`requirements-lab.txt`) — every feature degrades to a documented fallback without them. |
 
+For an imported `.xlsx`, workbook-preserving export can write changed dataset cells into a copy
+of the original workbook while retaining unchanged cells and workbook features. It includes a
+source inventory and lineage receipt; formulas cannot be overwritten, and validation rules are
+preserved but not enforced. See the [workbook export guide](docs/WORKBOOK-EXPORT.md) for the API,
+MCP, and supported boundaries.
+
 The data grid formats every cell by its DuckDB column type and the UI's own language setting —
 dates and timestamps render as dates (a timestamp at exact midnight drops its time-of-day), and
 numbers get thousands separators and sensible precision (2 decimals for `DECIMAL` columns, up to 4
