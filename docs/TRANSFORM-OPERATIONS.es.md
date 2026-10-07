@@ -16,6 +16,11 @@ significando una cadena vacía (borrar el texto coincidente). Los campos
 documentados, incluidos los condicionales y `n`/`frac` de `sample`, conservan
 su comportamiento.
 
+Si una transformación indica una columna que no existe en la versión actual,
+el error muestra las columnas disponibles del dataset. Usa uno de esos nombres
+exactos y vuelve a previsualizar; Nightingale informa del error y no adivina ni
+cambia la columna solicitada.
+
 | Operación | `params` obligatorios | Campos opcionales y reglas | Ejemplo |
 | --- | --- | --- | --- |
 | `filter` | `expr` | Un predicado SQL. | `{"expr":"amount > 0"}` |
