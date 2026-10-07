@@ -19,8 +19,8 @@ AGENT_INSTRUCTIONS = (
     "Nightingale's Hoard is the user's own data workbench: ingest files/folders/URLs/pasted text into a local "
     "DuckDB workbench, clean data with versioned steps (undo/redo, lineage, recipe export/replay), define and run "
     "quality rules, build charts and dashboards, train quick models (supervised/clustering/PCA/anomaly/forecast), "
-    "and query everything read-only with SQL. Every call is recorded in the analysis log with an id like "
-    "'N-000123' — cite that id when you report a result back to the user. Always preview a transform "
+    "and query everything read-only with SQL. Analysis operations are recorded in the log with an id like "
+    "'N-000123'; read-only help lookups do not create log entries. Cite an analysis id when reporting its result. Always preview a transform "
     "(data_transform with preview=true) before applying it when the change is not obviously safe. Never assume a "
     "dataset name: call data_list first if unsure. This app never reads files or the database directly outside "
     "these tools."
@@ -92,10 +92,12 @@ class PreviewArgs(BaseModel):
 
 
 class TransformArgs(BaseModel):
-    dataset: str
+    dataset: Optional[str] = Field(None, description="Required for a transform; omit for op='help'.")
     op: str = Field(..., description="filter/select/drop/rename/cast/fill_null/drop_duplicates/derive/split_column/"
-                                        "text/replace/bin/date_parts/group/pivot/unpivot/join/union/sort/sample/window/sql")
-    params: dict[str, Any] = Field(default_factory=dict)
+                                        "text/replace/bin/date_parts/group/pivot/unpivot/join/union/sort/sample/window/sql. "
+                                        "Use op='help' with help_for='<operation>' for its exact read-only contract, or omit help_for for the full catalog.")
+    help_for: Optional[str] = Field(None, description="With op='help', filter the read-only contract lookup to one transform operation. Needs no dataset.")
+    params: dict[str, Any] = Field(default_factory=dict, description="Operation-specific JSON object; use op='help' to look up its exact fields and nested shapes.")
     preview: bool = Field(True, description="true: show the effect without applying; false: apply and create a new version.")
 
 
@@ -334,6 +336,14 @@ def _run_preview(s: Services, a: PreviewArgs) -> dict:
 
 
 def _run_transform(s: Services, a: TransformArgs) -> dict:
+    if a.op == "help":
+        if a.params:
+            raise ValueError("op='help' uses help_for and does not accept transform params")
+        return s.transform_operations(a.help_for)
+    if a.help_for is not None:
+        raise ValueError("help_for is only valid with op='help'")
+    if not a.dataset:
+        raise ValueError("dataset is required for a transform; omit it only with op='help'")
     if a.preview:
         return s.transform_preview(a.dataset, a.op, a.params)
     return s.transform_apply(a.dataset, a.op, a.params, source="agent")
@@ -546,7 +556,8 @@ TOOLS: list[Tool] = [
     Tool("data_preview", "First rows of a dataset version, with total row count.\n"
          "Sinónimos: ver datos, muestra de filas, primeras filas.",
          PreviewArgs, _ann(True), _run_preview),
-    Tool("data_transform", "Apply or preview one cleaning/reshaping step on a dataset (write when preview=false).\n"
+    Tool("data_transform", "Preview/apply dataset transformations, or inspect operation parameters (op='help').\n"
+         "For MCP-only clients, call data_transform(op='help', help_for='replace') without a dataset; omit help_for for the full read-only catalog.\n"
          "Sinónimos: transformar datos, limpiar columna, filtrar filas, renombrar columna, agrupar datos.",
          TransformArgs, _ann(False, False, False), _run_transform),
     Tool("data_undo", "Move a dataset to an earlier (undo) or later (redo) version (write, non-destructive).\n"

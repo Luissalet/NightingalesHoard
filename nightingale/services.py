@@ -46,7 +46,7 @@ from .workbench.charts import ChartSpec, render_png, run_chart, to_vega_lite
 from .workbench.engine import DataError, Engine, slugify_name
 from .workbench import models as model_engine
 from .workbench.quality import QualityError, RULE_KINDS, build_check
-from .workbench.steps import StepError
+from .workbench.steps import StepError, STEP_KINDS, step_parameter_catalog
 from . import workbook_export
 
 log = logging.getLogger("nightingale")
@@ -673,6 +673,17 @@ class Services:
         return result
 
     # ---- transforms ----------------------------------------------------------
+    def transform_operations(self, op: Optional[str] = None) -> dict:
+        catalog = step_parameter_catalog()
+        if op is not None and op not in catalog:
+            raise DataError(f"unknown transform operation {op!r}; choose from {STEP_KINDS}")
+        selected = [op] if op is not None else list(STEP_KINDS)
+        return {"read_only": True,
+                "operations": [{"op": name, **catalog[name]} for name in selected],
+                "notes": ["Parameters are JSON fields inside data_transform.params.",
+                          "Every transform should be previewed before applying when the effect is uncertain.",
+                          "The SQL step accepts one read-only query and uses __prev__ for the current dataset version."]}
+
     def transform_preview(self, dataset_name: str, op: str, params: dict, n: int = 20) -> dict:
         dataset_row = self._dataset_row(dataset_name)
         v = self._version_row(dataset_row)

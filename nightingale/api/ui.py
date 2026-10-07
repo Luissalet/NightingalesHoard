@@ -178,6 +178,12 @@ def join_preview(request: Request, name: str, body: JoinPreviewBody):
 
 # ---- query ---------------------------------------------------------------
 
+@router.get("/transforms")
+@api_errors
+def transform_operations(request: Request, op: Optional[str] = None):
+    return services(request).transform_operations(op)
+
+
 class QueryBody(BaseModel):
     sql: str
     limit: int = 200

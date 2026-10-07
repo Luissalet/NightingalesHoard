@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-__all__ = ["StepError", "STEP_BUILDERS", "build_step_sql", "STEP_KINDS"]
+__all__ = ["StepError", "STEP_BUILDERS", "STEP_KINDS", "STEP_PARAM_GUIDANCE", "build_step_sql"]
 
 
 class StepError(ValueError):
@@ -195,7 +195,12 @@ _TEXT_OPS = {
     "trim": lambda c: f"TRIM({c})",
     "upper": lambda c: f"UPPER({c})",
     "lower": lambda c: f"LOWER({c})",
-    "title": lambda c: f"INITCAP({c})",
+    "title": lambda c: (
+        f"array_to_string(list_transform(regexp_extract_all({c}, "
+        f"{lit(r'[\p{L}\p{M}]+|[^\p{L}\p{M}]+')}), "
+        f"lambda token: CASE WHEN regexp_matches(token, {lit(r'^\p{L}')}) "
+        "THEN upper(substr(token, 1, 1)) || lower(substr(token, 2)) ELSE token END), '')"
+    ),
     "strip_accents": lambda c: f"strip_accents({c})",
     "collapse_spaces": lambda c: f"regexp_replace(TRIM({c}), '\\s+', ' ', 'g')",
 }
@@ -293,8 +298,11 @@ def _group(ctx: StepContext, p: dict) -> str:
             continue
         if col not in ctx.columns:
             raise StepError(f"unknown aggregation column: {col}")
-        sql_fn = {"count_distinct": "APPROX_COUNT_DISTINCT", "stddev": "STDDEV_SAMP"}.get(fn, fn.upper())
-        select_parts.append(f"{sql_fn}({q(col)}) AS {q(alias)}")
+        if fn == "count_distinct":
+            select_parts.append(f"COUNT(DISTINCT {q(col)}) AS {q(alias)}")
+        else:
+            sql_fn = {"stddev": "STDDEV_SAMP"}.get(fn, fn.upper())
+            select_parts.append(f"{sql_fn}({q(col)}) AS {q(alias)}")
     group_sql = ", ".join(q(c) for c in group_by) if group_by else None
     sql = f"SELECT {', '.join(select_parts)} FROM {q(ctx.prev_table)}"
     if group_sql:
@@ -450,9 +458,62 @@ STEP_BUILDERS: dict[str, Callable[[StepContext, dict], str]] = {
 
 STEP_KINDS = tuple(STEP_BUILDERS)
 
+# Canonical public parameter contracts for the builders below. Required fields
+# are checked before a builder runs, so tool callers receive a useful contract
+# error instead of a downstream SQL parser message.
+STEP_PARAM_GUIDANCE: dict[str, dict[str, Any]] = {
+    "filter": {"required": ["expr"], "optional": [], "example": {"expr": "amount > 0"}},
+    "select": {"required": ["columns"], "optional": [], "example": {"columns": ["region", "amount"]}},
+    "drop": {"required": ["columns"], "optional": [], "example": {"columns": ["temporary_note"]}},
+    "rename": {"required": ["mapping"], "optional": [], "example": {"mapping": {"old_name": "new_name"}}},
+    "cast": {"required": ["column", "to"], "optional": ["spanish_number", "date_format"], "choices": {"to": sorted(_CAST_TYPES)}, "example": {"column": "amount_text", "to": "decimal"}},
+    "fill_null": {"required": ["column"], "conditional_required": {"strategy=value": ["value"]}, "optional": ["strategy"], "defaults": {"strategy": "value"}, "choices": {"strategy": ["value", "mean", "median", "mode", "forward"]}, "example": {"column": "region", "strategy": "mode"}},
+    "drop_duplicates": {"required": [], "optional": ["subset"], "example": {"subset": ["id"]}},
+    "derive": {"required": ["name", "expr"], "optional": [], "example": {"name": "total", "expr": "quantity * price"}},
+    "split_column": {"required": ["column", "into"], "optional": ["delimiter"], "defaults": {"delimiter": ","}, "example": {"column": "place", "delimiter": ",", "into": ["city", "country"]}},
+    "text": {"required": ["column", "op"], "optional": ["new_column"], "choices": {"op": ["trim", "upper", "lower", "title", "strip_accents", "collapse_spaces"]}, "operation_notes": {"title": "Uppercases the first Unicode letter in each contiguous letter/mark sequence, lowercases the rest, and retains every delimiter (spaces, apostrophes, hyphens, punctuation); null remains null."}, "example": {"column": "name", "op": "trim"}},
+    "replace": {"required": ["column", "pattern"], "optional": ["replacement", "regex"], "defaults": {"replacement": "", "regex": False}, "example": {"column": "status", "pattern": "old", "replacement": "new"}},
+    "bin": {"required": ["column"], "optional": ["new_column", "bins", "edges", "labels"], "defaults": {"bins": 5}, "example": {"column": "score", "bins": 4}},
+    "date_parts": {"required": ["column", "parts"], "optional": [], "choices": {"parts": ["year", "month", "day", "dow", "quarter", "week", "hour", "minute"]}, "example": {"column": "created_at", "parts": ["year", "month"]}},
+    "group": {"required": ["group_by", "aggregations"], "optional": [], "choices": {"aggregations[].fn": ["sum", "avg", "min", "max", "count", "count_distinct", "median", "stddev"]}, "operation_notes": {"count_distinct": "Exact COUNT(DISTINCT column); ignores null values."}, "defaults": {"aggregations[].fn": "sum"}, "shapes": {"group_by": "array<string>", "aggregations": "array<{fn?: string, column?: string (required unless fn=count), alias?: string}>"}, "example": {"group_by": ["region"], "aggregations": [{"column": "amount", "fn": "sum", "alias": "total"}]}},
+    "pivot": {"required": ["on", "value"], "optional": ["fn", "group_by"], "defaults": {"fn": "sum", "group_by": []}, "example": {"on": "quarter", "value": "amount", "fn": "sum"}},
+    "unpivot": {"required": ["on"], "optional": ["name_col", "value_col"], "defaults": {"name_col": "key", "value_col": "value"}, "example": {"on": ["q1", "q2"]}},
+    "join": {"required": ["other_dataset", "on"], "optional": ["how"], "defaults": {"how": "left"}, "choices": {"how": ["inner", "left", "right", "full"]}, "shapes": {"on": "array<{left: string, right: string}>"}, "example": {"other_dataset": "regions", "on": [{"left": "region_id", "right": "id"}], "how": "left"}},
+    "union": {"required": ["other_dataset"], "optional": ["distinct"], "defaults": {"distinct": False}, "example": {"other_dataset": "archive"}},
+    "sort": {"required": ["by"], "optional": [], "defaults": {"by[].desc": False}, "shapes": {"by": "array<string | {column: string, desc?: boolean}>"}, "example": {"by": [{"column": "amount", "desc": True}]}},
+    "sample": {"required_any": ["n", "frac"], "optional": ["seed"], "defaults": {"seed": 42}, "example": {"n": 100, "seed": 42}},
+    "window": {"required": ["fn", "order_by"], "conditional_required": {"fn=lag|lead|rolling_mean|rolling_sum": ["column"]}, "optional": ["column", "offset", "window_size", "partition_by", "new_column"], "defaults": {"offset": 1, "window_size": 3, "partition_by": []}, "choices": {"fn": ["lag", "lead", "rolling_mean", "rolling_sum", "row_number", "rank"]}, "shapes": {"order_by": "array<string>", "partition_by": "array<string>", "column": "string (required for lag, lead, rolling_mean, rolling_sum)"}, "example": {"fn": "lag", "column": "amount", "order_by": ["date"]}},
+    "sql": {"required": ["sql"], "optional": [], "example": {"sql": "SELECT * FROM __prev__ WHERE amount > 0"}},
+}
+
+
+def step_parameter_catalog() -> dict[str, dict[str, Any]]:
+    """Return a JSON-ready copy of the native transform parameter contracts."""
+    from copy import deepcopy
+
+    return deepcopy(STEP_PARAM_GUIDANCE)
+
+
+def _missing_contract_fields(op: str, params: dict) -> list[str]:
+    contract = STEP_PARAM_GUIDANCE[op]
+    missing = [key for key in contract.get("required", []) if params.get(key) in (None, "")]
+    for condition, fields in contract.get("conditional_required", {}).items():
+        selector, values = condition.split("=", 1)
+        actual = params.get(selector, contract.get("defaults", {}).get(selector, ""))
+        if str(actual) in values.split("|"):
+            missing.extend(key for key in fields if params.get(key) in (None, ""))
+    alternatives = contract.get("required_any", [])
+    if alternatives and not any(params.get(key) not in (None, "") for key in alternatives):
+        missing.append("one of " + " or ".join(alternatives))
+    return missing
+
 
 def build_step_sql(op: str, ctx: StepContext, params: dict) -> str:
     builder = STEP_BUILDERS.get(op)
     if not builder:
         raise StepError(f"unknown step: {op}; choose from {STEP_KINDS}")
-    return builder(ctx, dict(params or {}))
+    params = dict(params or {})
+    missing = _missing_contract_fields(op, params)
+    if missing:
+        raise StepError(f"{op} requires parameter(s): {', '.join(missing)}")
+    return builder(ctx, params)
