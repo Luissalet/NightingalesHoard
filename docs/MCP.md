@@ -9,9 +9,9 @@ Env vars the bridge reads: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), 
 `NIGHTINGALE_TOKEN_FILE` (a path to the token file) or `NIGHTINGALE_TOKEN` (the token itself) —
 if neither is set it falls back to `<NIGHTINGALE_DATA_DIR or ./data>/mcp-token`.
 
-Every call is recorded in the analysis log with `source: "agent"` and an id like `N-000123`,
-exactly like a UI action would be, so "what did the assistant just do to my data" is always
-answerable from the **Log** screen.
+Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
+`N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
+parameter lookup does not create a version or log entry.
 
 18 tools, matching the family contract's cap. The Lab package (EDA/quality/drift, the model
 registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports, the visual pipeline
@@ -25,7 +25,7 @@ graph — see `docs/LAB.md`) is reached entirely through new `mode`s on `data_pr
 | `data_list` | read | Every registered dataset, with row/column counts and last update time. |
 | `data_profile` | read | `mode="profile"` (default): per-column profile (type, nulls %, distinct, min/max/mean/sd, histogram, top values, IQR outliers). `mode="eda"`: the Lab bundle — Pearson+Spearman correlation, null co-occurrence, IQR+z-score outliers, encoding suggestions, quality score. `mode="quality_score"`: just the 0-100 score. `mode="drift"`: KS test/PSI/Wasserstein/mean-sd shift against `other_dataset`. |
 | `data_preview` | read | First rows of a dataset version, plus the total row count. |
-| `data_transform` | write (unless `preview: true`) | Apply or preview one of 21 cleaning/reshaping steps (filter, select, drop, rename, cast, fill_null, drop_duplicates, derive, split_column, text, replace, bin, date_parts, group, pivot, unpivot, join, union, sort, sample, window, sql). |
+| `data_transform` | read-only for `op="help"`; write when `preview: false` | Apply or preview one of 22 native cleaning/reshaping steps, or look up contracts from MCP without a dataset: `data_transform(op="help", help_for="replace")`; omit `help_for` for the full catalog. The REST equivalent is `GET /api/transforms?op=replace`. Missing required transform fields return a step-specific error. See [transform operation reference](TRANSFORM-OPERATIONS.md) / [Spanish reference](TRANSFORM-OPERATIONS.es.md). |
 | `data_undo` | write, non-destructive | Move a dataset to an earlier (`undo`) or later (`redo`) version. |
 | `data_recipe` | read / write on `replay` | Show a dataset's step history, export it as a runnable SQL script, or replay it (same as `data_refresh`). |
 | `data_query` | read | Run one read-only `SELECT`/`WITH`/`DESCRIBE`/`SUMMARIZE` over registered dataset views. |

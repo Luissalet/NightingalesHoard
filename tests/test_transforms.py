@@ -1,6 +1,9 @@
 """Every transform step type, applied at least once, plus preview/undo/redo/recipe/lineage."""
 
 import pytest
+from nightingale.agent_tools import tool_catalog
+from nightingale.sqlgate import gate_sql
+from nightingale.workbench.steps import STEP_BUILDERS, STEP_PARAM_GUIDANCE, STEP_KINDS, StepContext, StepError, build_step_sql
 
 
 @pytest.fixture
@@ -17,6 +20,73 @@ def sales(services, tmp_path):
     )
     services.ingest_file(str(path), "sales")
     return "sales"
+
+
+def test_transform_parameter_inventory_matches_native_builders(client):
+    expected = client.services.transform_operations()
+    assert [item["op"] for item in expected["operations"]] == list(STEP_KINDS)
+    assert set(STEP_PARAM_GUIDANCE) == set(STEP_BUILDERS)
+    api = client.get("/api/transforms")
+    assert api.status_code == 200 and api.json() == expected
+    assert client.get("/api/transforms", params={"op": "replace"}).json()["operations"] == [
+        next(item for item in expected["operations"] if item["op"] == "replace")]
+    by_op = {item["op"]: item for item in expected["operations"]}
+    assert "array<{fn?: string, column?: string (required unless fn=count), alias?: string}>" in by_op["group"]["shapes"]["aggregations"]
+    assert "desc?: boolean" in by_op["sort"]["shapes"]["by"]
+    assert "left: string, right: string" in by_op["join"]["shapes"]["on"]
+    assert by_op["window"]["defaults"]["offset"] == 1
+    assert "Exact COUNT(DISTINCT column)" in by_op["group"]["operation_notes"]["count_distinct"]
+    schema = next(item for item in tool_catalog() if item["name"] == "data_transform")["inputSchema"]
+    assert "dataset" not in schema.get("required", [])
+    assert len(schema["properties"]["params"]["description"]) < 180
+
+
+def test_mcp_transform_help_is_filterable_and_has_no_dataset_side_effect(client, sales):
+    dataset = client.services._dataset_row(sales)
+    version_before = dataset["current_version"]
+    version_count_before = len(client.services.meta.list_versions(dataset["id"]))
+    log_count_before = len(client.services.log_search(limit=200)["entries"])
+    help_response = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_transform", "arguments": {"op": "help", "help_for": "replace"}})
+    assert help_response.status_code == 200, help_response.text
+    contract = help_response.json()
+    assert contract["read_only"] is True
+    assert [item["op"] for item in contract["operations"]] == ["replace"]
+    assert contract["operations"][0]["required"] == ["column", "pattern"]
+    assert contract["operations"][0]["optional"] == ["replacement", "regex"]
+    full_help = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_transform", "arguments": {"op": "help"}})
+    assert full_help.status_code == 200 and len(full_help.json()["operations"]) == len(STEP_KINDS)
+    dataset_after = client.services._dataset_row(sales)
+    assert dataset_after["current_version"] == version_before
+    assert len(client.services.meta.list_versions(dataset["id"])) == version_count_before
+    assert len(client.services.log_search(limit=200)["entries"]) == log_count_before
+
+
+def test_transform_missing_parameter_errors_name_the_native_contract():
+    ctx = StepContext("prev", ["amount"], lambda _name: "other")
+    with pytest.raises(StepError, match=r"replace requires parameter\(s\): column, pattern"):
+        build_step_sql("replace", ctx, {})
+    with pytest.raises(StepError, match=r"fill_null requires parameter\(s\): column, value"):
+        build_step_sql("fill_null", ctx, {})
+    with pytest.raises(StepError, match=r"sample requires parameter\(s\): one of n or frac"):
+        build_step_sql("sample", ctx, {})
+    with pytest.raises(StepError, match=r"window requires parameter\(s\): fn, order_by"):
+        build_step_sql("window", ctx, {})
+    with pytest.raises(StepError, match=r"window requires parameter\(s\): column"):
+        build_step_sql("window", ctx, {"fn": "lag", "order_by": ["amount"]})
+
+
+def test_replace_missing_pattern_error_is_clear_on_rest_and_mcp(client, sales):
+    rest = client.post(f"/api/datasets/{sales}/transform", json={
+        "op": "replace", "params": {"column": "note"}, "preview": True})
+    assert rest.status_code == 400
+    assert "replace requires parameter(s): pattern" in rest.json()["error"]
+    mcp = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+                      json={"name": "data_transform", "arguments": {
+                          "dataset": sales, "op": "replace", "params": {"column": "note"}, "preview": True}})
+    assert mcp.status_code == 400
+    assert "replace requires parameter(s): pattern" in mcp.json()["error"]
 
 
 def test_preview_does_not_create_a_version(services, sales):
@@ -81,6 +151,23 @@ def test_text_ops(services, sales):
     services.transform_apply(sales, "text", {"column": "region", "op": "upper", "new_column": "region_upper"})
 
 
+def test_title_text_transform_preserves_unicode_delimiters_and_nulls(services, tmp_path):
+    import unicodedata
+
+    path = tmp_path / "title.csv"
+    path.write_text('phrase\n"  mIxEd  café-o\'NEIL! "\n"e\u0301COLE--HELLO"\n""\n', encoding="utf-8")
+    services.ingest_file(str(path), "title_text")
+    ctx = StepContext("__prev__", ["phrase"], lambda _name: "other")
+    generated_sql = build_step_sql("text", ctx, {"column": "phrase", "op": "title"})
+    gate_sql(generated_sql)
+    services.transform_apply("title_text", "text", {"column": "phrase", "op": "title"})
+    rows = services.preview("title_text", limit=10)["rows"]
+    assert rows[0]["phrase"] == "  Mixed  Café-O'Neil! "
+    assert unicodedata.normalize("NFC", rows[1]["phrase"]) == "École--Hello"
+    assert "\u0301" in rows[1]["phrase"]  # combining accent remains decomposed in the source text
+    assert rows[2]["phrase"] in (None, "")
+
+
 def test_replace(services, sales):
     r = services.transform_apply(sales, "replace", {"column": "note", "pattern": "PROMO", "replacement": "promo"})
     assert r["row_count"] > 0
@@ -107,6 +194,48 @@ def test_group_aggregate(services, sales):
                                                                         {"fn": "count", "alias": "n"}]})
     assert "total_qty" in [c["name"] for c in r["columns"]]
     assert r["row_count"] <= 5
+
+
+def test_count_distinct_is_exact_through_api_mcp_recipe_and_export(client, tmp_path):
+    import csv
+
+    path = tmp_path / "distinct.csv"
+    path.write_text(
+        "bucket,value\n" + "".join(f"all,{value}\n" for value in range(1000)) +
+        "all,13\nall,13\nall,\n",
+        encoding="utf-8",
+    )
+    client.services.ingest_file(str(path), "distinct_counts")
+    source_rows = client.get("/api/datasets/distinct_counts/preview?limit=1100").json()["rows"]
+    assert any(row["value"] is None for row in source_rows)
+    params = {"group_by": ["bucket"], "aggregations": [
+        {"column": "value", "fn": "count_distinct", "alias": "unique_count"}]}
+
+    preview = client.post("/api/datasets/distinct_counts/transform", json={
+        "op": "group", "params": params, "preview": True})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["preview_rows"] == [{"bucket": "all", "unique_count": 1000}]
+    assert "COUNT(DISTINCT" in preview.json()["select_sql"]
+    assert "APPROX_COUNT_DISTINCT" not in preview.json()["select_sql"]
+
+    mcp = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+        json={"name": "data_transform", "arguments": {
+            "dataset": "distinct_counts", "op": "group", "params": params, "preview": False}})
+    assert mcp.status_code == 200, mcp.text
+    current = client.get("/api/datasets/distinct_counts/preview?limit=10")
+    assert current.status_code == 200
+    assert current.json()["rows"] == [{"bucket": "all", "unique_count": 1000}]
+
+    recipe = client.get("/api/datasets/distinct_counts/recipe?action=export")
+    assert recipe.status_code == 200 and "COUNT(DISTINCT" in recipe.json()["sql_script"]
+    assert "APPROX_COUNT_DISTINCT" not in recipe.json()["sql_script"]
+
+    exported = client.post("/api/export", json={"dataset": "distinct_counts", "format": "csv",
+                                                 "path": "distinct-counts.csv"})
+    assert exported.status_code == 200, exported.text
+    with open(exported.json()["path"], newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    assert rows == [{"bucket": "all", "unique_count": "1000"}]
 
 
 def test_pivot_unpivot(services, sales):
