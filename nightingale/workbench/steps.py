@@ -16,6 +16,7 @@ the exported recipe script.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from difflib import get_close_matches
 from typing import Any, Callable
 
 __all__ = ["StepError", "STEP_BUILDERS", "STEP_KINDS", "STEP_PARAM_GUIDANCE", "build_step_sql"]
@@ -508,11 +509,33 @@ def _missing_contract_fields(op: str, params: dict) -> list[str]:
     return missing
 
 
+def _unexpected_contract_fields(op: str, params: dict) -> list[str]:
+    """Find top-level parameter keys that this native builder will ignore."""
+    contract = STEP_PARAM_GUIDANCE[op]
+    allowed = set(contract.get("required", ())) | set(contract.get("optional", ()))
+    allowed.update(contract.get("required_any", ()))
+    for fields in contract.get("conditional_required", {}).values():
+        allowed.update(fields)
+    unknown = sorted(str(key) for key in params if key not in allowed)
+    common_mistakes = {"replace": {"new_value": "replacement", "find": "pattern"}}
+    messages = []
+    for key in unknown:
+        known_alias = common_mistakes.get(op, {}).get(key)
+        suggestion = get_close_matches(key, sorted(allowed), n=1, cutoff=0.68)
+        field = known_alias or (suggestion[0] if suggestion else None)
+        suffix = f"; use '{field}'" if field else ""
+        messages.append(f"{key}{suffix}")
+    return messages
+
+
 def build_step_sql(op: str, ctx: StepContext, params: dict) -> str:
     builder = STEP_BUILDERS.get(op)
     if not builder:
         raise StepError(f"unknown step: {op}; choose from {STEP_KINDS}")
     params = dict(params or {})
+    unexpected = _unexpected_contract_fields(op, params)
+    if unexpected:
+        raise StepError(f"{op} does not accept parameter(s): {', '.join(unexpected)}")
     missing = _missing_contract_fields(op, params)
     if missing:
         raise StepError(f"{op} requires parameter(s): {', '.join(missing)}")

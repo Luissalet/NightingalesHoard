@@ -173,6 +173,46 @@ def test_replace(services, sales):
     assert r["row_count"] > 0
 
 
+@pytest.mark.parametrize("transport", ["rest", "mcp"])
+@pytest.mark.parametrize("preview", [True, False], ids=["preview", "apply"])
+def test_unknown_replace_field_cannot_silently_delete_values(client, sales, transport, preview):
+    before = client.services.preview(sales, limit=10)
+    dataset = client.services._dataset_row(sales)
+    versions_before = client.services.meta.list_versions(dataset["id"])
+    arguments = {"op": "replace", "params": {
+        "column": "note", "pattern": "PROMO", "new_value": "renamed"}, "preview": preview}
+    if transport == "rest":
+        response = client.post(f"/api/datasets/{sales}/transform", json=arguments)
+    else:
+        response = client.post("/api/agent/call", headers={"Authorization": f"Bearer {client.services.token}"},
+            json={"name": "data_transform", "arguments": {"dataset": sales, **arguments}})
+    assert response.status_code == 400, response.text
+    assert "replace" in response.json()["error"]
+    assert "new_value" in response.json()["error"]
+    assert "replacement" in response.json()["error"]
+    assert client.services._dataset_row(sales)["current_version"] == 0
+    assert client.services.meta.list_versions(dataset["id"]) == versions_before
+    after = client.services.preview(sales, limit=10)
+    assert {key: value for key, value in after.items() if key != "elapsed_ms"} == {
+        key: value for key, value in before.items() if key != "elapsed_ms"}
+
+
+def test_replace_without_replacement_still_supports_intentional_deletion(services, sales):
+    preview = services.transform_preview(sales, "replace", {"column": "note", "pattern": "PROMO"})
+    assert next(row for row in preview["preview_rows"] if row["id"] == 5)["note"] == ""
+    assert services._dataset_row(sales)["current_version"] == 0
+    applied = services.transform_apply(sales, "replace", {"column": "note", "pattern": "PROMO"})
+    assert applied["current_version"] == 1
+    assert next(row for row in services.preview(sales, limit=10)["rows"] if row["id"] == 5)["note"] == ""
+
+
+def test_conditional_and_alternative_fields_remain_valid(services, sales):
+    filled = services.transform_preview(sales, "fill_null", {"column": "qty", "value": 0})
+    assert next(row for row in filled["preview_rows"] if row["id"] == 4)["qty"] == 0
+    sampled = services.transform_preview(sales, "sample", {"frac": 1.0, "seed": 9})
+    assert sampled["row_count_after"] == 5
+
+
 def test_bin(services, sales):
     r = services.transform_apply(sales, "bin", {"column": "price", "bins": 3})
     assert "price_bin" in [c["name"] for c in r["columns"]]

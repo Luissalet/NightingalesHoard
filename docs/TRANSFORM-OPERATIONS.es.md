@@ -9,6 +9,13 @@ help_for="replace")` sin dataset, u omitir `help_for` para obtener el catálogo
 completo de solo lectura. Esta consulta no crea una versión ni una entrada de
 análisis.
 
+Los campos desconocidos del primer nivel de `params` devuelven un error antes
+de previsualizar o aplicar. Nunca se ignoran: por ejemplo, `replace` usa
+`replacement`, no `new_value`. Omitir `replacement` intencionalmente sigue
+significando una cadena vacía (borrar el texto coincidente). Los campos
+documentados, incluidos los condicionales y `n`/`frac` de `sample`, conservan
+su comportamiento.
+
 | Operación | `params` obligatorios | Campos opcionales y reglas | Ejemplo |
 | --- | --- | --- | --- |
 | `filter` | `expr` | Un predicado SQL. | `{"expr":"amount > 0"}` |
