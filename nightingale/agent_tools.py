@@ -92,11 +92,11 @@ class PreviewArgs(BaseModel):
 
 
 class TransformArgs(BaseModel):
-    dataset: Optional[str] = Field(None, description="Required for a transform; omit for op='help'.")
+    dataset: Optional[str] = Field(None, description="Required for a transform. With op='help', optionally name a dataset to include its current column names/types, version, and row count (no cell values).")
     op: str = Field(..., description="filter/select/drop/rename/cast/fill_null/drop_duplicates/derive/split_column/"
                                         "text/replace/bin/date_parts/group/pivot/unpivot/join/union/sort/sample/window/sql. "
                                         "Use op='help' with help_for='<operation>' for its exact read-only contract, or omit help_for for the full catalog.")
-    help_for: Optional[str] = Field(None, description="With op='help', filter the read-only contract lookup to one transform operation. Needs no dataset.")
+    help_for: Optional[str] = Field(None, description="With op='help', filter the read-only contract lookup to one transform operation. Add dataset when choosing fields so its current schema is included.")
     params: dict[str, Any] = Field(default_factory=dict, description="Operation-specific JSON object; use op='help' to look up its exact fields and nested shapes.")
     preview: bool = Field(True, description="true: show the effect without applying; false: apply and create a new version.")
 
@@ -339,7 +339,7 @@ def _run_transform(s: Services, a: TransformArgs) -> dict:
     if a.op == "help":
         if a.params:
             raise ValueError("op='help' uses help_for and does not accept transform params")
-        return s.transform_operations(a.help_for)
+        return s.transform_operations(a.help_for, a.dataset)
     if a.help_for is not None:
         raise ValueError("help_for is only valid with op='help'")
     if not a.dataset:
@@ -557,7 +557,7 @@ TOOLS: list[Tool] = [
          "Sinónimos: ver datos, muestra de filas, primeras filas.",
          PreviewArgs, _ann(True), _run_preview),
     Tool("data_transform", "Preview/apply dataset transformations, or inspect operation parameters (op='help').\n"
-         "For MCP-only clients, call data_transform(op='help', help_for='replace') without a dataset; omit help_for for the full read-only catalog.\n"
+         "For MCP-only clients, use op='help'; add dataset to include current column names/types, version, and row count without values.\n"
          "Sinónimos: transformar datos, limpiar columna, filtrar filas, renombrar columna, agrupar datos.",
          TransformArgs, _ann(False, False, False), _run_transform),
     Tool("data_undo", "Move a dataset to an earlier (undo) or later (redo) version (write, non-destructive).\n"
