@@ -126,10 +126,32 @@ CREATE INDEX IF NOT EXISTS idx_log_source ON log(source);
 MAX_LOG_JSON = 20_000
 
 
+#: migration 2: the per-dashboard action log (undo/redo) and the snapshot each dashboard started from
+_ACTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS dashboard_initial (
+    dashboard_id INTEGER PRIMARY KEY REFERENCES dashboards(id) ON DELETE CASCADE,
+    state_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dashboard_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id INTEGER NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    action_json TEXT NOT NULL,
+    inverse_json TEXT NOT NULL,
+    source TEXT NOT NULL,
+    undone INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_actions ON dashboard_actions(dashboard_id, id);
+"""
+
+
 def connect(data_dir: Path) -> sqlkit.Database:
     """Open (and migrate) the metadata database in ``data_dir``. Databases made before the shared layer have no
     ``schema_version`` table: the one migration is idempotent (``CREATE ... IF NOT EXISTS``), so they open unchanged."""
-    return sqlkit.Database(Path(data_dir) / "nightingale-meta.sqlite", migrations=[_SCHEMA], foreign_keys=True)
+    return sqlkit.Database(Path(data_dir) / "nightingale-meta.sqlite", migrations=[_SCHEMA, _ACTIONS_SCHEMA], foreign_keys=True)
 
 
 def now_iso() -> str:
@@ -296,6 +318,34 @@ class Meta:
         self.db.execute(
             "UPDATE dashboards SET spec_json=?, updated_at=? WHERE id=?", (json.dumps(spec), now_iso(), dashboard_id)
         )
+
+    def rename_dashboard(self, dashboard_id: int, name: str) -> None:
+        self.db.execute("UPDATE dashboards SET name=?, updated_at=? WHERE id=?", (name, now_iso(), dashboard_id))
+
+    # ---- dashboard action log ----
+    def get_dashboard_initial(self, dashboard_id: int) -> Optional[sqlite3.Row]:
+        return self.db.one("SELECT * FROM dashboard_initial WHERE dashboard_id=?", (dashboard_id,))
+
+    def set_dashboard_initial(self, dashboard_id: int, state: dict) -> None:
+        self.db.execute(
+            "INSERT OR IGNORE INTO dashboard_initial (dashboard_id, state_json, created_at) VALUES (?,?,?)",
+            (dashboard_id, json.dumps(state), now_iso()),
+        )
+
+    def add_dashboard_action(self, dashboard_id: int, action: dict, inverse: dict, source: str) -> int:
+        return self.db.execute(
+            "INSERT INTO dashboard_actions (dashboard_id, action_json, inverse_json, source, created_at) VALUES (?,?,?,?,?)",
+            (dashboard_id, json.dumps(action), json.dumps(inverse), source, now_iso()),
+        ).lastrowid
+
+    def list_dashboard_actions(self, dashboard_id: int) -> list[sqlite3.Row]:
+        return self.db.query("SELECT * FROM dashboard_actions WHERE dashboard_id=? ORDER BY id", (dashboard_id,))
+
+    def set_dashboard_action_undone(self, action_id: int, undone: bool) -> None:
+        self.db.execute("UPDATE dashboard_actions SET undone=? WHERE id=?", (int(undone), action_id))
+
+    def drop_undone_dashboard_actions(self, dashboard_id: int) -> None:
+        self.db.execute("DELETE FROM dashboard_actions WHERE dashboard_id=? AND undone=1", (dashboard_id,))
 
     # ---- models ----
     def add_model(self, name: str, dataset_id: int | None, dataset_version: int, kind: str, target: str | None,

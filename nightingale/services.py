@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
 from . import __version__, backend, db
+from . import dashboard_actions as dash_actions
 from .hoard_link import fam_web, tokens
 from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
@@ -75,6 +76,27 @@ class NotFoundError(LookupError):
     pass
 
 
+def _action_summary(action: dict) -> str:
+    kind = action.get("type", "?")
+    if kind == "add_item":
+        item = action["item"]
+        what = f"chart {item.get('chart_id')}" if item["type"] == "chart" else f"KPI {item.get('label') or item.get('expr')}"
+        return f"add {what} at {action.get('index')}"
+    if kind == "remove_item":
+        return f"remove item {action['item_id']}"
+    if kind == "move_item":
+        return f"move item {action['item_id']} to {action['to_index']}"
+    if kind == "update_item":
+        return f"update item {action['item_id']} ({', '.join(list(action.get('set', {})) + list(action.get('unset', [])))})"
+    if kind == "set_name":
+        return f"rename to {action['name']!r}"
+    if kind == "set_filter":
+        return "set filter"
+    if kind == "set_layout":
+        return f"layout {action['columns']} columns"
+    return kind
+
+
 def write_token(config: Config) -> str:
     """The MCP token is persistent: created once, reused on every later start (the shared token file helper)."""
     config.data_dir.mkdir(parents=True, exist_ok=True)
@@ -98,6 +120,8 @@ class Services:
         self.token = write_token(config)
         write_url(config)
         self.meta = db.Meta(db.connect(config.data_dir))
+        self._dash_lock = threading.RLock()
+        self._dash_migrate_all()
         self.engine = Engine(config.duckdb_path)
         self.link = backend.load_link(config.data_dir)
         self.web_fetcher = None  # a hoard_link.web.fetch.Fetcher for the local fallback of URL downloads (tests inject one)
@@ -952,30 +976,135 @@ class Services:
 
     def dashboard_create(self, name: str, items: Optional[list] = None, filter: Optional[dict] = None,
                           source: str = "ui") -> dict:
-        spec = {"items": items or [], "filter": filter or {}}
+        state, _ = dash_actions.normalize_state(name, {"items": items or [], "filter": filter or {}})
+        spec = dash_actions.state_to_spec(state)
         dashboard_id = self.meta.add_dashboard(name, spec)
+        self.meta.set_dashboard_initial(dashboard_id, state)
         return self._log("dashboard", source, None, {"action": "create", "name": name},
                           lambda: {"dashboard_id": dashboard_id, "name": name, "spec": spec, "_log_summary": f"created {name!r}"})
 
     def dashboard_add(self, dashboard_id: int, item: dict, source: str = "ui") -> dict:
+        """Append an item: a shortcut for the ``add_item`` action (so it is logged and can be undone)."""
+        result = self.dashboard_apply(dashboard_id, {"type": "add_item", "item": item}, source=source)
+        return {**result, "spec": dash_actions.state_to_spec(result["state"])}
+
+    # ---- dashboard actions (typed, logged, reversible) --------------------------------------------------
+    def _dash_load(self, dashboard_id: int) -> tuple[Any, dict]:
+        """The dashboard's current state. Dashboards saved before actions existed get item ids and an
+        initial-state snapshot here (their migration), the first time they are touched."""
         row = self.meta.get_dashboard(dashboard_id)
         if row is None:
             raise NotFoundError(f"unknown dashboard: {dashboard_id}")
         import json as _json
 
-        spec = _json.loads(row["spec_json"])
-        spec.setdefault("items", []).append(item)
-        self.meta.update_dashboard(dashboard_id, spec)
-        return self._log("dashboard", source, None, {"action": "add", "dashboard_id": dashboard_id, "item": item},
-                          lambda: {"dashboard_id": dashboard_id, "spec": spec, "_log_summary": "item added"})
+        state, changed = dash_actions.normalize_state(row["name"], _json.loads(row["spec_json"]))
+        if self.meta.get_dashboard_initial(dashboard_id) is None:
+            self.meta.set_dashboard_initial(dashboard_id, state)
+        if changed:
+            self.meta.update_dashboard(dashboard_id, dash_actions.state_to_spec(state))
+        return row, state
+
+    def _dash_migrate_all(self) -> None:
+        for r in self.meta.list_dashboards():
+            try:
+                self._dash_load(r["id"])
+            except Exception:  # noqa: BLE001 - a broken old row must not stop the app from starting
+                log.warning("could not migrate dashboard %s", r["id"], exc_info=True)
+
+    def _dash_check_refs(self, item: dict) -> None:
+        if item["type"] == "chart" and self.meta.get_chart(item["chart_id"]) is None:
+            raise dash_actions.ActionError("unknown_chart", f"chart {item['chart_id']} does not exist "
+                                           f"(saved charts: {[c['id'] for c in self.meta.list_charts()]})", "chart_id")
+        if item["type"] == "kpi" and self.meta.get_dataset(item["dataset"]) is None:
+            names = [d["name"] for d in self.meta.list_datasets()]
+            raise dash_actions.ActionError("unknown_dataset", f"dataset {item['dataset']!r} does not exist (registered: {names})", "dataset")
+
+    def _dash_flags(self, dashboard_id: int) -> dict:
+        rows = self.meta.list_dashboard_actions(dashboard_id)
+        return {"can_undo": any(not r["undone"] for r in rows), "can_redo": any(r["undone"] for r in rows)}
+
+    def _dash_persist(self, dashboard_id: int, old_state: dict, new_state: dict) -> None:
+        self.meta.update_dashboard(dashboard_id, dash_actions.state_to_spec(new_state))
+        if new_state["name"] != old_state["name"]:
+            self.meta.rename_dashboard(dashboard_id, new_state["name"])
+
+    def dashboard_apply(self, dashboard_id: int, action: dict, source: str = "ui") -> dict:
+        """Apply one typed action (see ``dashboard_action_schemas``), record it and return the new state. A new
+        action discards the redo branch. Raises ``ActionError`` (a ``ValueError``) when it is invalid."""
+        def do():
+            with self._dash_lock:
+                _, state = self._dash_load(dashboard_id)
+                new, normalized, inverse = dash_actions.apply_action(state, action)
+                touched = normalized["item"] if normalized["type"] == "add_item" else None
+                if normalized["type"] == "update_item":
+                    touched = next(i for i in new["items"] if i["id"] == normalized["item_id"])
+                if touched is not None:
+                    self._dash_check_refs(touched)
+                with self.meta.db.tx():
+                    self.meta.drop_undone_dashboard_actions(dashboard_id)
+                    self._dash_persist(dashboard_id, state, new)
+                    action_id = self.meta.add_dashboard_action(dashboard_id, normalized, inverse, source)
+                return {"dashboard_id": dashboard_id, "action_id": action_id, "action": normalized, "inverse": inverse,
+                        "state": new, **self._dash_flags(dashboard_id),
+                        "_log_summary": _action_summary(normalized)}
+
+        return self._log("dashboard_action", source, None, {"dashboard_id": dashboard_id, "action": action}, do)
+
+    def _dash_step(self, dashboard_id: int, undo: bool, source: str) -> dict:
+        def do():
+            with self._dash_lock:
+                _, state = self._dash_load(dashboard_id)
+                rows = self.meta.list_dashboard_actions(dashboard_id)
+                if undo:
+                    todo = [r for r in rows if not r["undone"]]
+                    if not todo:
+                        raise dash_actions.ActionError("nothing_to_undo", "this dashboard has no action to undo")
+                    row = todo[-1]
+                    raw = _json_loads(row["inverse_json"])
+                else:
+                    todo = [r for r in rows if r["undone"]]
+                    if not todo:
+                        raise dash_actions.ActionError("nothing_to_redo", "this dashboard has no undone action to redo")
+                    row = todo[0]
+                    raw = _json_loads(row["action_json"])
+                try:
+                    new, _, _ = dash_actions.apply_action(state, raw)
+                except dash_actions.ActionError as exc:
+                    raise dash_actions.ActionError("history_conflict", f"the dashboard no longer matches its history: {exc.message}") from None
+                with self.meta.db.tx():
+                    self._dash_persist(dashboard_id, state, new)
+                    self.meta.set_dashboard_action_undone(row["id"], undo)
+                applied = _json_loads(row["inverse_json"] if undo else row["action_json"])
+                return {"dashboard_id": dashboard_id, "action_id": row["id"], "applied": applied, "state": new,
+                        **self._dash_flags(dashboard_id),
+                        "_log_summary": ("undo: " if undo else "redo: ") + _action_summary(_json_loads(row["action_json"]))}
+
+        return self._log("dashboard_action", source, None, {"dashboard_id": dashboard_id, "step": "undo" if undo else "redo"}, do)
+
+    def dashboard_undo(self, dashboard_id: int, source: str = "ui") -> dict:
+        return self._dash_step(dashboard_id, True, source)
+
+    def dashboard_redo(self, dashboard_id: int, source: str = "ui") -> dict:
+        return self._dash_step(dashboard_id, False, source)
+
+    def dashboard_history(self, dashboard_id: int, limit: int = 100) -> dict:
+        """The dashboard's action log, oldest first, with the undone (redo-able) tail flagged, and the state it started from."""
+        with self._dash_lock:
+            _, state = self._dash_load(dashboard_id)
+        initial = self.meta.get_dashboard_initial(dashboard_id)
+        rows = self.meta.list_dashboard_actions(dashboard_id)
+        entries = [{"seq": n, "action_id": r["id"], "action": _json_loads(r["action_json"]), "inverse": _json_loads(r["inverse_json"]),
+                    "summary": _action_summary(_json_loads(r["action_json"])), "source": r["source"],
+                    "undone": bool(r["undone"]), "created_at": r["created_at"]} for n, r in enumerate(rows, 1)]
+        return {"dashboard_id": dashboard_id, "initial_state": _json_loads(initial["state_json"]) if initial else None,
+                "total": len(entries), "actions": entries[-max(1, limit):], "state": state, **self._dash_flags(dashboard_id)}
+
+    def dashboard_action_schemas(self) -> dict:
+        return dash_actions.action_schemas()
 
     def dashboard_get(self, dashboard_id: int) -> dict:
-        row = self.meta.get_dashboard(dashboard_id)
-        if row is None:
-            raise NotFoundError(f"unknown dashboard: {dashboard_id}")
-        import json as _json
-
-        spec = _json.loads(row["spec_json"])
+        row, state = self._dash_load(dashboard_id)
+        spec = dash_actions.state_to_spec(state)
         rendered_items = []
         for item in spec.get("items", []):
             if item.get("type") == "chart":
@@ -990,7 +1119,8 @@ class Services:
                     rendered_items.append({**item, "value": val["rows"][0]["v"] if val["rows"] else None})
                 except Exception as exc:  # noqa: BLE001
                     rendered_items.append({**item, "value": None, "error": str(exc)})
-        return {"dashboard_id": dashboard_id, "name": row["name"], "items": rendered_items, "filter": spec.get("filter")}
+        return {"dashboard_id": dashboard_id, "name": row["name"], "items": rendered_items, "filter": spec.get("filter"),
+                "layout": spec.get("layout"), **self._dash_flags(dashboard_id)}
 
     def dashboard_list(self) -> dict:
         return {"dashboards": [{"id": r["id"], "name": r["name"], "updated_at": r["updated_at"]}

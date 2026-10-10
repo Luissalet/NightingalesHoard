@@ -62,6 +62,10 @@ export const api = {
   dashboardList: () => get("/api/dashboards"),
   dashboardGet: (id) => get(`/api/dashboards/${id}`),
   dashboardAddItem: (id, item) => post(`/api/dashboards/${id}/items`, { item }),
+  dashboardAction: (id, action) => post(`/api/dashboards/${id}/actions`, { action }),
+  dashboardUndo: (id) => post(`/api/dashboards/${id}/undo`, {}),
+  dashboardRedo: (id) => post(`/api/dashboards/${id}/redo`, {}),
+  dashboardHistory: (id, limit = 20) => get(`/api/dashboards/${id}/history`, { limit }),
 
   dac: {
     semanticGet: () => get("/api/dac/semantic"),

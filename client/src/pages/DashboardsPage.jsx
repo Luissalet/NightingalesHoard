@@ -73,6 +73,43 @@ export default function DashboardsPage() {
     }
   };
 
+  // every edit below is one typed action (the same ones the MCP tool uses), so it lands in the history and can be undone
+  const [history, setHistory] = useState(null);
+  const loadHistory = async () => {
+    if (!active) return setHistory(null);
+    try {
+      setHistory(await api.dashboardHistory(active));
+    } catch {
+      setHistory(null);
+    }
+  };
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, detail]);
+
+  const act = async (fn) => {
+    try {
+      await fn();
+      await loadList();
+      await loadDetail();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  const doAction = (action) => act(() => api.dashboardAction(active, action));
+  const move = (item, delta, index) => doAction({ type: "move_item", item_id: item.id, to_index: index + delta });
+  const editExpr = (item) => {
+    const next = window.prompt(t("dash_edit_expr"), item.expr);
+    if (next && next !== item.expr) doAction({ type: "update_item", item_id: item.id, set: { expr: next } });
+  };
+  const renameDashboard = () => {
+    const next = window.prompt(t("dash_rename"), detail?.name || "");
+    if (next && next !== detail?.name) doAction({ type: "set_name", name: next });
+  };
+
+  const columns = detail?.layout?.columns || 3;
+
   const addChartItem = async () => {
     if (!active || !pickChart) return;
     try {
@@ -125,6 +162,16 @@ export default function DashboardsPage() {
       ) : (
         detail && (
           <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2" data-testid="dashboard-toolbar">
+              <div className="text-[15px] font-semibold">{detail.name}</div>
+              <button type="button" className="btn btn-sm" onClick={renameDashboard} data-testid="dashboard-rename">{t("dash_rename")}</button>
+              <select className="field" style={{ width: "auto" }} value={columns} data-testid="dashboard-columns"
+                      onChange={(e) => doAction({ type: "set_layout", columns: Number(e.target.value) })}>
+                {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} ▦</option>)}
+              </select>
+              <button type="button" className="btn btn-sm" disabled={!detail.can_undo} onClick={() => act(() => api.dashboardUndo(active))} data-testid="dashboard-undo">{t("dash_undo")}</button>
+              <button type="button" className="btn btn-sm" disabled={!detail.can_redo} onClick={() => act(() => api.dashboardRedo(active))} data-testid="dashboard-redo">{t("dash_redo")}</button>
+            </div>
             <div className="panel flex flex-col gap-3">
               <div className="text-[13px] font-semibold">{t("dashboards_add_item")}</div>
               <div className="flex flex-wrap items-end gap-2">
@@ -150,21 +197,43 @@ export default function DashboardsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {(detail.items || []).map((item, i) =>
-                item.type === "kpi" ? (
-                  <div className="stat-tile" key={i} data-testid="dashboard-kpi">
-                    <div className="help">{item.label || item.expr}</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-(--cols)" data-testid="dashboard-grid"
+                 style={{ "--cols": `repeat(${columns}, minmax(0, 1fr))` }}>
+              {(detail.items || []).map((item, i) => {
+                const span = Math.min(item.span || (item.type === "kpi" ? 1 : 2), columns);
+                const controls = (
+                  <div className="mt-1 flex flex-wrap gap-1" data-testid="dashboard-item-controls">
+                    <button type="button" className="btn btn-sm" disabled={i === 0} onClick={() => move(item, -1, i)} data-testid="dashboard-item-up">{t("dash_up")}</button>
+                    <button type="button" className="btn btn-sm" disabled={i === detail.items.length - 1} onClick={() => move(item, 1, i)} data-testid="dashboard-item-down">{t("dash_down")}</button>
+                    {item.type === "kpi" && <button type="button" className="btn btn-sm" onClick={() => editExpr(item)} data-testid="dashboard-item-edit">{t("dash_edit_expr")}</button>}
+                    <button type="button" className="btn btn-sm" onClick={() => doAction({ type: "remove_item", item_id: item.id })} data-testid="dashboard-item-remove">{t("dash_remove")}</button>
+                  </div>
+                );
+                return item.type === "kpi" ? (
+                  <div className="stat-tile md:col-span-(--span)" style={{ "--span": span }} key={item.id || i} data-testid="dashboard-kpi">
+                    <div className="help">{item.title || item.label || item.expr}</div>
                     <div className="stat-number">{item.error ? "—" : formatNumber(item.value, lang)}</div>
+                    {controls}
                   </div>
                 ) : (
-                  <div className="panel-white md:col-span-2" key={i} data-testid="dashboard-chart">
-                    <div className="mb-2 font-medium">{item.chart?.name}</div>
+                  <div className="panel-white md:col-span-(--span)" style={{ "--span": span }} key={item.id || i} data-testid="dashboard-chart">
+                    <div className="mb-2 font-medium">{item.title || item.chart?.name}</div>
                     {item.chart ? <VegaChart spec={item.chart.vega_lite} /> : <div className="help">Chart not found.</div>}
+                    {controls}
                   </div>
-                ),
-              )}
+                );
+              })}
               {(!detail.items || detail.items.length === 0) && <EmptyState>{t("dashboards_add_item")}</EmptyState>}
+            </div>
+
+            <div className="panel flex flex-col gap-1" data-testid="dashboard-history">
+              <div className="text-[13px] font-semibold">{t("dash_history")}</div>
+              {(!history || history.actions.length === 0) && <div className="help">{t("dash_history_empty")}</div>}
+              {history && [...history.actions].reverse().map((a) => (
+                <div key={a.action_id} className="help" style={a.undone ? { opacity: 0.5, textDecoration: "line-through" } : undefined}>
+                  #{a.seq} {a.summary} <span>({a.source})</span>
+                </div>
+              ))}
             </div>
           </div>
         )
