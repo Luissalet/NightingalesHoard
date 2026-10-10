@@ -146,8 +146,13 @@ class ChartArgs(BaseModel):
 class DashboardArgs(BaseModel):
     action: Literal["create", "add", "list", "get",
                      "semantic_get", "semantic_put", "semantic_suggest",
-                     "code_list", "code_get", "code_put", "code_validate", "code_render", "code_export"] = Field(
-        "list", description="Item-based dashboards (original): create/add/list/get. Dashboards as code: "
+                     "code_list", "code_get", "code_put", "code_validate", "code_render", "code_export",
+                     "apply_action", "undo", "redo", "history", "action_schemas"] = Field(
+        "list", description="Item-based dashboards (original): create/add/list/get. Typed reversible edits: "
+                              "'apply_action' (one `change` object: add_item/remove_item/move_item/update_item/set_name/"
+                              "set_filter/set_layout; see 'action_schemas' for the JSON schemas), 'undo'/'redo' (step "
+                              "through the dashboard's action log), 'history' (the log, its initial state, can_undo/can_redo). "
+                              "Dashboards as code: "
                               "'semantic_get'/'semantic_put' (read/write the semantic layer YAML; put also "
                               "validates), 'semantic_suggest' (propose a semantic model from a dataset's columns), "
                               "'code_list'/'code_get' (list/read a code dashboard YAML), 'code_put' (save one, "
@@ -161,6 +166,10 @@ class DashboardArgs(BaseModel):
     item: Optional[dict[str, Any]] = Field(None, description='{"type":"chart","chart_id":N} or {"type":"kpi","dataset":...,"expr":"AVG(x)","label":...}')
     items: Optional[list[dict[str, Any]]] = None
     filter: Optional[dict[str, Any]] = None
+    change: Optional[dict[str, Any]] = Field(None, description='apply_action: the typed action, e.g. {"type":"move_item",'
+                                              '"item_id":"i2","to_index":0} or {"type":"update_item","item_id":"i1",'
+                                              '"set":{"expr":"AVG(x)"}} (ids come from get/history; schemas from action_schemas).')
+    limit: Optional[int] = Field(None, ge=1, le=500, description="history: how many of the latest actions to return.")
     slug: Optional[str] = Field(None, description="code_get/code_put/code_validate/code_render/code_export: the "
                                   "code dashboard's slug (from code_list). Omit on code_put to create a new one "
                                   "from `name`.")
@@ -400,6 +409,20 @@ def _run_dashboard(s: Services, a: DashboardArgs) -> dict:  # noqa: C901 - one d
         if not a.dashboard_id:
             raise ValueError("get needs dashboard_id")
         return s.dashboard_get(a.dashboard_id)
+    if a.action in ("apply_action", "undo", "redo", "history"):
+        if not a.dashboard_id:
+            raise ValueError(f"{a.action} needs dashboard_id")
+        if a.action == "apply_action":
+            if not a.change:
+                raise ValueError("apply_action needs `change` (call action_schemas for the shapes)")
+            return s.dashboard_apply(a.dashboard_id, a.change, source="agent")
+        if a.action == "undo":
+            return s.dashboard_undo(a.dashboard_id, source="agent")
+        if a.action == "redo":
+            return s.dashboard_redo(a.dashboard_id, source="agent")
+        return s.dashboard_history(a.dashboard_id, a.limit or 100)
+    if a.action == "action_schemas":
+        return s.dashboard_action_schemas()
     if a.action == "semantic_get":
         return s.dac_semantic_get()
     if a.action == "semantic_put":
@@ -577,13 +600,15 @@ TOOLS: list[Tool] = [
          ChartArgs, _ann(False, False, False), _run_chart),
     Tool("data_dashboard", "Dashboards: create, add charts/KPIs, list; or dashboards as code (YAML + metrics). Panel.\n"
          "Create a dashboard, add a chart/KPI item to it, list/get dashboards (write on "
-         "create/add) — or work with dashboards as code: a semantic layer of named metrics/dimensions over a "
+         "create/add/apply_action/undo/redo) — every edit of a dashboard (add/remove/move/retitle an item, change a KPI "
+         "query or chart, rename, filter, layout) is a typed action that is logged per dashboard and reversible: "
+         "apply_action + undo/redo/history, action_schemas lists the JSON schemas — or work with dashboards as code: a semantic layer of named metrics/dimensions over a "
          "dataset (semantic_get/semantic_put/semantic_suggest) and a YAML dashboard spec compiled against it "
          "(code_list/code_get/code_put/code_validate/code_render/code_export). A failed code_put/code_validate "
          "comes back with one issue per problem, each carrying a `hint` — fix the YAML and call again; "
          "code_render never fails the whole dashboard, a broken widget just carries its own `error`.\n"
          "Sinónimos: panel de control, cuadro de mando, dashboard, dashboards como código, capa semántica, "
-         "métricas y dimensiones, validar dashboard, renderizar dashboard, exportar dashboard.",
+         "métricas y dimensiones, validar dashboard, renderizar dashboard, exportar dashboard, deshacer cambio de panel, rehacer, historial del panel, mover gráfico.",
          DashboardArgs, _ann(False, False, False), _run_dashboard),
     Tool("data_model", "Train/tune/explain/evaluate/optimize a model, or list/compare the Lab registry (write on "
          "most actions).\nSinónimos: entrenar modelo, predecir, clasificación, regresión, importancia de variables, "

@@ -291,6 +291,40 @@ def dashboard_list(request: Request):
     return services(request).dashboard_list()
 
 
+@router.get("/dashboards/action-schemas")
+@api_errors
+def dashboard_action_schemas(request: Request):
+    return services(request).dashboard_action_schemas()
+
+
+class DashboardActionBody(BaseModel):
+    action: dict[str, Any]
+
+
+@router.post("/dashboards/{dashboard_id}/actions")
+@api_errors
+def dashboard_apply_action(request: Request, dashboard_id: int, body: DashboardActionBody):
+    return services(request).dashboard_apply(dashboard_id, body.action)
+
+
+@router.post("/dashboards/{dashboard_id}/undo")
+@api_errors
+def dashboard_undo(request: Request, dashboard_id: int):
+    return services(request).dashboard_undo(dashboard_id)
+
+
+@router.post("/dashboards/{dashboard_id}/redo")
+@api_errors
+def dashboard_redo(request: Request, dashboard_id: int):
+    return services(request).dashboard_redo(dashboard_id)
+
+
+@router.get("/dashboards/{dashboard_id}/history")
+@api_errors
+def dashboard_history(request: Request, dashboard_id: int, limit: int = 100):
+    return services(request).dashboard_history(dashboard_id, limit)
+
+
 @router.get("/dashboards/{dashboard_id}")
 @api_errors
 def dashboard_get(request: Request, dashboard_id: int):
