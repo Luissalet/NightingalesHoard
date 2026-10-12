@@ -8,7 +8,13 @@ const ask = (detail) => window.dispatchEvent(new CustomEvent(CONTEXT_REQUEST, { 
 window.hoardCopilot = {
   async context() {
     try {
-      return await buildContext({ hash: window.location.hash, api, ask });
+      const ctx = await buildContext({ hash: window.location.hash, api, ask });
+      // Faustus keeps the form snapshot under view.editor (the launcher merges view); a top-level editor is dropped.
+      if (ctx.editor) {
+        ctx.view = { ...(ctx.view || {}), editor: ctx.editor };
+        delete ctx.editor;
+      }
+      return ctx;
     } catch {
       return {};
     }

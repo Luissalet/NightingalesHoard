@@ -136,9 +136,9 @@ test("window.hoardCopilot: context() never rejects and onTurnEnd fires the refre
   const hc = globalThis.window.hoardCopilot;
   assert.equal(typeof hc.context, "function");
   target.addEventListener("hoard:copilot-context-request", (e) => e.detail.provide({ kind: "chart-draft", dirty: true, fields: { title: "N" } }));
-  assert.deepEqual(await hc.context(), { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
+  assert.deepEqual(await hc.context(), { active_objects: [], view: { editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } } });
   globalThis.window.location.hash = "#/datasets/sales";     // backend unreachable: the API rejects, context still resolves
-  assert.deepEqual(await hc.context(), { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
+  assert.deepEqual(await hc.context(), { active_objects: [], view: { editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } } });
   target.addEventListener("nightingale:copilot-updated", () => hits.push(1));
   hc.onTurnEnd();
   assert.equal(hits.length, 1);
