@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import VegaChart from "../components/VegaChart.jsx";
 import { formatNumber } from "../format.js";
+import { useCopilotActive, useCopilotForm, useCopilotRefresh } from "../copilot-hooks.js";
 
 const NEW_DASHBOARD_TEMPLATE = `version: 1
 name: New dashboard
@@ -149,6 +150,10 @@ export default function DashboardCodePage() {
   const [semanticIssues, setSemanticIssues] = useState([]);
   const [suggestDataset, setSuggestDataset] = useState("");
 
+  // what each editor last loaded or saved: unsaved changes are the difference, and an agent reload never overwrites them
+  const savedText = useRef("");
+  const savedSemantic = useRef("");
+
   const loadList = useCallback(async () => {
     try {
       const { dashboards } = await api.dac.list();
@@ -162,13 +167,14 @@ export default function DashboardCodePage() {
 
   useEffect(() => {
     loadList();
-    api.dac.semanticGet().then((r) => setSemanticText(r.text || "")).catch(() => {});
+    api.dac.semanticGet().then((r) => { savedSemantic.current = r.text || ""; setSemanticText(r.text || ""); }).catch(() => {});
   }, [loadList]);
 
   const loadDashboard = useCallback(async (s) => {
     if (!s) return;
     try {
       const r = await api.dac.get(s);
+      savedText.current = r.text;
       setText(r.text);
       setIssues([]);
       setError(null);
@@ -210,7 +216,13 @@ export default function DashboardCodePage() {
   const save = async () => {
     setBusy(true);
     try {
+      if (slug) {
+        // saving rewrites the whole YAML: do not silently drop a change made meanwhile (e.g. by the agent)
+        const current = await api.dac.get(slug).catch(() => null);
+        if (current && current.text !== savedText.current && !window.confirm(t("dac_changed_elsewhere"))) return;
+      }
       const r = slug ? await api.dac.put(slug, text) : await api.dac.create(text);
+      savedText.current = text;
       setIssues(r.issues || []);
       setSlug(r.slug);
       await loadList();
@@ -225,6 +237,7 @@ export default function DashboardCodePage() {
 
   const createNew = async () => {
     setSlug(null);
+    savedText.current = NEW_DASHBOARD_TEMPLATE;
     setText(NEW_DASHBOARD_TEMPLATE);
     setIssues([]);
     setRendered(null);
@@ -267,6 +280,7 @@ export default function DashboardCodePage() {
     try {
       await api.dac.delete(slug);
       setSlug(null);
+      savedText.current = "";
       setText("");
       setRendered(null);
       await loadList();
@@ -288,6 +302,7 @@ export default function DashboardCodePage() {
     setBusy(true);
     try {
       const r = await api.dac.semanticPut(semanticText);
+      savedSemantic.current = semanticText;
       setSemanticIssues(r.issues || []);
       notify(t("common_save"));
     } catch (e) {
@@ -306,6 +321,31 @@ export default function DashboardCodePage() {
       setError(e.message);
     }
   };
+
+  // An agent turn may have edited the dashboards or the semantic layer: reload them in place, keeping unsaved edits.
+  useCopilotRefresh(async () => {
+    loadList();
+    api.dac.semanticGet().then((r) => {
+      if (semanticText === savedSemantic.current) {
+        setSemanticText(r.text || "");
+        savedSemantic.current = r.text || "";
+      }
+    }).catch(() => {});
+    if (!slug) return;
+    try {
+      const r = await api.dac.get(slug);
+      if (text === savedText.current) { setText(r.text); savedText.current = r.text; }
+      doRender(slug, filterValues);
+    } catch { /* the dashboard may be gone now */ }
+  });
+  useCopilotActive("dashboard-code", view === "dashboards" ? slug : null);
+  // the open editor reports its unsaved text; a dashboard that is not stored yet is a draft
+  useCopilotForm(
+    view === "semantic" ? "semantic-layer" : slug ? "dashboard-code" : "dashboard-code-draft",
+    view === "semantic"
+      ? { initial: { text: savedSemantic.current }, current: { text: semanticText } }
+      : { objectId: slug, initial: { text: savedText.current }, current: { text } },
+  );
 
   const tabs = rendered?.tabs || [];
   const currentTab = tabs[activeTab];

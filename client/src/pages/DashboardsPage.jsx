@@ -4,6 +4,7 @@ import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import VegaChart from "../components/VegaChart.jsx";
 import { formatNumber } from "../format.js";
+import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 export default function DashboardsPage() {
   const { t, lang, datasets, notify } = useApp();
@@ -55,6 +56,10 @@ export default function DashboardsPage() {
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // the agent may have created, edited (typed actions) or undone dashboard changes: reload the list, charts and open one
+  useCopilotRefresh(() => { loadList(); loadCharts(); loadDetail(); });
+  useCopilotActive("dashboard", active);
 
   const create = async (e) => {
     e.preventDefault();

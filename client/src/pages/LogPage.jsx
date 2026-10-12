@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState, Chip } from "../components/ui.jsx";
+import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 export default function LogPage() {
   const { t } = useApp();
@@ -28,6 +29,9 @@ export default function LogPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistantOnly]);
+
+  useCopilotActive("log-entry", openId);
+  useCopilotRefresh(load); // new agent operations land in the log
 
   const openEntry = async (id) => {
     if (openId === id) {

@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import { displaySource } from "../format.js";
+import { useCopilotRefresh } from "../copilot-hooks.js";
 
 const KINDS = ["file", "folder", "url", "paste", "hoard"];
 
@@ -32,6 +33,7 @@ export default function SourcesPage() {
   useEffect(() => {
     load();
   }, []);
+  useCopilotRefresh(() => load().catch(() => {})); // the agent may have ingested a source
   useEffect(() => {
     api.hoardPresets(lang).then((r) => setPresets(r.presets || [])).catch(() => setPresets([]));
   }, [lang]);

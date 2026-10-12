@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState, Chip } from "../components/ui.jsx";
+import { useCopilotActive, useCopilotForm, useCopilotRefresh } from "../copilot-hooks.js";
 
 const RULE_FIELDS = {
   not_null: [{ name: "column", label: "Column", type: "column" }],
@@ -83,6 +84,14 @@ export default function QualityPage() {
   const dataset = datasets.find((d) => d.name === active);
   const columnNames = (dataset?.columns || []).map((c) => c.name);
   const fields = RULE_FIELDS[kind] || [];
+
+  useCopilotActive("dataset", active);
+  useCopilotRefresh(load); // the agent may have defined, run or removed rules
+  // the new-rule form: the copilot sees only what the user has typed or changed
+  useCopilotForm("quality-rule-draft", {
+    initial: { kind: "not_null", name: "", params: {} },
+    current: { kind, name: ruleName.trim(), params: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "" && v !== undefined)) },
+  });
 
   const addRule = async (e) => {
     e.preventDefault();
