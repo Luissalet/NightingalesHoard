@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useCopilotActive, useCopilotRefresh } from "../../copilot-hooks.js";
 import { api } from "../../api.js";
 import { useApp } from "../../App.jsx";
 import { EmptyState } from "../../components/ui.jsx";
@@ -46,6 +47,8 @@ export default function LabModels({ dataset, datasets }) {
   useEffect(() => {
     loadRegistry();
   }, []);
+  useCopilotRefresh(loadRegistry); // the agent may have trained, tuned or deleted models
+  useCopilotActive("lab-model", selected);
 
   const datasetById = useMemo(() => {
     const m = new Map();

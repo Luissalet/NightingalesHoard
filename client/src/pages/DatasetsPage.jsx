@@ -7,6 +7,7 @@ import ColumnProfilePopover from "../components/ColumnProfilePopover.jsx";
 import StepToolbar from "../components/StepToolbar.jsx";
 import RecipePanel from "../components/RecipePanel.jsx";
 import { formatNumber } from "../format.js";
+import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 export default function DatasetsPage({ param }) {
   const { t, lang, datasets, refreshDatasets, notify } = useApp();
@@ -65,6 +66,9 @@ export default function DatasetsPage({ param }) {
   }, [active, dataset?.current_version]);
 
   useEffect(() => setRefreshQuality(null), [active]);
+  useCopilotActive("dataset", active);
+  // an agent turn may have changed the rows or the profile: reload them in place (the dataset list reloads in App)
+  useCopilotRefresh(() => { if (active && !busy) { loadPreview(); loadProfile(); } });
 
   const onStepApplied = async () => {
     await refreshDatasets();

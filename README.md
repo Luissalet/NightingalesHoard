@@ -167,3 +167,10 @@ MIT — Luis María Salete Cuartero.
 URL imports use the shared Web client and the Hub catalogue bridge. Import and analysis behavior remains in the app.
 
 The vendored copy is maintained by HoardLink’s sync script. Windows validation and the family service contract are documented in HoardLink’s `docs/commons/windows-validation.md` and `docs/commons/services.md`.
+
+## Faustus panel
+
+A «Faustus» button opens the family's shared assistant panel without leaving the app. Faustus keeps the conversations
+(also listed in Faustus Studio), runs the agent with the globally selected model and uses this app's own tools. Each turn
+carries the dataset, dashboard, dashboard-as-code, Lab model or log entry on screen; unsaved YAML of a dashboard-as-code or the semantic layer, and the new-chart and new-rule forms. After a turn the lists and the open view refresh in place, without discarding what you were typing. The
+panel comes from Hoard Link (`install_spa`) and talks to Faustus through this app's relay, so no token reaches the browser.

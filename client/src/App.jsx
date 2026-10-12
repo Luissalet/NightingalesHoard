@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { detectLang, makeT, setLang as persistLang } from "./i18n.js";
 import { Toast, Icon, ErrorBanner } from "./components/ui.jsx";
 import { formatNumber } from "./format.js";
+import { useCopilotRefresh } from "./copilot-hooks.js";
 import SourcesPage from "./pages/SourcesPage.jsx";
 import DatasetsPage from "./pages/DatasetsPage.jsx";
 import QualityPage from "./pages/QualityPage.jsx";
@@ -78,6 +79,8 @@ export default function App() {
     const timer = setInterval(refreshDatasets, 10000);
     return () => clearInterval(timer);
   }, [refreshDatasets]);
+
+  useCopilotRefresh(refreshDatasets); // the agent may have ingested, cleaned or deleted datasets
 
   const notify = useCallback((message) => setToast(message), []);
   const act = useCallback(
