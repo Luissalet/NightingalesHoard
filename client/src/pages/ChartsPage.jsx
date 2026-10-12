@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import VegaChart from "../components/VegaChart.jsx";
+import { useCopilotActive, useCopilotForm, useCopilotRefresh } from "../copilot-hooks.js";
 
 const CHART_KINDS = ["bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut"];
 const AGGS = ["sum", "avg", "count", "min", "max", "median"];
@@ -53,6 +54,14 @@ export default function ChartsPage() {
 
   const dataset = datasets.find((d) => d.name === active);
   const columnNames = (dataset?.columns || []).map((c) => c.name);
+
+  useCopilotActive("dataset", active);
+  useCopilotRefresh(loadCharts); // the agent may have saved or deleted charts
+  // the new-chart form: the copilot sees only what the user has changed from the defaults
+  useCopilotForm("chart-draft", {
+    initial: { dataset: datasets[0]?.name || "", kind: "bar", x: "", y: "", agg: "sum", color: "", title: "" },
+    current: { dataset: active || datasets[0]?.name || "", kind, x, y, agg, color, title: title.trim() },
+  });
 
   const create = async (e) => {
     e.preventDefault();

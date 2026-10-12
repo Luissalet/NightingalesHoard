@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useApp } from "../../App.jsx";
 import { EmptyState } from "../../components/ui.jsx";
 import { DatasetSelect } from "./labShared.jsx";
+import { useCopilotActive } from "../../copilot-hooks.js";
 import LabExplore from "./LabExplore.jsx";
 import LabModels from "./LabModels.jsx";
 import LabDiagnose from "./LabDiagnose.jsx";
@@ -34,6 +35,7 @@ export default function LabPage({ route }) {
   useEffect(() => {
     if (!dataset && datasets.length > 0) setDataset(datasets[0].name);
   }, [datasets, dataset]);
+  useCopilotActive("dataset", dataset);
 
   // The Lab page itself never remounts as long as the top-level route stays
   // "lab" (App.jsx only swaps components on that first hash segment), so a
