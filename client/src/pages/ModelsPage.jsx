@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
+import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 const TABS = ["supervised", "clustering", "pca", "anomaly", "forecast"];
 
@@ -78,6 +79,9 @@ export default function ModelsPage() {
 
   const dataset = datasets.find((d) => d.name === active);
   const columnNames = (dataset?.columns || []).map((c) => c.name);
+
+  useCopilotActive("dataset", active);
+  useCopilotRefresh(loadModels); // the agent may have trained models
 
   const run = async () => {
     setBusy(true);

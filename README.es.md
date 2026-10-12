@@ -170,3 +170,11 @@ y una prueba de extremo a extremo en subproceso a través del puente MCP por std
 ## Licencia
 
 MIT — Luis María Salete Cuartero.
+
+## Panel de Faustus
+
+Un botón «Faustus» abre el panel de asistente común de la familia sin salir de la app. Faustus guarda las conversaciones
+(también en Faustus Studio), ejecuta el agente con el modelo elegido globalmente y usa las herramientas de esta app. Cada
+turno lleva el dataset, dashboard, dashboard como código, modelo del Lab o entrada del registro que haya en pantalla; el YAML sin guardar de un dashboard como código o de la capa semántica, y los formularios de gráfico y regla nuevos. Al terminar un turno, las listas y la vista abierta se refrescan sin perder lo que estuvieras escribiendo.
+El panel lo sirve Hoard Link (`install_spa`) y habla con Faustus a través del relay de la app, así que ningún token llega
+al navegador.
