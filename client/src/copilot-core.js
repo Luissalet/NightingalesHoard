@@ -111,7 +111,7 @@ export function routeObjects(route) {
  *  - ask: `(detail) => void` that dispatches the context request to the mounted forms and views
  */
 export async function buildContext({ hash, api, ask }) {
-  const out = {};
+  const out = { active_objects: [] }; // possibly empty: overrides the launcher's guesses from the URL
   let route = { page: "datasets", id: null, rest: [] };
   try { route = parseRoute(hash); } catch { /* default route */ }
 
@@ -136,7 +136,7 @@ export async function buildContext({ hash, api, ask }) {
       if (hit) objects.push({ kind, object_id: id, title: hit.title, ...(hit.url ? { url: hit.url } : {}) });
     } catch { /* unresolved id or backend down: no object */ }
   }
-  if (objects.length) out.active_objects = objects;
+  out.active_objects = objects; // possibly empty: overrides the launcher's guesses from the URL
   if (editor) out.editor = editor;
   return out;
 }

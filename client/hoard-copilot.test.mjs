@@ -89,9 +89,9 @@ test("the route supplies the dataset when no view reported one", async () => {
 test("new, blank and unresolvable ids mean no object and never throw", async () => {
   const calls = [];
   const api = makeApi({ datasets: async () => { calls.push("datasets"); return DATASETS; } });
-  assert.deepEqual(await buildContext({ hash: "#/datasets/new", api, ask: views(["dataset", "new"], ["dashboard", ""], ["dashboard-code", null]) }), {});
+  assert.deepEqual(await buildContext({ hash: "#/datasets/new", api, ask: views(["dataset", "new"], ["dashboard", ""], ["dashboard-code", null]) }), { active_objects: [] });
   assert.deepEqual(calls, []);
-  assert.deepEqual(await buildContext({ hash: "#/datasets/gone", api, ask: views(["dataset", "gone"], ["dashboard", 99], ["log-entry", "N-9"], ["mystery", "x"]) }), {});
+  assert.deepEqual(await buildContext({ hash: "#/datasets/gone", api, ask: views(["dataset", "gone"], ["dashboard", 99], ["log-entry", "N-9"], ["mystery", "x"]) }), { active_objects: [] });
   assert.deepEqual(calls, ["datasets"]);
 });
 
@@ -105,7 +105,7 @@ test("create forms are reported on any route, including with no object", async (
   const ctx = await buildContext({ hash: "#/charts", api: makeApi(), ask: ({ provide }) => {
     provide(formSnapshot("chart-draft", { initial: { title: "", kind: "bar" }, current: { title: "Revenue", kind: "line" } }));
   } });
-  assert.deepEqual(ctx, { editor: { kind: "chart-draft", dirty: true, fields: { title: "Revenue", kind: "line" } } });
+  assert.deepEqual(ctx, { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "Revenue", kind: "line" } } });
 });
 
 test("an edit form carries its object id next to the active object", async () => {
@@ -119,8 +119,8 @@ test("an edit form carries its object id next to the active object", async () =>
 });
 
 test("a failing form still leaves context resolved", async () => {
-  assert.deepEqual(await buildContext({ hash: "#/log", api: makeApi(), ask: () => { throw new Error("form"); } }), {});
-  assert.deepEqual(await buildContext({ hash: undefined, api: {}, ask: noForms }), {});
+  assert.deepEqual(await buildContext({ hash: "#/log", api: makeApi(), ask: () => { throw new Error("form"); } }), { active_objects: [] });
+  assert.deepEqual(await buildContext({ hash: undefined, api: {}, ask: noForms }), { active_objects: [] });
 });
 
 test("RESOLVERS cover exactly the kinds the views report", () => {
@@ -136,9 +136,9 @@ test("window.hoardCopilot: context() never rejects and onTurnEnd fires the refre
   const hc = globalThis.window.hoardCopilot;
   assert.equal(typeof hc.context, "function");
   target.addEventListener("hoard:copilot-context-request", (e) => e.detail.provide({ kind: "chart-draft", dirty: true, fields: { title: "N" } }));
-  assert.deepEqual(await hc.context(), { editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
+  assert.deepEqual(await hc.context(), { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
   globalThis.window.location.hash = "#/datasets/sales";     // backend unreachable: the API rejects, context still resolves
-  assert.deepEqual(await hc.context(), { editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
+  assert.deepEqual(await hc.context(), { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "N" } } });
   target.addEventListener("nightingale:copilot-updated", () => hits.push(1));
   hc.onTurnEnd();
   assert.equal(hits.length, 1);
