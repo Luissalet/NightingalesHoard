@@ -12,6 +12,7 @@ from . import __version__
 from .api import ROUTERS
 from .config import Config
 from .hoard_link import family
+from .hoard_link.copilot import install_copilot
 from .hoard_link.guard import install_guard
 from .hoard_link.service import health_router, install_error_handlers, install_pwa, install_spa
 from .services import Services
@@ -44,5 +45,8 @@ def create_app(config: Config | None = None, services: Services | None = None) -
         app.include_router(router)
     install_pwa(app, name="Nightingale's Hoard", short_name="Nightingale", theme="#7a1f4a", background="#fff6fa", cache="nightingale-hoard",
                 lang="en", static_dir=STATIC_DIR, version=__version__)
+    # The Faustus panel on every page (relay, launcher, injection). Explicit because family.configure runs in the
+    # lifespan, after install_spa would have looked for it; the conversation and the tools live in Faustus.
+    install_copilot(app, "nightingale", str(config.data_dir), app_name="Nightingale's Hoard")
     install_spa(app, STATIC_DIR)  # last: everything that is not an API route or a real file is the single page app
     return app
