@@ -4,7 +4,6 @@ export const CONTEXT_REQUEST = "hoard:copilot-context-request";
 export const REFRESH_EVENT = "nightingale:copilot-updated";
 
 const NO_OBJECT = new Set(["", "new", "undefined", "null"]);
-const MAX_FIELD_CHARS = 6000;
 
 /** True when a route segment names no stored object ("new", empty, placeholders). */
 export function isNoObjectId(id) {
@@ -33,15 +32,20 @@ export function changedFields(initial, current) {
   return Object.fromEntries(Object.entries(current || {}).filter(([key, value]) => !same(value, base[key])));
 }
 
-const clip = (value) => (typeof value === "string" && value.length > MAX_FIELD_CHARS
-  ? `${value.slice(0, MAX_FIELD_CHARS)}… [${value.length - MAX_FIELD_CHARS} more characters]`
-  : value);
-
-/** Snapshot a form hands to the copilot. `objectId` is omitted for create forms; very long text fields are clipped. */
+/**
+ * Snapshot a form hands to the copilot. `objectId` is omitted for create forms. `fields` carries the CURRENT value of
+ * every field in full (the user's draft is never clipped); `changed` lists the keys that differ from the saved
+ * baseline, and `dirty` is true when any does.
+ */
 export function formSnapshot(kind, { objectId, initial, current } = {}) {
-  const fields = changedFields(initial, current);
-  const shown = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, clip(v)]));
-  return { kind, ...(isNoObjectId(objectId) ? {} : { object_id: String(objectId) }), dirty: Object.keys(fields).length > 0, fields: shown };
+  const changed = Object.keys(changedFields(initial, current));
+  return {
+    kind,
+    ...(isNoObjectId(objectId) ? {} : { object_id: String(objectId) }),
+    dirty: changed.length > 0,
+    fields: { ...(current || {}) },
+    changed,
+  };
 }
 
 /**

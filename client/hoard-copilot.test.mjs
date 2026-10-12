@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { settleLoad } from "./src/draft-merge.js";
 import {
   RESOLVERS, buildContext, changedFields, collectEditor, formSnapshot, isNoObjectId, parseRoute, routeObjects,
 } from "./src/copilot-core.js";
@@ -35,15 +36,43 @@ test("changedFields reports only differing keys, deeply, including cleared value
   assert.deepEqual(changedFields({ a: 1, p: { q: 1 } }, { a: 1, p: { q: 1 } }), {});
 });
 
-test("formSnapshot: edit forms carry object_id, create forms do not, long text is clipped", () => {
+test("formSnapshot: edit forms carry object_id, create forms do not; fields are the full current values, changed lists the delta", () => {
   const edit = formSnapshot("dashboard-code", { objectId: "weekly", initial: { text: "a" }, current: { text: "b" } });
-  assert.deepEqual(edit, { kind: "dashboard-code", object_id: "weekly", dirty: true, fields: { text: "b" } });
+  assert.deepEqual(edit, { kind: "dashboard-code", object_id: "weekly", dirty: true, fields: { text: "b" }, changed: ["text"] });
   const draft = formSnapshot("chart-draft", { initial: { title: "", kind: "bar" }, current: { title: "Sales", kind: "bar" } });
-  assert.deepEqual(draft, { kind: "chart-draft", dirty: true, fields: { title: "Sales" } });
+  assert.deepEqual(draft, { kind: "chart-draft", dirty: true, fields: { title: "Sales", kind: "bar" }, changed: ["title"] });
   assert.equal("object_id" in formSnapshot("chart-draft", { objectId: "new", initial: {}, current: {} }), false);
-  assert.equal(formSnapshot("x", { objectId: "p", initial: { a: 1 }, current: { a: 1 } }).dirty, false);
-  const long = formSnapshot("dashboard-code", { objectId: "w", initial: { text: "" }, current: { text: "y".repeat(7000) } });
-  assert.ok(long.fields.text.length < 6100 && long.fields.text.includes("1000 more characters"));
+  const clean = formSnapshot("x", { objectId: "p", initial: { a: 1, b: "t" }, current: { a: 1, b: "t" } });
+  assert.equal(clean.dirty, false);
+  assert.deepEqual(clean.changed, []);
+  assert.deepEqual(clean.fields, { a: 1, b: "t" }); // an unchanged loaded editor still shows what is on screen
+});
+
+test("formSnapshot never clips the user's draft: a long text keeps its tail", () => {
+  const draft = "k: v\n".repeat(1500) + "END-MARKER-7408"; // well over 7000 characters
+  assert.ok(draft.length > 7000);
+  const snap = formSnapshot("dashboard-code", { objectId: "w", initial: { text: "" }, current: { text: draft } });
+  assert.equal(snap.fields.text, draft);
+  assert.ok(snap.fields.text.endsWith("END-MARKER-7408"));
+  assert.deepEqual(snap.changed, ["text"]);
+  const loaded = formSnapshot("dashboard-code", { objectId: "w", initial: { text: draft }, current: { text: draft } });
+  assert.equal(loaded.fields.text, draft);
+  assert.equal(loaded.dirty, false);
+});
+
+test("settleLoad: a reply replaces the editor only if the user has not typed since the request started", () => {
+  assert.deepEqual(settleLoad({ started: "saved", current: "saved", loaded: "agent" }), { replace: true, text: "agent", baseline: "agent" });
+  // edited while the reload was pending: keep the edit, adopt the loaded text as the new saved baseline
+  assert.deepEqual(settleLoad({ started: "saved", current: "saved + typed", loaded: "agent" }), { replace: false, text: "saved + typed", baseline: "agent" });
+  // edited and then reverted before the reply: nothing to protect
+  assert.equal(settleLoad({ started: "saved", current: "saved", loaded: "agent" }).replace, true);
+});
+
+test("settleLoad after a create: the load that follows never erases text typed while the POST was pending", () => {
+  const sent = "name: New\n";
+  assert.deepEqual(settleLoad({ started: sent, current: sent + "# typed during save\n", loaded: sent, keepBaselineOnEdit: true }),
+    { replace: false, text: sent + "# typed during save\n", baseline: sent });
+  assert.deepEqual(settleLoad({ started: sent, current: sent, loaded: sent, keepBaselineOnEdit: true }), { replace: true, text: sent, baseline: sent });
 });
 
 test("collectEditor prefers the last dirty answer and gathers deduplicated active objects", () => {
@@ -105,7 +134,7 @@ test("create forms are reported on any route, including with no object", async (
   const ctx = await buildContext({ hash: "#/charts", api: makeApi(), ask: ({ provide }) => {
     provide(formSnapshot("chart-draft", { initial: { title: "", kind: "bar" }, current: { title: "Revenue", kind: "line" } }));
   } });
-  assert.deepEqual(ctx, { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "Revenue", kind: "line" } } });
+  assert.deepEqual(ctx, { active_objects: [], editor: { kind: "chart-draft", dirty: true, fields: { title: "Revenue", kind: "line" }, changed: ["title", "kind"] } });
 });
 
 test("an edit form carries its object id next to the active object", async () => {
