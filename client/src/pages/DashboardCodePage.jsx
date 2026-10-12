@@ -189,20 +189,17 @@ export default function DashboardCodePage() {
     // right after a create the editor already holds the saved text: keep whatever was typed since it was sent
     const afterCreate = createdSlug.current === s;
     if (afterCreate) createdSlug.current = null;
-    const started = savedText.current;
+    const started = afterCreate ? savedText.current : textRef.current;
     try {
       const r = await api.dac.get(s);
-      if (afterCreate) {
-        const next = settleLoad({ started, current: textRef.current, loaded: r.text, keepBaselineOnEdit: true });
-        savedText.current = next.baseline;
-        if (next.replace) setText(next.text);
-      } else {
-        savedText.current = r.text;
-        setText(r.text);
-      }
+      if (slugRef.current !== s) return;
+      const next = settleLoad({ started, current: textRef.current, loaded: r.text, keepBaselineOnEdit: afterCreate });
+      savedText.current = next.baseline;
+      if (next.replace) setText(next.text);
       setIssues([]);
       setError(null);
     } catch (e) {
+      if (slugRef.current !== s) return;
       setError(e.message);
     }
   }, []);
