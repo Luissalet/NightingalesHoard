@@ -24,6 +24,11 @@ dependencies = [
   "pyarrow>=15",
   "matplotlib>=3.8",
   "scikit-learn>=1.4",
+  "sympy>=1.14",
+  "Pint>=0.25",
+  "holidays>=0.105",
+  "tzdata>=2026.4",
+  "vl-convert-python>=1.9",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +39,10 @@ forecast = ["statsmodels>=0.14"]
 nightingale-hoard = "nightingale.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["nightingale*"]
+include = ["nightingale*", "fusion*", "laplaces_hoard*"]
+
+[tool.setuptools.package-data]
+"*" = ["static/**/*", "web/**/*", "catalog.json", "calculation-static/**/*", "LAPLACE-LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

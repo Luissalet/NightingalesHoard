@@ -18,3 +18,9 @@ scikit-learn==1.9.1
 statsmodels==0.15.0
 PyYAML==6.0.3
 pytest==9.1.1
+
+sympy==1.14.0
+Pint==0.25.3
+holidays==0.105
+tzdata==2026.4
+vl-convert-python==1.9.0.post1
