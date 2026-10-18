@@ -42,6 +42,15 @@ use explicit Vite bases and source-level API/download prefixes. JavaScript and C
 are served byte-for-byte; the ASGI response adapter decorates HTML and scopes the
 manifest/service worker. Neither UI needs the absorbed repository.
 
+The shared Faustus launcher retains native conversations and tool identities.
+Canonical `/api/copilot/info` and `/api/copilot/proxy` requests from a same-origin
+`/data/` or `/calculation/` page dispatch into that native module. Its original
+`app_id`, `tool_server_id` and adopted `copilot-space-id` remain authoritative.
+Explicit `/{module}/api/copilot/*` URLs likewise stay native. The shell's copilot
+handles requests without a matching same-origin module page; shared launcher/panel
+assets remain central. A disabled module answers 409 without loading its engine,
+opening history or making an upstream request. Discovery never enables a module.
+
 ## Provenance
 
 - Nightingale baseline: `76193ba`.
