@@ -30,14 +30,27 @@ async def call_tool(name,arguments):
     wait=(arguments or {}).get('wait_s')
     if isinstance(wait,(int,float)) and not isinstance(wait,bool):timeout=max(timeout,wait+90)
     headers={'Authorization':'Bearer '+token}
-    # Native SDKs keep their original caller/session context on the private HTTP leg.
+    # Preserve the native Hoard Link caller/session contract, including its sanitization.
+    for variable,header,limit in [('HOARD_AGENT_ID','X-Agent-Id',80),('HOARD_AGENT_SESSION','X-Agent-Session',120)]:
+        value=''.join(c for c in str(os.environ.get(variable) or '') if ' '<=c<='~').strip()[:limit]
+        if value:headers[header]=value
     meta=getattr(app.request_context,'meta',None)
     fields=meta.model_dump() if hasattr(meta,'model_dump') else {}
-    for key in ('agent_id','session_id','run_id','parent_call_id'):
-        if fields.get(key):headers['X-'+key.replace('_','-')]=str(fields[key])
+    for key,header,limit in [('agent_id','X-Agent-Id',80),('session_id','X-Agent-Session',120)]:
+        value=''.join(c for c in str(fields.get(key) or '') if ' '<=c<='~').strip()[:limit]
+        if value:headers.setdefault(header,value)
+    progress_token=getattr(meta,'progressToken',None)
+    async def heartbeat():
+        elapsed=0
+        while True:
+            await asyncio.sleep(10);elapsed+=10
+            await app.request_context.session.send_progress_notification(progress_token,progress=elapsed,message=name+' is running')
+    beat=asyncio.create_task(heartbeat()) if progress_token is not None else None
+    payload={'name':name,'arguments':arguments or {}}
+    if isinstance(fields.get('caller'),dict):payload['caller']=fields['caller']
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=10),trust_env=False) as client:
-            response=await client.post(base.rstrip('/')+'/'+item['module']+'/api/agent/call',json={'name':name,'arguments':arguments or {}},headers=headers)
+            response=await client.post(base.rstrip('/')+'/'+item['module']+'/api/agent/call',json=payload,headers=headers)
         body=response.json()
         error=response.is_error or (isinstance(body,dict) and bool(body.get('error')))
         return CallToolResult(content=[TextContent(type='text',text=json.dumps(body,ensure_ascii=False))],structuredContent=body if isinstance(body,dict) else None,isError=error)
@@ -45,6 +58,8 @@ async def call_tool(name,arguments):
         body={'error':'timeout','tool':name,'outcome_unknown':not item['schema'].get('annotations',{}).get('readOnlyHint',False),'message':'The call was not replayed. Check native status before retrying.'}
         return CallToolResult(content=[TextContent(type='text',text=json.dumps(body))],structuredContent=body,isError=True)
     except (OSError,httpx.HTTPError) as exc:raise RuntimeError('Start the merged app explicitly from Hoard Hub: '+str(exc)) from exc
+    finally:
+        if beat is not None:beat.cancel();await asyncio.gather(beat,return_exceptions=True)
 
 async def main():
     async with stdio_server() as (reader,writer):await app.run(reader,writer,app.create_initialization_options())
