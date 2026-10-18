@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     args = [a for a in args if a != "--demo"]
     if demo:
         os.environ["NIGHTINGALE_DEMO"] = "1"  # create_app reads it through Config.from_env()
-    return run_main(service="nightingale-hoard", package="nightingale", default_port=5189, app_factory="nightingale.main:create_app",
+    return run_main(service="nightingale-hoard", package="nightingale", default_port=5189, app_factory="fusion.app:create_app",
                     data_dir_env="NIGHTINGALE_DATA_DIR", port_env="NIGHTINGALE_PORT", open_browser_default=False, title="Nightingale's Hoard",
                     argv=args, default_data_dir=lambda: REPO_ROOT / ("data-demo" if demo else "data"))
 
