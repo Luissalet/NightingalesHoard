@@ -185,3 +185,10 @@ Un botón «Faustus» abre el panel de asistente común de la familia sin salir 
 turno lleva el dataset, dashboard, dashboard como código, modelo del Lab o entrada del registro que haya en pantalla; el YAML sin guardar de un dashboard como código o de la capa semántica, y los formularios de gráfico y regla nuevos. Al terminar un turno, las listas y la vista abierta se refrescan sin perder lo que estuvieras escribiendo.
 El panel lo sirve Hoard Link (`install_spa`) y habla con Faustus a través del relay de la app, así que ningún token llega
 al navegador.
+
+
+## Datos propios y compatibilidad
+
+Los datos nativos pueden trasladarse a `data/native/<módulo>/data`, con configuración privada junto a cada módulo. La ficción de Writer utiliza su perfil de escritorio `writers-hoard/fiction/data`. Traslada árboles completos, incluidos WAL/SHM de SQLite, medios, modelos descargados y sesiones del navegador; actualiza las rutas absolutas guardadas antes de activar el módulo. Los manifiestos de `compatibility/<id>/faustus-plugin.json` conservan identidades, nombres de herramientas y tokens sin necesitar el repositorio retirado. Añade el directorio `compatibility` de cada producto a las raíces del Hub antes de la raíz general. El catálogo y los puentes compatibles nunca arrancan aplicaciones. Todos los módulos permanecen apagados durante el traslado.
+
+Las instrucciones anteriores de adopción in-place describen una importación opcional. Una vez comprobados el traslado y las rutas, ya no es necesario conservar las carpetas de los productos antiguos.
