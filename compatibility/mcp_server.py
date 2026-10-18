@@ -26,7 +26,7 @@ async def call_tool(name,arguments):
     token_file=Path(native_dir)/'mcp-token' if native_dir else ROOT/item['token_file']
     token=token_file.read_text(encoding='utf-8').strip()
     base=os.environ.get('HOARD_COMPAT_URL') or CONFIG['owner_url']
-    timeout=float(item['schema'].get('x-timeout-s') or item['schema'].get('inputSchema',{}).get('x-timeout-s') or 180)
+    timeout=max(float(CONFIG.get('default_timeout_s',180)),float(item['schema'].get('x-timeout-s') or item['schema'].get('inputSchema',{}).get('x-timeout-s') or 0))
     wait=(arguments or {}).get('wait_s')
     if isinstance(wait,(int,float)) and not isinstance(wait,bool):timeout=max(timeout,wait+90)
     headers={'Authorization':'Bearer '+token}
@@ -55,7 +55,11 @@ async def call_tool(name,arguments):
         error=response.is_error or (isinstance(body,dict) and bool(body.get('error')))
         return CallToolResult(content=[TextContent(type='text',text=json.dumps(body,ensure_ascii=False))],structuredContent=body if isinstance(body,dict) else None,isError=error)
     except httpx.TimeoutException:
-        body={'error':'timeout','tool':name,'outcome_unknown':not item['schema'].get('annotations',{}).get('readOnlyHint',False),'message':'The call was not replayed. Check native status before retrying.'}
+        body={'error':'timeout','tool':name,'outcome_unknown':not item['schema'].get('annotations',{}).get('readOnlyHint',False),'reconcile_action':'Check native status/history before retrying the original call.','message':'The call was not replayed.'}
+        return CallToolResult(content=[TextContent(type='text',text=json.dumps(body))],structuredContent=body,isError=True)
+    except (httpx.ReadError,httpx.WriteError,httpx.RemoteProtocolError):
+        unknown=not item['schema'].get('annotations',{}).get('readOnlyHint',False)
+        body={'error':'outcome_unknown' if unknown else 'transport_no_answer','tool':name,'outcome_unknown':unknown,'reconcile_action':'Check native status/history before retrying the original call.','message':'The server may have accepted the call before the connection ended. It was not replayed.'}
         return CallToolResult(content=[TextContent(type='text',text=json.dumps(body))],structuredContent=body,isError=True)
     except (OSError,httpx.HTTPError) as exc:raise RuntimeError('Start the merged app explicitly from Hoard Hub: '+str(exc)) from exc
     finally:
