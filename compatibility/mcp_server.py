@@ -11,6 +11,25 @@ IDENTITY=os.environ['HOARD_COMPAT_ID']
 CONFIG=json.loads((ROOT/'compatibility'/IDENTITY/'bridge.json').read_text(encoding='utf-8'))
 app=Server(IDENTITY+'-hoard')
 
+def native_timeout(name,arguments,schema):
+    timeout=max(float(CONFIG.get('default_timeout_s',180)),float(schema.get('x-timeout-s') or schema.get('inputSchema',{}).get('x-timeout-s') or 0))
+    if IDENTITY=='links':
+        legacy=90
+        if name=='ask_link':legacy=105
+        elif name in ('media_download','media_retry','media_audio_for_asr') and arguments.get('wait') is not False:legacy=float(arguments.get('timeout_s') or 150)+30
+        elif name=='link_video_analyze' and arguments.get('wait') is not False:legacy=float(arguments.get('timeout_s') or 120)+30
+        elif name=='video_digest' and arguments.get('wait') is not False:legacy=float(arguments.get('timeout_s') or 600)+30
+        elif name=='video_ask':legacy=960
+        elif name=='video_frame':legacy=120
+        elif name=='media_status' and arguments.get('wait_s'):legacy=float(arguments['wait_s'])+30
+        elif name=='media_tools' and arguments.get('update'):legacy=360
+        elif name in ('media_probe','media_info'):legacy=120
+        elif name=='media_subtitles':legacy=180
+        timeout=max(timeout,legacy)
+    wait=arguments.get('wait_s')
+    if isinstance(wait,(int,float)) and not isinstance(wait,bool):timeout=max(timeout,wait+90)
+    return timeout
+
 @app.list_tools()
 async def list_tools():
     return [Tool.model_validate(t['schema']) for t in CONFIG['tools']]
@@ -26,9 +45,7 @@ async def call_tool(name,arguments):
     token_file=Path(native_dir)/'mcp-token' if native_dir else ROOT/item['token_file']
     token=token_file.read_text(encoding='utf-8').strip()
     base=os.environ.get('HOARD_COMPAT_URL') or CONFIG['owner_url']
-    timeout=max(float(CONFIG.get('default_timeout_s',180)),float(item['schema'].get('x-timeout-s') or item['schema'].get('inputSchema',{}).get('x-timeout-s') or 0))
-    wait=(arguments or {}).get('wait_s')
-    if isinstance(wait,(int,float)) and not isinstance(wait,bool):timeout=max(timeout,wait+90)
+    timeout=native_timeout(name,arguments or {},item['schema'])
     headers={'Authorization':'Bearer '+token}
     # Preserve the native Hoard Link caller/session contract, including its sanitization.
     for variable,header,limit in [('HOARD_AGENT_ID','X-Agent-Id',80),('HOARD_AGENT_SESSION','X-Agent-Session',120)]:
@@ -39,6 +56,12 @@ async def call_tool(name,arguments):
     for key,header,limit in [('agent_id','X-Agent-Id',80),('session_id','X-Agent-Session',120)]:
         value=''.join(c for c in str(fields.get(key) or '') if ' '<=c<='~').strip()[:limit]
         if value:headers.setdefault(header,value)
+    caller=fields.get('caller')
+    if isinstance(caller,str):caller={'agent_id':caller}
+    if isinstance(caller,dict):
+        for key,header,limit in [('agent_id','X-Agent-Id',80),('session_id','X-Agent-Session',120)]:
+            value=''.join(c for c in str(caller.get(key) or '') if ' '<=c<='~').strip()[:limit]
+            if value:headers.setdefault(header,value)
     progress_token=getattr(meta,'progressToken',None)
     async def heartbeat():
         elapsed=0
@@ -47,7 +70,8 @@ async def call_tool(name,arguments):
             await app.request_context.session.send_progress_notification(progress_token,progress=elapsed,message=name+' is running')
     beat=asyncio.create_task(heartbeat()) if progress_token is not None else None
     payload={'name':name,'arguments':arguments or {}}
-    if isinstance(fields.get('caller'),dict):payload['caller']=fields['caller']
+    if headers.get('X-Agent-Id'):payload['caller']=headers['X-Agent-Id']
+    if headers.get('X-Agent-Session'):payload['session']=headers['X-Agent-Session']
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=10),trust_env=False) as client:
             response=await client.post(base.rstrip('/')+'/'+item['module']+'/api/agent/call',json=payload,headers=headers)
