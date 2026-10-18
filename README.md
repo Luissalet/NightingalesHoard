@@ -182,3 +182,10 @@ A «Faustus» button opens the family's shared assistant panel without leaving t
 (also listed in Faustus Studio), runs the agent with the globally selected model and uses this app's own tools. Each turn
 carries the dataset, dashboard, dashboard-as-code, Lab model or log entry on screen; unsaved YAML of a dashboard-as-code or the semantic layer, and the new-chart and new-rule forms. After a turn the lists and the open view refresh in place, without discarding what you were typing. The
 panel comes from Hoard Link (`install_spa`) and talks to Faustus through this app's relay, so no token reaches the browser.
+
+
+## Owned data and compatibility
+
+Native module data can be relocated into `data/native/<module>/data`, with per-module configuration beside it. Writer fiction uses the owning desktop profile `writers-hoard/fiction/data`. Move complete data trees, including SQLite WAL/SHM, media, downloaded models and browser sessions; update saved absolute paths before enabling a module. The compatibility manifests in `compatibility/<id>/faustus-plugin.json` preserve native IDs, tool schemas and tokens without a retired checkout. Add each merged application's `compatibility` directory to Hub roots before the general repository root. Discovery and compatibility bridges never start an application. All modules remain OFF during relocation.
+
+Legacy in-place adoption scripts are optional import helpers; keeping the old repository is unnecessary once relocation and route updates have been verified.
