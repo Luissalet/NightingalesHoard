@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "id": "laplace",
+  "name": "Laplace's Hoard · Nightingale",
+  "purpose": "Absorbed by Nightingale's Hoard. Compatibility identity only; no standalone server. Gives the model exact arithmetic, symbolic math, unit conversion, statistics, date arithmetic and read-only SQL over local files, with every computation logged and citable.",
+  "capabilities": [
+    "arithmetic",
+    "symbolic-math",
+    "units",
+    "statistics",
+    "dates",
+    "sql-over-files"
+  ],
+  "placeholders": [
+    "NIGHTINGALE_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5189/calculation",
+    "NIGHTINGALE_DIR": "{COMPAT_DIR}/../..",
+    "DATA_DIR": "{NIGHTINGALE_DIR}/data/native/calculation/data",
+    "TOKEN_FILE": "{NIGHTINGALE_DIR}/data/native/calculation/data/mcp-token",
+    "PYTHON": "{NIGHTINGALE_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5189/calculation",
+    "ui_url": "http://127.0.0.1:5189/",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "absorbed-laplace"
+      }
+    },
+    "identify": {
+      "service": [
+        "laplaces-hoard"
+      ],
+      "title": [
+        "laplace's hoard"
+      ]
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{NIGHTINGALE_DIR}/compatibility/mcp_server.py"
+    ],
+    "env": {
+      "HOARD_COMPAT_ID": "laplace",
+      "HOARD_COMPAT_URL": "http://127.0.0.1:5189"
+    },
+    "optional_env": []
+  },
+  "provides": {
+    "skills": [
+      "skills/exact-numbers/SKILL.md"
+    ]
+  },
+  "notes": "Native compatibility identity owned by Nightingale's Hoard. Data, tokens and all runtime files belong to the merged application. No retired repository is required. Start the owner explicitly and enable its module.",
+  "x-family": {
+    "copilot": {
+      "contract_version": "1.0",
+      "info": "/api/copilot/info",
+      "panel": "/api/copilot/panel.js",
+      "proxy": "/api/copilot/proxy",
+      "context_provider": "window.hoardCopilot.context",
+      "object_types": [
+        "cell",
+        "computation",
+        "dataset"
+      ]
+    },
+    "absorbed_by": {
+      "id": "nightingale",
+      "repository": "https://github.com/Luissalet/NightingalesHoard",
+      "module": "calculation",
+      "standalone": false
+    },
+    "standalone": false,
+    "compatibility": true,
+    "source_data": "Moved into the merged application; no dependency on the retired repository."
+  }
+}

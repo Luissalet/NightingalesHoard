@@ -1,0 +1,1229 @@
+{
+  "owner": "nightingale",
+  "owner_url": "http://127.0.0.1:5189",
+  "tools": [
+    {
+      "schema": {
+        "name": "app_context",
+        "description": "Resolve a real cell, computation or dataset reference for the Laplace copilot.\n\nMissing ids and new forms return no active object and never start a calculation.\nLaplace has one notebook and no domain projects.\nKeywords: context, object, reference, contexto, objeto, referencia.",
+        "inputSchema": {
+          "properties": {
+            "kind": {
+              "default": "",
+              "title": "Kind",
+              "type": "string"
+            },
+            "object_id": {
+              "default": "",
+              "title": "Object Id",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "calc",
+        "description": "Exact arithmetic and percentages (IVA, discounts, interest), cited. Calcular, cuánto es, porcentaje.\n\nExact arithmetic. Never do arithmetic in your head: call this, even for \"simple\" sums.\n\nWrite Python-like syntax: + - * / // % ** (or ^), parentheses, comparisons.\nFunctions: sqrt cbrt root(x, n) exp ln log(x, base) log10 log2, trig, floor\nceil round(x, n) abs, min max sum mean median (numbers or one list),\nfactorial binomial gcd lcm mod, isprime nextprime factorint (alone), and\npercentages: pct(15, 2347) = 15% of 2347, pct_change(old, new) = % change,\nratio(a, b). Constants: pi e tau inf. Numbers are exact: 0.1 + 0.2 = 3/10.\nExamples: \"pct(21, 1250)\", \"(1.05^10 - 1) * 100\", \"mean([3, 5, 8])\".\nReturns {id, cite, exact, decimal (text, `precision` significant digits),\nis_exact (true when decimal is the exact value), latex}. No variables: use\n`math` for x, y. Cite the number as its `cite`, e.g. [L-000042].\n\nKeywords: calculate, compute, how much is, percentage, percent of, discount,\nVAT, interest, average, square root, factorial, is prime, calcular, cuánto\nes, cuánto son, porcentaje, tanto por ciento, descuento, IVA, interés,\nmedia, raíz cuadrada, factorial, es primo.",
+        "inputSchema": {
+          "properties": {
+            "expression": {
+              "title": "Expression",
+              "type": "string"
+            },
+            "precision": {
+              "default": 15,
+              "title": "Precision",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "expression"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "computation_get",
+        "description": "Read the saved input and result of one cited computation (L-...) without running it again.\n\nKeywords: computation, result, citation, read, cálculo, resultado, cita, leer.",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_chart",
+        "description": "Chart from a read-only SQL query, saved to disk. Gráfico, gráfica, dibujar datos.\n\nDraw a chart from a read-only SQL query and save it; only returns the image if you ask.\n\nkind: bar, line, area, scatter, histogram (x only), pie (x = category,\ny = value), heatmap (x and y). x, y and color are column names of the\nquery result, so aggregate in SQL first, e.g.\nsql=\"SELECT region, SUM(amount) AS total FROM sales GROUP BY region\",\nkind=\"bar\", x=\"region\", y=\"total\". bar/line/area without y count rows.\nUses at most 5000 rows.\n\nThe chart is always saved and logged with its own id, visible in the\napp's Work log (its detail view shows the image). `include_image`\ndefaults to false and returns only a short JSON summary (id, cite,\nrow_count, encoding) - a text-only model must not receive an unrequested\nimage, it can crash the turn. Only set include_image=true when you can\nsee images and actually need to look at this one; otherwise just tell\nthe person the returned chart_url (or [id] in the app), or call this again with\ninclude_image=true if you need to read values off the chart yourself.\n\nKeywords: chart, plot, graph, bar chart, line chart, histogram, pie\nchart, visualize, gráfico, gráfica, gráfico de barras, gráfico de\nlíneas, histograma, gráfico circular, visualizar.",
+        "inputSchema": {
+          "properties": {
+            "sql": {
+              "title": "Sql",
+              "type": "string"
+            },
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "x": {
+              "title": "X",
+              "type": "string"
+            },
+            "y": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Y"
+            },
+            "color": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Color"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Title"
+            },
+            "include_image": {
+              "default": false,
+              "title": "Include Image",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "sql",
+            "kind",
+            "x"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_describe",
+        "description": "Schema, profile and sample rows of one dataset. Describir tabla, columnas, perfil de datos.\n\nSchema, row_count, per-column profile (nulls %, distinct, min/max/mean/sd, top values) and 5 sample rows.\n\nBefore answering anything about a table, call this, then data_query:\nnever guess column names, types or row counts. `row_count` here is the\ntrue size of the dataset. Sample rows are examples, not the data - do\nnot summarise the table from them; aggregate with data_query instead.\n\nKeywords: describe this dataset, what columns, schema, how many rows,\ncolumn types, summary of the table, describe este dataset, qué columnas,\nesquema, cuántas filas, tipos de columna, resumen de la tabla.\nSet target=\"nightingale\" for a dataset in Nightingale's workbench.",
+        "inputSchema": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "target": {
+              "default": "laplace",
+              "enum": [
+                "laplace",
+                "nightingale"
+              ],
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_list",
+        "description": "List the datasets registered for SQL. Listar datos, qué tablas hay.\n\nList the registered datasets: name, kind, row_count, column names.\n\nCall this first when the user mentions a table or file and you do not\nknow its dataset name. Query a dataset by its `name` in SQL. An empty\nlist means nothing is registered yet: use data_register with the path.\n\nKeywords: what data do you have, list datasets, tables, files, spreadsheets,\nqué datos hay, qué tablas hay, lista de datasets, archivos, hojas de cálculo.\n\nUse target=\"nightingale\" to list the shared data workbench instead of\nLaplace's local catalogue. Nightingale must be running through Hoard Hub.",
+        "inputSchema": {
+          "properties": {
+            "target": {
+              "default": "laplace",
+              "enum": [
+                "laplace",
+                "nightingale"
+              ],
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_query",
+        "description": "Run one read-only SQL query over the registered datasets. Consulta SQL, contar, agrupar.\n\nRun one read-only SQL query (DuckDB dialect) over the registered datasets.\n\nAllowed: SELECT / WITH / DESCRIBE / SUMMARIZE / EXPLAIN / PIVOT, one\nstatement; anything that writes or reads files directly is rejected.\nRefer to datasets by name: SELECT region, SUM(amount) AS total FROM sales\nGROUP BY region ORDER BY total DESC. Let SQL do the counting and\nsumming - do not add up returned rows yourself.\nReturns {id, cite, columns, rows (at most `limit`, default 50, max 1000),\nrow_count (rows returned), total_rows (rows the query produced),\ntruncated}. Long text cells are cut at 500 characters. Call\ndata_describe first if you have not seen the schema.\n\nKeywords: query the data, SQL, filter rows, group by, total of, sum of,\naverage of, count, top 10, consultar los datos, filtrar, agrupar por,\ntotal de, suma de, media de, contar, los 10 primeros.\nSet target=\"nightingale\" to query the shared workbench catalogue.",
+        "inputSchema": {
+          "properties": {
+            "sql": {
+              "title": "Sql",
+              "type": "string"
+            },
+            "limit": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "target": {
+              "default": "laplace",
+              "enum": [
+                "laplace",
+                "nightingale"
+              ],
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sql"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_register",
+        "description": "Register a local CSV, Excel, Parquet, JSON or SQLite file for SQL. Registrar archivo, cargar datos.\n\nRegister a local file or folder so it can be queried with SQL: CSV/TSV, Parquet, JSON/NDJSON, Excel, SQLite.\n\n`path` is an absolute path on this computer (e.g. C:\\Users\\me\\ventas.xlsx).\nThe dataset name defaults to the file name made SQL-safe (\"Ventas 2024\"\nbecomes Ventas_2024) - use the returned `name`. Excel registers one\ndataset per sheet (\"<name>__<sheet>\"), SQLite one per table, a folder\nall files matching options.glob (default \"*.csv\"). CSV options:\ndelimiter, header, encoding (utf-8/utf-16/latin-1; auto-detected when\nomitted, so Windows-1252 exports work without setting anything),\ndate_format (e.g. \"%d/%m/%Y\"; two-digit-year day-first dates like\n\"13/02/25\" are auto-detected already), decimal_separator and\nthousands_separator. Spanish-style numbers (\"-1.150,00\", \"51,05\") are\ndetected automatically and become exact numbers - the result lists them\nunder `numbers_converted`; pass decimal_separator=\".\" to keep such a\ncolumn as text, or both separators to force another convention.\nExcel also takes skip_rows (a title row above the real header is\ndetected and skipped automatically; set this to override).\nSet target=\"nightingale\" to register only in Nightingale's shared\nworkbench via Hoard Hub; this avoids copying the dataset into two catalogues.\nThen use target=\"nightingale\" with data_list, data_describe and data_query.\nReturns the schema and profile (like data_describe); a single-row result\nwith nested list columns also gets a `hint` suggesting UNNEST.\nRe-registering the same path refreshes it. Not read-only: it copies the\ndata into the local catalogue (the original file is never modified).\n\nKeywords: load this file, open this spreadsheet, register dataset, import\nCSV, read Excel, cargar este archivo, abrir esta hoja de cálculo,\nregistrar datos, importar CSV, leer Excel.",
+        "inputSchema": {
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "options": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Options"
+            },
+            "target": {
+              "default": "laplace",
+              "enum": [
+                "laplace",
+                "nightingale"
+              ],
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "data_report",
+        "description": "Save a reproducible data report with query results and an optional chart. Informe de datos, guardar análisis.\n\nRun one read-only SQL query and save its title, question, SQL, result rows and optional chart\ntogether as a single work-log artifact. The optional chart has kind, x, y, color and title\nlike data_chart. The returned id opens the report in Laplace's Work log; its chart is at\nchart_url. Call report_rerun(id) later to run the saved query again on current data.\nUse data_describe first to learn column names. Cite the report id next to conclusions.\n\nKeywords: save a report, repeatable analysis, informe reproducible, guardar informe.",
+        "inputSchema": {
+          "$defs": {
+            "ReportChartBody": {
+              "properties": {
+                "kind": {
+                  "title": "Kind",
+                  "type": "string"
+                },
+                "x": {
+                  "title": "X",
+                  "type": "string"
+                },
+                "y": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Y"
+                },
+                "color": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Color"
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Title"
+                }
+              },
+              "required": [
+                "kind",
+                "x"
+              ],
+              "title": "ReportChartBody",
+              "type": "object"
+            }
+          },
+          "properties": {
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "sql": {
+              "minLength": 1,
+              "title": "Sql",
+              "type": "string"
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Question"
+            },
+            "chart": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ReportChartBody"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "limit": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "title",
+            "sql"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "date_calc",
+        "description": "Date arithmetic: days between dates, add time, business days, ages. Cuántos días, laborables.\n\nDate arithmetic: days between dates, adding time, business days, weekdays, ages, time zones.\n\n`operation` and its arguments:\n- diff: start, end, unit days|weeks|months|years (also returns the\n  calendar breakdown years/months/days).\n- add: start plus days/weeks/months/years (negative to subtract).\n- business_days: start, end; weekends and public holidays excluded, both\n  ends counted (include_end=false to stop the day before). Default Spain,\n  Madrid calendar; pass country (ISO code: FR, DE, US...) and subdivision.\n- weekday / iso_week: value. age: birth_date (+ on, default today).\n- convert_tz: value, from_tz, to_tz (IANA names: Europe/Madrid,\n  America/New_York, UTC). parse: text.\nDates: prefer YYYY-MM-DD. \"today\"/\"hoy\" works. Numeric dates are read\nday-first as in Spain (03/04/2026 = 3 April); Spanish month names work.\nCite as its `cite`, e.g. [L-000042].\n\nKeywords: how many days between, days until, business days, working\ndays, add days, deadline, time zone, what day of the week, how old,\ncuántos días entre, cuántos días faltan, días laborables, días hábiles,\nsumar días, plazo, zona horaria, qué día de la semana, qué edad tiene.",
+        "inputSchema": {
+          "properties": {
+            "operation": {
+              "title": "Operation",
+              "type": "string"
+            },
+            "start": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start"
+            },
+            "end": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            },
+            "unit": {
+              "default": "days",
+              "title": "Unit",
+              "type": "string"
+            },
+            "days": {
+              "default": 0,
+              "title": "Days",
+              "type": "integer"
+            },
+            "weeks": {
+              "default": 0,
+              "title": "Weeks",
+              "type": "integer"
+            },
+            "months": {
+              "default": 0,
+              "title": "Months",
+              "type": "integer"
+            },
+            "years": {
+              "default": 0,
+              "title": "Years",
+              "type": "integer"
+            },
+            "country": {
+              "default": "ES",
+              "title": "Country",
+              "type": "string"
+            },
+            "subdivision": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Subdivision"
+            },
+            "include_end": {
+              "default": true,
+              "title": "Include End",
+              "type": "boolean"
+            },
+            "birth_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Birth Date"
+            },
+            "on": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "On"
+            },
+            "from_tz": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "From Tz"
+            },
+            "to_tz": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "To Tz"
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Text"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "math",
+        "description": "Symbolic math (SymPy): solve, derive, integrate, limits, matrices. Resolver ecuaciones, derivadas.\n\nSymbolic math with SymPy: solve equations, derivatives, integrals, limits, series, matrices.\n\n`operation` is one of: simplify, expand, factor, apart, together, solve,\nnsolve, diff, integrate, limit, series, summation, product, matrix,\ndsolve, inequality. Syntax as in calc, plus variables; an equation is\nwritten `x**2 - 5*x + 6 = 0` (or ==).\n- solve: expression=\"2*x + 1 = 7\" (or expressions=[...] for a system,\n  variables=[\"x\", \"y\"]); domain real|complex. Each solution has `values`\n  (exact), `numeric` and `verified` (substituted back) - check it.\n- diff: expression, variable, order. integrate: expression, variable,\n  optional lower/upper for a definite integral. limit: expression,\n  variable, point (e.g. \"oo\"), direction \"+\"/\"-\". series: variable,\n  point, order. summation/product: variable, lower, upper.\n- nsolve: numeric root near x0. inequality: expression=\"x**2 < 4\".\n- dsolve: dy/dx = expression, in symbols x and y (e.g. \"y - x\").\n- matrix: matrix_op det|inv|rank|rref|eigenvals|transpose|multiply and\n  matrix=[[1, 2], [3, 4]] (matrix2 for multiply).\n`variable` can be omitted when the expression has only one symbol.\nHard timeout (10 s): on timeout, simplify the input instead of retrying.\nCite results as their `cite`, e.g. [L-000042].\n\nKeywords: solve for x, equation, derivative, integral, differentiate,\nsimplify, factor, limit, series, matrix determinant, inverse matrix,\neigenvalues, resolver, ecuación, despejar, derivada, integral, simplificar,\nfactorizar, límite, serie, matriz, determinante, autovalores.",
+        "inputSchema": {
+          "properties": {
+            "operation": {
+              "title": "Operation",
+              "type": "string"
+            },
+            "expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expression"
+            },
+            "expressions": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Expressions"
+            },
+            "variable": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Variable"
+            },
+            "variables": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Variables"
+            },
+            "domain": {
+              "default": "real",
+              "title": "Domain",
+              "type": "string"
+            },
+            "order": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Order"
+            },
+            "lower": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lower"
+            },
+            "upper": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Upper"
+            },
+            "point": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Point"
+            },
+            "direction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Direction"
+            },
+            "x0": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "X0"
+            },
+            "matrix_op": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Matrix Op"
+            },
+            "matrix": {
+              "anyOf": [
+                {
+                  "items": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Matrix"
+            },
+            "matrix2": {
+              "anyOf": [
+                {
+                  "items": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Matrix2"
+            },
+            "function": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Function"
+            },
+            "timeout": {
+              "default": 10.0,
+              "maximum": 60.0,
+              "minimum": 0.1,
+              "title": "Timeout",
+              "type": "number"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "notebook_cell_create",
+        "description": "Add and evaluate a notebook cell with a native calculation engine.\n\nKeywords: notebook, cell, add, calculate, cuaderno, celda, añadir, calcular.",
+        "inputSchema": {
+          "properties": {
+            "engine": {
+              "title": "Engine",
+              "type": "string"
+            },
+            "input": {
+              "title": "Input",
+              "type": "string"
+            }
+          },
+          "required": [
+            "engine",
+            "input"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "notebook_cell_delete",
+        "description": "Remove the notebook cell identified by id, leaving all other cells intact.\n\nKeywords: notebook, cell, delete, remove, cuaderno, celda, borrar, quitar.",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "exclusiveMinimum": 0,
+              "title": "Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "notebook_cell_get",
+        "description": "Read one notebook cell by its existing id before editing it.\n\nKeywords: notebook, cell, read, cuaderno, celda, leer.",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "exclusiveMinimum": 0,
+              "title": "Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "notebook_cell_patch",
+        "description": "Edit only supplied input/engine fields of a notebook cell and evaluate its current content.\n\nOther fields and other cells are preserved. Read the cell first; send only the fields you intend to change.\nKeywords: notebook, cell, edit, update, partial, cuaderno, celda, editar, cambiar, parcial.",
+        "inputSchema": {
+          "$defs": {
+            "CellPatch": {
+              "additionalProperties": false,
+              "properties": {
+                "engine": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "calc",
+                        "math",
+                        "units",
+                        "dates"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Engine"
+                },
+                "input": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Input"
+                }
+              },
+              "title": "CellPatch",
+              "type": "object"
+            }
+          },
+          "properties": {
+            "id": {
+              "exclusiveMinimum": 0,
+              "title": "Id",
+              "type": "integer"
+            },
+            "patch": {
+              "$ref": "#/$defs/CellPatch"
+            }
+          },
+          "required": [
+            "id",
+            "patch"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "notebook_cells",
+        "description": "Read the real notebook cells and their ids, inputs and results.\n\nKeywords: notebook, cells, list, cuaderno, celdas, listar.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "report_rerun",
+        "description": "Re-run a saved Laplace data report against the current dataset. Repetir informe.\n\nPass the id returned by data_report. Returns a new report id and fresh SQL result;\nthe original report remains available for comparison in the Work log.\n\nKeywords: refresh report, rerun analysis, actualizar informe, repetir análisis.",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "stats",
+        "description": "Descriptive statistics and hypothesis tests with a plain reading. Estadística, media, p-valor.\n\nDescriptive statistics and hypothesis tests (SciPy), with a neutral one-line interpretation.\n\n`test` is one of: describe, ttest_1samp (vs mu), ttest_ind (Welch),\nttest_rel (paired), mannwhitneyu, wilcoxon, chi2_contingency and\nfisher_exact (data = table, e.g. [[8, 2], [1, 9]]), pearson, spearman,\nlinregress (x in data/column, y in data2/column2), proportion_ci\n(Wilson; successes, trials, confidence), normal_ci (mean CI), binom_test\n(successes, trials, p0).\nNumbers come inline (`data`, `data2`) or from a registered dataset:\ndataset + column (+ column2), `group_by` = a column with exactly two\nvalues for two-sample tests, `where` = a row filter such as\n\"region = 'North'\". Dataset columns use every row, not a sample.\nReport the p_value and effect size as given; the interpretation states\nsignificance only - never add causal claims. Cite as its `cite`.\n\nKeywords: statistics, t-test, is it significant, p-value, correlation,\nregression, confidence interval, average, standard deviation, median,\nestadística, prueba t, es significativo, valor p, correlación,\nregresión, intervalo de confianza, media, desviación típica, mediana.",
+        "inputSchema": {
+          "properties": {
+            "test": {
+              "title": "Test",
+              "type": "string"
+            },
+            "data": {
+              "anyOf": [
+                {
+                  "items": {},
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Data"
+            },
+            "data2": {
+              "anyOf": [
+                {
+                  "items": {},
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Data2"
+            },
+            "dataset": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Dataset"
+            },
+            "column": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Column"
+            },
+            "column2": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Column2"
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Group By"
+            },
+            "where": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Where"
+            },
+            "mu": {
+              "default": 0.0,
+              "title": "Mu",
+              "type": "number"
+            },
+            "confidence": {
+              "default": 0.95,
+              "title": "Confidence",
+              "type": "number"
+            },
+            "successes": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Successes"
+            },
+            "trials": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trials"
+            },
+            "p0": {
+              "default": 0.5,
+              "title": "P0",
+              "type": "number"
+            }
+          },
+          "required": [
+            "test"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "units_convert",
+        "description": "Convert a quantity between units (km/h to m/s, °F to °C). Convertir unidades, pasar a.\n\nConvert a physical quantity to another unit, e.g. quantity=\"3.5 km/h\", to=\"m/s\".\n\nHandles compound inputs (\"5 ft 11 in\" to \"cm\"), temperatures with their\noffsets (\"100 degF\" to \"degC\" is 37.78, not a plain scale), and derived\nunits (kWh, psi, mph, g/cm**3). Unit names are English/SI symbols (m,\nkm, mi, ft, in, kg, lb, g, L, gal, degC, degF, K, s, min, h, km/h, mph,\nJ, kWh, W, Pa, bar, psi) or their common Spanish names (metros,\nkilómetros, millas, pies, pulgadas, libras, kilogramos, litros, horas,\nminutos...). A decimal comma with no dot in the input (\"3,5 km\") is read\nas 3.5, not 35. No currencies (rates need the network). Returns {id,\ncite, to_magnitude, to_unit, formatted} rounded to 12 significant\ndigits. Cite as its `cite`, e.g. [L-000042].\n\nKeywords: convert, how many, in meters, in kilograms, miles to km,\npounds to kilos, temperature, fahrenheit, celsius, convertir, cuántos,\npasar a, en metros, en kilos, millas a kilómetros, libras a kilos,\ntemperatura, grados.",
+        "inputSchema": {
+          "properties": {
+            "quantity": {
+              "title": "Quantity",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            }
+          },
+          "required": [
+            "quantity",
+            "to"
+          ],
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    },
+    {
+      "schema": {
+        "name": "work_log",
+        "description": "Recent computations with their citable ids, newest first. Historial de cálculos, qué calculé.\n\nRecent computations from the work log (yours and the human's), newest first, each with its id.\n\nUse it to reuse a number computed earlier instead of recomputing or\nremembering it, or to look one up by id: query=\"L-000042\" returns that\nentry in full. engine filters by calc|math|units|stats|dates|data;\nquery searches operation and input text. Items are short summaries\n(limit default 10, max 50; has_more tells you there are older ones).\n\nKeywords: what did I calculate, previous result, earlier computation,\nhistory, look up L-, qué calculé, resultado anterior, cálculo previo,\nhistorial.",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 10,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "engine": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Engine"
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Query"
+            }
+          },
+          "type": "object"
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      "module": "calculation",
+      "token_file": "data/native/calculation/data/mcp-token"
+    }
+  ]
+}
