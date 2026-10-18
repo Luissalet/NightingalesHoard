@@ -66,6 +66,8 @@ def test_subprocess_http_and_mcp_bridge(app_process, tmp_path):
     assert not any(char.isspace() for char in token)
     assert httpx.post(f"{url}/api/agent/call", json={"name": "data_list"}).status_code == 401
     auth = {"Authorization": f"Bearer {token}"}
+    assert httpx.post(f"{url}/api/agent/call", json={"name": "data_list"}, headers=auth).status_code == 409
+    assert httpx.put(f"{url}/api/modules/data", json={"enabled": True}, timeout=60).status_code == 200
 
     csv_path = tmp_path / "e2e.csv"
     csv_path.write_text("a,b\n1,2\n3,4\n5,6\n", encoding="utf-8")
@@ -106,5 +108,24 @@ def test_subprocess_http_and_mcp_bridge(app_process, tmp_path):
 
                 bad = json.loads((await session.call_tool("data_profile", {"dataset": "nope"})).content[0].text)
                 assert "error" in bad
+
+                enabled = await session.call_tool("nightingale_set_module", {"module": "calculation", "enabled": True})
+                assert not enabled.isError
+                exact = json.loads((await session.call_tool('calc', {'expression': '0.1+0.2'})).content[0].text)
+                assert exact['exact'] == '3/10'
+                assert exact['cite'].startswith('[L-')
+                registered = await session.call_tool('data_register', {'path': str(csv_path), 'name': 'numbers'})
+                assert not registered.isError
+                chart_args = {'sql': 'SELECT a,b FROM numbers', 'kind': 'bar', 'x': 'a', 'y': 'b'}
+                chart = await session.call_tool('laplace_data_chart', chart_args)
+                assert not chart.isError
+                assert all(content.type != 'image' for content in chart.content)
+                saved = json.loads(chart.content[0].text)
+                assert saved['chart_url'].startswith(url + '/calculation/api/charts/')
+                assert httpx.get(saved['chart_url']).status_code == 200
+                image = await session.call_tool('laplace_data_chart', {**chart_args, 'include_image': True})
+                assert not image.isError
+                assert any(content.type == 'image' and content.mimeType == 'image/png' for content in image.content)
+                assert not (await session.call_tool('nightingale_set_module', {'module': 'calculation', 'enabled': False})).isError
 
     asyncio.run(through_mcp())

@@ -1,6 +1,6 @@
 // Thin fetch wrapper: JSON in/out, `{ error }` bodies become exceptions.
 async function request(method, path, { params, body } = {}) {
-  const url = new URL(path, window.location.origin);
+  const url = new URL(import.meta.env.BASE_URL + path.replace(/^\//, ''), window.location.origin);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
   }
@@ -120,7 +120,7 @@ export const api = {
     optimize: (id, body) => post(`/api/lab/models/${id}/optimize`, body),
     pareto: (body) => post("/api/lab/pareto", body),
     report: (body) => post("/api/lab/report", body),
-    reportDownloadUrl: (path) => `/api/lab/report/download?path=${encodeURIComponent(path)}`,
+    reportDownloadUrl: (path) => `${import.meta.env.BASE_URL}api/lab/report/download?path=${encodeURIComponent(path)}`,
 
     pipelineGraph: (name) => get(`/api/lab/datasets/${encodeURIComponent(name)}/pipeline`),
     pipelineApply: (name, graph, dryRun) => post(`/api/lab/datasets/${encodeURIComponent(name)}/pipeline/apply`, { graph, dry_run: dryRun }),

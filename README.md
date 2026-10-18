@@ -2,6 +2,13 @@
 
 # Nightingale's Hoard
 
+## Native data and calculation modules
+
+Nightingale incorporates all of Laplace's arithmetic, symbolic math, units, dates, statistics, SQL-over-files, charts and calculation history. Data and Calculation are independent switches, both OFF on first installation or migration. Start the app explicitly from Hoard Hub, then enable only what you need. Calculation works without loading the data workbench or DuckDB. Full native interfaces live under `/data/` and `/calculation/`; one server owns both.
+
+The static MCP catalog contains 38 native tools plus two module controls. Existing Nightingale tools retain their names; the three collisions are `laplace_data_list`, `laplace_data_query` and `laplace_data_chart`. Existing native data directories can be adopted in place through `data/modules.json` without copies or format changes. See [architecture and provenance](docs/FUSION.md).
+
+
 The data workbench for a local language model: ingest a messy file, clean it with versioned steps
 you can undo, check it against rules you define, chart and dashboard it, train a quick model, and
 ask it a question — all on your own machine, and all reachable by an assistant through MCP exactly
@@ -11,8 +18,7 @@ Everything stays local: DuckDB for the data, SQLite for metadata (sources, versi
 charts, dashboards, models, the analysis log), no accounts, no network calls except to a file URL
 you gave it.
 
-Part of the Hoard family (see `faustus-plugin.json`) — where Laplace's Hoard is a read-only query
-engine, Nightingale is the workbench: it's where the data actually gets built and changed.
+Part of the Hoard family (see `faustus-plugin.json`). Calculation preserves Laplace's read-only file catalog alongside Nightingale's reversible workbench.
 
 ## Why this exists
 
@@ -85,7 +91,7 @@ npm run build
 venv/bin/python -m nightingale --demo         # Windows: venv\Scripts\python -m nightingale --demo
 ```
 
-Open http://127.0.0.1:5189. `--demo` seeds three invented datasets (a messy Spanish-format sales
+Open http://127.0.0.1:5189 and enable Data or Calculation in Functions. `--demo` seeds three invented datasets in Data when enabled (a messy Spanish-format sales
 CSV, a customer table, a seasonal sensor time series with a few injected anomalies) into a separate
 `data-demo/` folder, so it never touches real data. Drop `--demo` for a clean workbench.
 
@@ -111,9 +117,9 @@ browser offers to install it as a PWA.
 
 ## Connect to Faustus
 
-Drop `faustus-plugin.json` into Faustus (or point it at this repo) and it picks up the health
-check, launch command, and MCP bridge automatically — no manual wiring. The plugin never opens the
-database itself; it only talks to the running app's HTTP API, the same as the browser UI does.
+Load `faustus-plugin.json` in Faustus to discover the static MCP catalog. Start the app explicitly
+from Hoard Hub and enable the requested module. The bridge calls the running app's HTTP API,
+the same as the browser UI, and never opens the database itself.
 
 ## API
 
@@ -138,10 +144,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the full reference (18 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (18 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
-cite the analysis-log id (`N-000123`) when reporting a result back.
+cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
+documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 40-tool catalog.
 
 ## Tests
 

@@ -16,7 +16,7 @@ if (
 ) {
   try {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {scope: import.meta.env.BASE_URL}).catch(() => {});
     });
   } catch {
     // PWA install is optional; never block the app on it.

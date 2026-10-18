@@ -139,7 +139,7 @@ class Services:
         return self.clock()
 
     def stop(self) -> None:
-        self.executor.shutdown(wait=False, cancel_futures=True)
+        self.executor.shutdown(wait=True, cancel_futures=True)
         self.engine.close()
         self.meta.close()
 
