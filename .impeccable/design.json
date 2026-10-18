@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-18T21:15:39.333346+00:00",
+  "title": "Design System: Nightingale’s Hoard",
+  "extensions": {
+    "colorMeta": {
+      "deep": {
+        "role": "neutral",
+        "displayName": "Deep",
+        "tonalRamp": [
+          "oklch(15% 0.01360 1.70)",
+          "oklch(26% 0.01360 1.70)",
+          "oklch(37% 0.01360 1.70)",
+          "oklch(48% 0.01360 1.70)",
+          "oklch(59% 0.01360 1.70)",
+          "oklch(70% 0.01360 1.70)",
+          "oklch(82% 0.01360 1.70)",
+          "oklch(95% 0.01360 1.70)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "tonalRamp": [
+          "oklch(15% 0.01462 3.38)",
+          "oklch(26% 0.01462 3.38)",
+          "oklch(37% 0.01462 3.38)",
+          "oklch(48% 0.01462 3.38)",
+          "oklch(59% 0.01462 3.38)",
+          "oklch(70% 0.01462 3.38)",
+          "oklch(82% 0.01462 3.38)",
+          "oklch(95% 0.01462 3.38)"
+        ]
+      },
+      "elevated": {
+        "role": "neutral",
+        "displayName": "Elevated",
+        "tonalRamp": [
+          "oklch(15% 0.01546 4.66)",
+          "oklch(26% 0.01546 4.66)",
+          "oklch(37% 0.01546 4.66)",
+          "oklch(48% 0.01546 4.66)",
+          "oklch(59% 0.01546 4.66)",
+          "oklch(70% 0.01546 4.66)",
+          "oklch(82% 0.01546 4.66)",
+          "oklch(95% 0.01546 4.66)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Border",
+        "tonalRamp": [
+          "oklch(15% 0.02057 3.82)",
+          "oklch(26% 0.02057 3.82)",
+          "oklch(37% 0.02057 3.82)",
+          "oklch(48% 0.02057 3.82)",
+          "oklch(59% 0.02057 3.82)",
+          "oklch(70% 0.02057 3.82)",
+          "oklch(82% 0.02057 3.82)",
+          "oklch(95% 0.02057 3.82)"
+        ]
+      },
+      "border-hover": {
+        "role": "neutral",
+        "displayName": "Border hover",
+        "tonalRamp": [
+          "oklch(15% 0.02403 6.73)",
+          "oklch(26% 0.02403 6.73)",
+          "oklch(37% 0.02403 6.73)",
+          "oklch(48% 0.02403 6.73)",
+          "oklch(59% 0.02403 6.73)",
+          "oklch(70% 0.02403 6.73)",
+          "oklch(82% 0.02403 6.73)",
+          "oklch(95% 0.02403 6.73)"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Text",
+        "tonalRamp": [
+          "oklch(15% 0.01261 358.78)",
+          "oklch(26% 0.01261 358.78)",
+          "oklch(37% 0.01261 358.78)",
+          "oklch(48% 0.01261 358.78)",
+          "oklch(59% 0.01261 358.78)",
+          "oklch(70% 0.01261 358.78)",
+          "oklch(82% 0.01261 358.78)",
+          "oklch(95% 0.01261 358.78)"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Text muted",
+        "tonalRamp": [
+          "oklch(15% 0.01170 3.59)",
+          "oklch(26% 0.01170 3.59)",
+          "oklch(37% 0.01170 3.59)",
+          "oklch(48% 0.01170 3.59)",
+          "oklch(59% 0.01170 3.59)",
+          "oklch(70% 0.01170 3.59)",
+          "oklch(82% 0.01170 3.59)",
+          "oklch(95% 0.01170 3.59)"
+        ]
+      },
+      "text-dim": {
+        "role": "neutral",
+        "displayName": "Text dim",
+        "tonalRamp": [
+          "oklch(15% 0.01319 4.91)",
+          "oklch(26% 0.01319 4.91)",
+          "oklch(37% 0.01319 4.91)",
+          "oklch(48% 0.01319 4.91)",
+          "oklch(59% 0.01319 4.91)",
+          "oklch(70% 0.01319 4.91)",
+          "oklch(82% 0.01319 4.91)",
+          "oklch(95% 0.01319 4.91)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Rosa de datos",
+        "tonalRamp": [
+          "oklch(15% 0.11356 6.90)",
+          "oklch(26% 0.11356 6.90)",
+          "oklch(37% 0.11356 6.90)",
+          "oklch(48% 0.11356 6.90)",
+          "oklch(59% 0.11356 6.90)",
+          "oklch(70% 0.11356 6.90)",
+          "oklch(82% 0.11356 6.90)",
+          "oklch(95% 0.11356 6.90)"
+        ]
+      },
+      "accent-strong": {
+        "role": "primary",
+        "displayName": "Accent strong",
+        "tonalRamp": [
+          "oklch(15% 0.08230 5.57)",
+          "oklch(26% 0.08230 5.57)",
+          "oklch(37% 0.08230 5.57)",
+          "oklch(48% 0.08230 5.57)",
+          "oklch(59% 0.08230 5.57)",
+          "oklch(70% 0.08230 5.57)",
+          "oklch(82% 0.08230 5.57)",
+          "oklch(95% 0.08230 5.57)"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent ink",
+        "tonalRamp": [
+          "oklch(15% 0.01368 1.76)",
+          "oklch(26% 0.01368 1.76)",
+          "oklch(37% 0.01368 1.76)",
+          "oklch(48% 0.01368 1.76)",
+          "oklch(59% 0.01368 1.76)",
+          "oklch(70% 0.01368 1.76)",
+          "oklch(82% 0.01368 1.76)",
+          "oklch(95% 0.01368 1.76)"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Accent soft"
+      },
+      "danger": {
+        "role": "neutral",
+        "displayName": "Danger",
+        "tonalRamp": [
+          "oklch(15% 0.12258 27.14)",
+          "oklch(26% 0.12258 27.14)",
+          "oklch(37% 0.12258 27.14)",
+          "oklch(48% 0.12258 27.14)",
+          "oklch(59% 0.12258 27.14)",
+          "oklch(70% 0.12258 27.14)",
+          "oklch(82% 0.12258 27.14)",
+          "oklch(95% 0.12258 27.14)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Encabezado",
+        "purpose": "Título de página Cinzel."
+      },
+      "body": {
+        "displayName": "Texto",
+        "purpose": "Descripción y explicación operativa."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "switch-thumb",
+        "value": "transform .16s ease-out",
+        "purpose": "Desplazamiento del pulgar; se elimina con movimiento reducido."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop",
+        "value": "1050px"
+      },
+      {
+        "name": "mobile-header",
+        "value": "720px"
+      },
+      {
+        "name": "stack-controls",
+        "value": "650px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acciones de control como Desactivar todas.",
+      "html": "<button class=\"ds-secondary\">Desactivar todas</button>",
+      "css": ".ds-secondary{font-family:var(--hoard-font-sans);font-size:14px;background:transparent;color:var(--hoard-text);border:1px solid var(--hoard-border);padding:10px 16px;border-radius:6px;font-weight:600;cursor:pointer}.ds-secondary:hover{background:var(--hoard-elevated);border-color:var(--hoard-border-hover)}.ds-secondary:focus-visible{outline:3px solid var(--hoard-accent);outline-offset:4px}.ds-secondary:disabled{opacity:.55;cursor:default}"
+    },
+    {
+      "name": "Navegación activa",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "Entrada activa del lateral.",
+      "html": "<a class=\"ds-nav\" href=\"#\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 7h16M4 17h16M9 4v6m6 4v6\"/></svg>Funciones</a>",
+      "css": ".ds-nav{font-family:var(--hoard-font-sans);font-size:14px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:6px;background:var(--hoard-elevated);color:var(--hoard-accent);text-decoration:none;font-weight:600}.ds-nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.ds-nav:hover{color:var(--hoard-text)}.ds-nav:focus-visible{outline:3px solid var(--hoard-accent);outline-offset:4px}"
+    },
+    {
+      "name": "Fila de módulo",
+      "kind": "custom",
+      "refersTo": "module-row",
+      "description": "Nombre, procedencia y explicación separados por una línea.",
+      "html": "<article class=\"ds-module\"><h2>Función <span>Origen</span></h2><p>Activa sólo lo que quieras usar.</p></article>",
+      "css": ".ds-module{font-family:var(--hoard-font-sans);font-size:14px;color:var(--hoard-text);padding:22px 0;border-top:1px solid var(--hoard-border)}.ds-module h2{font-size:19px;font-weight:600;margin:0 0 6px}.ds-module h2 span{font-size:13px;font-weight:400;color:var(--hoard-text-dim);margin-left:10px}.ds-module p{font-size:14px;color:var(--hoard-text-muted);line-height:1.6;margin:0}"
+    },
+    {
+      "name": "Interruptor de función",
+      "kind": "button",
+      "refersTo": "switch-track",
+      "description": "Estado visible y control accesible de cada motor.",
+      "html": "<button class=\"ds-switch\" role=\"switch\" aria-checked=\"false\"><span>Desactivada</span><span class=\"ds-track\"><span class=\"ds-thumb\"></span></span></button>",
+      "css": ".ds-switch{font-family:var(--hoard-font-sans);font-size:14px;display:flex;gap:10px;align-items:center;border:0;padding:8px 0 8px 8px;min-height:44px;background:transparent;color:var(--hoard-text-muted);font-size:13px;cursor:pointer}.ds-track{display:block;width:42px;height:24px;border-radius:14px;background:var(--hoard-border);padding:3px;box-sizing:border-box}.ds-thumb{display:block;width:18px;height:18px;border-radius:50%;background:var(--hoard-text);transition:transform .16s ease-out}.ds-switch[aria-checked=true]{color:var(--hoard-accent)}.ds-switch[aria-checked=true] .ds-track{background:var(--hoard-accent)}.ds-switch[aria-checked=true] .ds-thumb{background:var(--hoard-accent-ink);transform:translateX(18px)}.ds-switch:focus-visible{outline:3px solid var(--hoard-accent);outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-thumb{transition:none}}"
+    },
+    {
+      "name": "Ubicación desplegable",
+      "kind": "custom",
+      "description": "Datos secundarios consultables sin ocupar la fila completa.",
+      "html": "<details class=\"ds-location\"><summary>Ubicación de los datos</summary><code>D:\\Hoard\\data</code></details>",
+      "css": ".ds-location{font-family:var(--hoard-font-sans);font-size:14px;margin-top:10px;font-size:12px;color:var(--hoard-text-dim)}.ds-location summary{cursor:pointer}.ds-location summary:hover{color:var(--hoard-text)}.ds-location summary:focus-visible{outline:3px solid var(--hoard-accent);outline-offset:4px}.ds-location code{display:block;overflow-wrap:anywhere;margin-top:6px;font-size:12px;line-height:1.6}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La familia Hoard existente",
+    "overview": "La identidad vigente de Nightingale’s Hoard pertenece a la familia Hoard: fondos oscuros teñidos, acento propio, icono existente, títulos Cinzel y texto Source Sans 3. El panel Funciones prolonga esa identidad sin sustituir la presentación de las herramientas nativas. Esta actualización combina el panel construido con los patrones anteriores que siguen aplicando en sus pantallas; los tokens normativos de cabecera describen el panel Funciones, no una recoloración de todas las vistas.\n\nLa interfaz operativa prioriza el nombre de la función, una explicación breve y controles con estado escrito. La profundidad procede del contraste entre fondo, lateral y selección. La marca de Faustus conserva su identidad familiar independiente; no se usa para recolorear el producto.",
+    "keyCharacteristics": [
+      "Icono propio conservado y navegación familiar.",
+      "Jerarquía tipográfica serifa/sans, con controles y estados legibles.",
+      "Filas separadas por bordes y profundidad tonal contenida."
+    ],
+    "rules": [
+      {
+        "name": "The Product Accent Rule",
+        "body": "El acento propio identifica la aplicación, la navegación activa y el estado encendido; los párrafos permanecen en los tonos de texto.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do conservar el icono existente y las familias locales Cinzel y Source Sans 3.",
+      "Do acompañar cada interruptor con su estado escrito y un nombre accesible.",
+      "Do mantener el borde de fila y el foco visibles en el tema oscuro.",
+      "Do respetar los patrones nativos conservados al extender sus pantallas."
+    ],
+    "donts": [
+      "Don’t sustituir la identidad del Hoard por un tema genérico.",
+      "Don’t usar el acento para párrafos largos.",
+      "Don’t convertir las filas de Funciones en tarjetas decorativas elevadas."
+    ]
+  }
+}
