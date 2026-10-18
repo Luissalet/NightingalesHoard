@@ -2,6 +2,13 @@
 
 # Nightingale's Hoard
 
+## Módulos nativos de datos y cálculo
+
+Nightingale incorpora todas las funciones de Laplace: aritmética exacta, álgebra, unidades, fechas, estadística, SQL sobre archivos, gráficos e historial de cálculo. Datos y Cálculo son interruptores independientes, ambos OFF en la primera instalación o migración. Arranca la app expresamente desde Hoard Hub y activa lo que necesites. La calculadora funciona sin cargar el workbench ni DuckDB. Las interfaces completas están en `/data/` y `/calculation/`, dentro de un único servidor.
+
+El catálogo MCP estático conserva 38 herramientas nativas y añade dos controles de módulos. Las tres colisiones se publican como `laplace_data_list`, `laplace_data_query` y `laplace_data_chart`. Los datos anteriores se adoptan en su ruta mediante `data/modules.json`, sin copiar ni cambiar formatos. Véase [arquitectura y procedencia](docs/FUSION.md).
+
+
 El banco de trabajo de datos para un modelo de lenguaje local: ingesta un archivo desordenado,
 límpialo con pasos versionados que puedes deshacer, compruébalo contra reglas que tú defines,
 represéntalo en gráficos y paneles, entrena un modelo rápido, y pregúntale algo — todo en tu propio
@@ -11,9 +18,8 @@ Todo se queda en local: DuckDB para los datos, SQLite para los metadatos (fuente
 reglas de calidad, gráficos, paneles, modelos, el registro de análisis), sin cuentas, sin llamadas
 de red salvo a una URL de archivo que tú le hayas dado.
 
-Forma parte de la familia Hoard (ver `faustus-plugin.json`) — donde Laplace's Hoard es un motor de
-consulta de solo lectura, Nightingale es el banco de trabajo: es donde los datos realmente se
-construyen y cambian.
+Forma parte de la familia Hoard (ver `faustus-plugin.json`). Cálculo conserva el catálogo de
+archivos de solo lectura de Laplace junto al workbench reversible de Nightingale.
 
 ## Por qué existe
 
@@ -90,7 +96,7 @@ npm run build
 venv/bin/python -m nightingale --demo         # Windows: venv\Scripts\python -m nightingale --demo
 ```
 
-Abre http://127.0.0.1:5189. `--demo` siembra tres conjuntos de datos inventados (un CSV de ventas
+Abre http://127.0.0.1:5189 y activa Datos o Cálculo en Funciones. `--demo` siembra al activar Datos tres conjuntos inventados (un CSV de ventas
 con formato español desordenado, una tabla de clientes, una serie temporal de sensor estacional con
 algunas anomalías inyectadas) en una carpeta `data-demo/` separada, así que nunca toca datos reales.
 Quita `--demo` para un banco de trabajo limpio.
@@ -118,10 +124,9 @@ través del túnel, el navegador ofrece instalarlo como PWA.
 
 ## Conectar con Faustus
 
-Suelta `faustus-plugin.json` en Faustus (o apúntalo a este repositorio) y recoge automáticamente
-la comprobación de salud, el comando de lanzamiento, y el puente MCP — sin cableado manual. El
-plugin nunca abre la base de datos por sí mismo; solo habla con la API HTTP de la aplicación en
-ejecución, igual que hace la interfaz del navegador.
+Carga `faustus-plugin.json` en Faustus para descubrir el catálogo MCP estático. Arranca la app
+expresamente desde Hoard Hub y activa el módulo solicitado. El puente usa la API HTTP de la app,
+igual que la interfaz del navegador, y conserva las bases de datos dentro de su módulo nativo.
 
 ## API
 
@@ -146,11 +151,13 @@ Todo JSON; los errores son `{ "error": "..." }`.
 
 ## Herramientas MCP
 
-Consulta `docs/MCP.md` para la referencia completa (18 herramientas, de `data_ingest` a
+Consulta `docs/MCP.md` para la referencia del módulo Datos (18 herramientas, de `data_ingest` a
 `data_ask`) y un recorrido mínimo. Las instrucciones incluidas indican al asistente que previsualice
 una transformación antes de aplicarla cuando el efecto no sea obviamente seguro, que nunca asuma el
 nombre de un conjunto de datos (`data_list` primero), y que cite el id del registro de análisis
-(`N-000123`) al informar de un resultado.
+(`N-000123`) al informar de un resultado. Cálculo aporta otras 20 herramientas nativas,
+documentadas en [su referencia](fusion/laplace-docs/MCP.md), con las tres colisiones prefijadas
+como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 40.
 
 ## Pruebas
 

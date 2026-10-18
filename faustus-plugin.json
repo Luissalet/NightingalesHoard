@@ -2,9 +2,35 @@
   "schema": 1,
   "id": "nightingale",
   "name": "Nightingale's Hoard",
-  "purpose": "The user's own data workbench: ingest files/folders/URLs into a local DuckDB workbench, clean data with versioned steps (undo/redo, lineage, replay), run quality rules, build charts and dashboards, and train quick models — every operation recorded and explained.",
-  "capabilities": ["ingest", "transform", "quality-rules", "charts", "dashboards", "dashboards-as-code", "models", "forecasting", "sql-query", "analysis-log", "ask-your-data", "workbook-inventory", "workbook-preserving-export", "multisheet-export"],
-  "placeholders": ["NIGHTINGALE_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
+  "purpose": "The user's own data workbench: ingest files/folders/URLs into a local DuckDB workbench, clean data with versioned steps (undo/redo, lineage, replay), run quality rules, build charts and dashboards, and train quick models — every operation recorded and explained. Includes independent exact arithmetic, symbolic math, units, dates, statistics and SQL-over-files calculation modules, all OFF by default.",
+  "capabilities": [
+    "ingest",
+    "transform",
+    "quality-rules",
+    "charts",
+    "dashboards",
+    "dashboards-as-code",
+    "models",
+    "forecasting",
+    "sql-query",
+    "analysis-log",
+    "ask-your-data",
+    "workbook-inventory",
+    "workbook-preserving-export",
+    "multisheet-export",
+    "exact-arithmetic",
+    "symbolic-math",
+    "units",
+    "dates",
+    "calculation-history",
+    "independent-modules"
+  ],
+  "placeholders": [
+    "NIGHTINGALE_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5189",
     "TOKEN_FILE": "{NIGHTINGALE_DIR}/data/mcp-token",
@@ -13,25 +39,67 @@
   "app": {
     "url_default": "http://127.0.0.1:5189",
     "ui_url": "{APP_URL}",
-    "health": { "path": "/api/health", "expect": { "service": "nightingale-hoard" } },
-    "identify": { "service": ["nightingale-hoard"], "title": ["nightingale's hoard", "data workbench"] },
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "nightingale-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "nightingale-hoard"
+      ],
+      "title": [
+        "nightingale's hoard",
+        "data workbench"
+      ]
+    },
     "launch_hint": {
       "kind": "process",
       "executable": "{PYTHON}",
-      "argv": ["-m", "nightingale"],
+      "argv": [
+        "-m",
+        "nightingale"
+      ],
       "cwd": "{NIGHTINGALE_DIR}",
-      "readiness": { "url": "{APP_URL}/api/health", "timeout_s": 20 }
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
     }
   },
   "mcp": {
     "transport": "stdio",
     "command": "{PYTHON}",
-    "args": ["{NIGHTINGALE_DIR}/mcp_server.py"],
-    "env": { "NIGHTINGALE_URL": "{APP_URL}", "NIGHTINGALE_TOKEN_FILE": "{TOKEN_FILE}" },
+    "args": [
+      "{NIGHTINGALE_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "NIGHTINGALE_URL": "{APP_URL}",
+      "NIGHTINGALE_TOKEN_FILE": "{TOKEN_FILE}"
+    },
     "optional_env": []
   },
-  "notes": "Keep the app running (python -m nightingale) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database directly. data_ingest kind=hoard calls another app's tool through Hoard Hub (presets ledger_transactions, phileas_shipments, argus_app_time [unverified]); it needs the hub and that app running.",
+  "notes": "Start explicitly from Hoard Hub. Data and Calculation default OFF. MCP discovery reads the static catalog without starting the server or engines. Full native tools and data remain available after explicit activation.",
   "x-family": {
-    "copilot": {"contract_version": "1.0", "info": "/api/copilot/info", "panel": "/api/copilot/panel.js", "proxy": "/api/copilot/proxy", "launcher": "/api/copilot/launcher.js"}
+    "copilot": {
+      "contract_version": "1.0",
+      "info": "/api/copilot/info",
+      "panel": "/api/copilot/panel.js",
+      "proxy": "/api/copilot/proxy",
+      "launcher": "/api/copilot/launcher.js"
+    },
+    "absorbs": [
+      "laplace"
+    ],
+    "modules": [
+      "data",
+      "calculation"
+    ]
+  },
+  "provides": {
+    "skills": [
+      "fusion/skills/exact-numbers/SKILL.md"
+    ]
   }
 }

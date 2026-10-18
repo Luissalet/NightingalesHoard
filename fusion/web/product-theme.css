@@ -1,0 +1,16 @@
+html[data-hoard-app=talos] {
+  --hoard-deep: #1c1814;
+  --hoard-sunken: #161310;
+  --hoard-surface: #24201b;
+  --hoard-elevated: #2f2a25;
+  --hoard-hover: #38322b;
+  --hoard-border: #433c35;
+  --hoard-border-hover: #6a6158;
+  --hoard-text: #ece7e1;
+  --hoard-text-muted: #beb9b4;
+  --hoard-text-dim: #a6a09b;
+  --hoard-accent: #d69354;
+  --hoard-accent-strong: #dea875;
+  --hoard-accent-dim: #b0753c;
+  --hoard-accent-ink: #1b1713;
+}
