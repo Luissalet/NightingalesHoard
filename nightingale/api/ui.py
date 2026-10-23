@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .deps import api_errors, services
@@ -476,6 +477,20 @@ def export(request: Request, body: ExportBody):
     updates = [item.model_dump(exclude_none=True) for item in body.workbook_updates] if body.workbook_updates is not None else None
     return services(request).export(body.dataset, body.format, body.path, mode=body.mode,
                                     version=body.version, workbook_updates=updates)
+
+
+class ExportDownloadBody(BaseModel):
+    dataset: str
+    format: Literal["csv", "json", "parquet", "xlsx"] = "csv"
+    version: int = Field(..., ge=0)
+
+
+@router.post("/export/download")
+@api_errors
+def export_download(request: Request, body: ExportDownloadBody):
+    filename = f"{body.dataset}_v{body.version}.{body.format}"
+    result = services(request).export(body.dataset, body.format, filename, version=body.version)
+    return FileResponse(result["path"], filename=filename)
 
 
 # ---- log ---------------------------------------------------------------

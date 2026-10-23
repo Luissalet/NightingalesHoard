@@ -2,6 +2,13 @@
 
 # Nightingale's Hoard
 
+Datasets → **Export data** downloads every row of the displayed version as CSV,
+JSON, Parquet or a single-sheet XLSX. The request captures the version explicitly
+and uses the existing native `data_export` writer through
+`POST /api/export/download`. The source and saved versions stay unchanged; export
+files and the normal analysis-log entry are created. Flat XLSX does not preserve
+the source workbook, and these files are not a project backup.
+
 The dataset recipe panel opens any saved version using the existing undo/redo operations. Earlier steps are clickable, and later versions remain selectable until a new transformation replaces that branch. Export SQL now includes copy and `.sql` download actions in English and Spanish. The script uses local dataset tables; it is not a self-contained data backup. UI, API and MCP `data_undo`/`data_recipe` share the existing native calculation; the combined catalog remains 42 tools.
 
 ## Native data and calculation modules
