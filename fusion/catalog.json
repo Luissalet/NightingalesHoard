@@ -316,6 +316,51 @@
     "module": "data"
   },
   {
+    "name": "data_versions_compare",
+    "description": "Compare row counts, schema and column profiles of two saved dataset versions.\nReports added/removed/type-changed columns, null counts and approximate distinct counts with B minus A deltas. Does not align rows or identify individual changed cells. Reads saved versions without changing the current one.\nSinónimos: comparar versiones, antes y después, efecto de la limpieza, diferencias de columnas.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "version_a": {
+          "default": 0,
+          "description": "Version A, default original import (0).",
+          "minimum": 0,
+          "title": "Version A",
+          "type": "integer"
+        },
+        "version_b": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version B, default current version.",
+          "title": "Version B"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "CompareVersionsArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_preview",
     "description": "First rows of a dataset version, with total row count.\nSinónimos: ver datos, muestra de filas, primeras filas.",
     "annotations": {

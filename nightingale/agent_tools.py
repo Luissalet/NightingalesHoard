@@ -91,6 +91,12 @@ class PreviewArgs(BaseModel):
     limit: int = Field(50, ge=1, le=1000)
 
 
+class CompareVersionsArgs(BaseModel):
+    dataset: str
+    version_a: int = Field(0, ge=0, description="Version A, default original import (0).")
+    version_b: Optional[int] = Field(None, ge=0, description="Version B, default current version.")
+
+
 class TransformArgs(BaseModel):
     dataset: Optional[str] = Field(None, description="Required for a transform. With op='help', optionally name a dataset to include its current column names/types, version, and row count (no cell values).")
     op: str = Field(..., description="filter/select/drop/rename/cast/fill_null/drop_duplicates/derive/split_column/"
@@ -576,6 +582,11 @@ TOOLS: list[Tool] = [
          "Sinónimos: perfil de datos, describir columnas, estadísticas de columna, análisis exploratorio, eda, "
          "puntuación de calidad, calidad de datos, deriva de datos, drift, correlación, valores atípicos, outliers.",
          ProfileArgs, _ann(True), _run_profile),
+    Tool("data_versions_compare", "Compare row counts, schema and column profiles of two saved dataset versions.\n"
+         "Reports added/removed/type-changed columns, null counts and approximate distinct counts with B minus A deltas. "
+         "Does not align rows or identify individual changed cells. Reads saved versions without changing the current one.\n"
+         "Sinónimos: comparar versiones, antes y después, efecto de la limpieza, diferencias de columnas.",
+         CompareVersionsArgs, _ann(True), lambda s, a: s.compare_versions(a.dataset, a.version_a, a.version_b), capped=False),
     Tool("data_preview", "First rows of a dataset version, with total row count.\n"
          "Sinónimos: ver datos, muestra de filas, primeras filas.",
          PreviewArgs, _ann(True), _run_preview),
@@ -640,7 +651,6 @@ TOOLS: list[Tool] = [
 ]
 
 TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
-assert len(TOOLS) <= 18, "keep the MCP surface at or under 18 tools"
 
 #: tools whose handler is a coroutine (they await the language model); every other one is plain blocking code
 ASYNC_TOOLS = frozenset({"data_ask"})

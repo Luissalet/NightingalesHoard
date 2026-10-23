@@ -6,7 +6,7 @@
 
 Nightingale incorporates all of Laplace's arithmetic, symbolic math, units, dates, statistics, SQL-over-files, charts and calculation history. Data and Calculation are independent switches, both OFF on first installation or migration. Start the app explicitly from Hoard Hub, then enable only what you need. Calculation works without loading the data workbench or DuckDB. Full native interfaces live under `/data/` and `/calculation/`; one server owns both.
 
-The static MCP catalog contains 38 native tools plus two module controls. Existing Nightingale tools retain their names; the three collisions are `laplace_data_list`, `laplace_data_query` and `laplace_data_chart`. Existing native data directories can be adopted in place through `data/modules.json` without copies or format changes. See [architecture and provenance](docs/FUSION.md).
+The static MCP catalog contains 39 native tools plus two module controls. Existing Nightingale tools retain their names; the three collisions are `laplace_data_list`, `laplace_data_query` and `laplace_data_chart`. Existing native data directories can be adopted in place through `data/modules.json` without copies or format changes. See [architecture and provenance](docs/FUSION.md).
 
 
 The data workbench for a local language model: ingest a messy file, clean it with versioned steps
@@ -37,6 +37,7 @@ applies.
 | **Ingest** | CSV/TSV (incl. semicolon-delimited, comma-decimal Spanish formats), Excel, Parquet, JSON/NDJSON, SQLite, a folder glob, a URL, or pasted text. | A single ingest call runs in a background thread with a 5-minute cap; very large files should be Parquet or pre-filtered CSV rather than a 50-sheet Excel workbook. Ingesting under a name that is already taken is refused (and the existing dataset left untouched): use refresh to reload it or pick another name. |
 | **From the family** | Ingest source kind `hoard`: the records another Hoard app returns from one of its tools, called through Hoard Hub (`family.call`), with the list of records found in the answer (or given as `list_path`), flattened to one row per record (nested objects become `a_b` columns, lists JSON text) and ingested like JSON. Presets: `ledger_transactions` (Ledger `list_entries`, 200 per call up to 5000 entries, amounts in cents), `phileas_shipments` (Phileas `shipments_list` delivered, epoch times become timestamps and `transit_days` is added: calendar days from shipped to delivered), `argus_app_time` (Argus `screen_app_time`: **unverified**, that app was not available to check the tool name or its answer shape). In the UI: Sources, **From the family** (Desde la familia). Through MCP: `data_ingest` with `kind="hoard"` and `preset` or `app` + `tool` (+ `args`, `list_path`, options `paginate`, `max_rows`, `epoch_columns`, `derive`). | Needs the hub and the other app running; with either missing the error says which. Running the same hoard ingest again under the same name adds a NEW VERSION (`ingest`) on top of the current one, so Undo returns to the previous snapshot and cleaning steps are not replayed; `data_refresh` instead rebuilds from the app and replays the recipe. A different app/tool under a taken name is refused like any ingest. Pagination only for tools with limit/offset arguments; a capped import says `truncated`. |
 | **Transform** | 22 step kinds (filter, select, drop, rename, cast, fill_null, drop_duplicates, derive, split_column, text ops, replace, bin, date_parts, group, pivot, unpivot, join, union, sort, sample, window, raw SQL) — every one previewable before it's applied. `GET /api/transforms` documents each parameter contract; add a dataset for current column names/types, version, and row count. | The `sql` step and the SQL query tool both accept exactly one read-only statement; no writes, no multi-statement scripts. See [transform parameters](docs/TRANSFORM-OPERATIONS.md). |
+| **Compare versions** | From Datasets or the recipe panel, compare two saved versions: row/column counts, added/removed/type-changed columns, nulls, approximate distinct counts and min/max. Also available as `data_versions_compare` and `GET /api/datasets/{name}/versions/compare?version_a=0&version_b=1`. | Compares column profiles by name; does not match individual rows or cells. Differences are B minus A; comparison does not move the current version. |
 | **Undo / redo / recipe** | Every version is a real table; a side panel shows the full recipe, exports it as a runnable SQL script, and can replay it against re-ingested source data. | Branching after an undo discards the redone-away versions (like any editor's undo stack) — there's one timeline, not a tree. |
 | **Quality rules** | 9 rule kinds (not_null, unique, accepted_values, range, regex, row_count, freshness, referential integrity, custom SQL), run on demand, with a pass/fail history. A failed `unique` rule says how many values repeat, how many rows are extra copies, and how many rows would remain after de-duplication. | Rules check the dataset's *current* version; they don't run automatically on ingest unless you re-run them yourself. |
 | **Charts & dashboards** | 11 chart kinds, aggregated in SQL (never a full table pulled client-side), rendered interactively (Vega-Lite) and as PNG (for export/agent use); dashboards combine saved charts with SQL-expression KPI tiles. | Charts read the dataset's current version at render time — a chart doesn't freeze past data, it reflects the latest cleaning. |
@@ -144,12 +145,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (18 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (19 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 40-tool catalog.
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 41-tool catalog.
 
 ## Tests
 

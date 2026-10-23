@@ -4,7 +4,7 @@ import { displaySource, formatNumber } from "../format.js";
 
 /** The lineage/recipe side panel: every step applied to the current dataset,
  * with jump-to-version undo/redo and a recipe export (a runnable SQL script). */
-export default function RecipePanel({ dataset, currentVersion, versionCount, onChanged, t, lang }) {
+export default function RecipePanel({ dataset, currentVersion, versionCount, onChanged, onCompare, t, lang }) {
   const [recipe, setRecipe] = useState(null);
   const [lineage, setLineage] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -99,6 +99,7 @@ export default function RecipePanel({ dataset, currentVersion, versionCount, onC
       </ol>
 
       <div className="flex flex-wrap gap-2">
+        {onCompare && <button type="button" className="btn btn-sm" onClick={onCompare}>{t("versions_compare")}</button>}
         <button type="button" className="btn btn-sm" onClick={doExport} data-testid="recipe-export">
           {t("common_export")} SQL
         </button>

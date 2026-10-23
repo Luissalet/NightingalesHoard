@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import "./hoard-theme.css";
 
+.version-comparison-table { width:100%; min-width:680px; border-collapse:collapse; font-size:12px; }
+.version-comparison-table th, .version-comparison-table td { padding:10px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+.version-comparison-table th[scope="row"] { color:var(--ink); overflow-wrap:anywhere; }
+
 /* Tokens mapped onto the shared Hoard theme (hoard-theme.css): dark by default.
    The light palette stays available with <html data-theme="light">. */
 :root {

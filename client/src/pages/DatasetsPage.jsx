@@ -6,6 +6,7 @@ import DataGrid from "../components/DataGrid.jsx";
 import ColumnProfilePopover from "../components/ColumnProfilePopover.jsx";
 import StepToolbar from "../components/StepToolbar.jsx";
 import RecipePanel from "../components/RecipePanel.jsx";
+import VersionComparison from "../components/VersionComparison.jsx";
 import { formatNumber } from "../format.js";
 import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -205,9 +206,10 @@ export default function DatasetsPage({ param }) {
           <div className="flex flex-col gap-4">
             <StepToolbar dataset={active} columns={columnList} onApplied={onStepApplied} t={t} />
 
-            <div className="seg self-start" role="tablist">
+            <div className="seg max-w-full flex-wrap self-start" role="tablist">
               <button type="button" aria-pressed={tab === "preview"} onClick={() => setTab("preview")}>{t("datasets_preview_tab")}</button>
               <button type="button" aria-pressed={tab === "profile"} onClick={() => setTab("profile")}>{t("datasets_profile_tab")}</button>
+              <button type="button" aria-pressed={tab === "compare"} onClick={() => setTab("compare")}>{t("versions_compare")}</button>
             </div>
 
             {tab === "preview" && preview && (
@@ -230,6 +232,7 @@ export default function DatasetsPage({ param }) {
             )}
             {tab === "preview" && !preview && !busy && <EmptyState>{t("common_loading")}</EmptyState>}
 
+            {tab === "compare" && <VersionComparison dataset={active} currentVersion={dataset.current_version} versionCount={dataset.version_count} t={t} lang={lang} />}
             {tab === "profile" && profile && (
               <div className="panel-white overflow-auto">
                 <table className="w-full border-collapse text-[12.5px]">
@@ -265,6 +268,7 @@ export default function DatasetsPage({ param }) {
             dataset={active}
             currentVersion={dataset.current_version}
             versionCount={dataset.version_count}
+            onCompare={() => setTab("compare")}
             onChanged={async () => {
               await refreshDatasets();
               await loadPreview();

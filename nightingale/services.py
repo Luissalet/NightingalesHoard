@@ -678,6 +678,33 @@ class Services:
             raise DataError("need at least 2 numeric columns for a correlation matrix")
         return self.engine.correlation_matrix(v["table_name"], columns)
 
+    def compare_versions(self, dataset_name: str, version_a: int = 0, version_b: Optional[int] = None) -> dict:
+        dataset = self._dataset_row(dataset_name)
+        with self._dataset_lock(dataset["id"]):
+            left = self.profile(dataset_name, version_a)
+            right = self.profile(dataset_name, version_b)
+        names = list(dict.fromkeys([column["name"] for column in left["columns"] + right["columns"]]))
+        metrics = ("type", "nulls", "nulls_pct", "distinct_approx", "min", "max", "mean", "median")
+        columns = []
+        for name in names:
+            before = {key: value for key, value in left["profile"].get(name, {}).items() if key in metrics} or None
+            after = {key: value for key, value in right["profile"].get(name, {}).items() if key in metrics} or None
+            status = "added" if before is None else "removed" if after is None else "type_changed" if before["type"] != after["type"] else "shared"
+            columns.append({"name": name, "status": status, "before": before, "after": after,
+                            "profile_changed": before != after,
+                            "nulls_delta": after["nulls"] - before["nulls"] if before and after else None,
+                            "distinct_approx_delta": after["distinct_approx"] - before["distinct_approx"] if before and after else None})
+        return {"dataset": left["dataset"],
+                "a": {"version": left["version"], "row_count": left["row_count"], "column_count": len(left["columns"])},
+                "b": {"version": right["version"], "row_count": right["row_count"], "column_count": len(right["columns"])},
+                "row_delta": right["row_count"] - left["row_count"], "column_delta": len(right["columns"]) - len(left["columns"]),
+                "added_columns": [column["name"] for column in columns if column["status"] == "added"],
+                "removed_columns": [column["name"] for column in columns if column["status"] == "removed"],
+                "type_changed_columns": [column["name"] for column in columns if column["status"] == "type_changed"],
+                "columns": columns,
+                "comparison_kind": "column_profiles", "distinct_kind": "approximate",
+                "row_alignment": False}
+
     def preview(self, dataset_name: str, version: Optional[int] = None, limit: int = 50) -> dict:
         dataset_row = self._dataset_row(dataset_name)
         v = self._version_row(dataset_row, version)

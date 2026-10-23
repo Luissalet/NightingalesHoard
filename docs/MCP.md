@@ -1,22 +1,14 @@
 # MCP tools
 
-`mcp_server.py` is a stdio bridge: at startup it fetches the tool catalog from the running app
-(`GET /api/agent/tools`) and, for every call, proxies to `POST /api/agent/call` with the bearer
-token from `<DATA_DIR>/mcp-token`. It never opens the database directly — the running app (`python
--m nightingale`) is what does all the work, so it must be running for the bridge to do anything.
+`mcp_server.py` is a stdio bridge. Discovery reads the shipped static catalog without starting a server or engine. Calls proxy to `POST /api/agent/call` on the explicitly started app with the bearer token from `<DATA_DIR>/mcp-token`; the bridge never opens the database directly.
 
-Env vars the bridge reads: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), and either
-`NIGHTINGALE_TOKEN_FILE` (a path to the token file) or `NIGHTINGALE_TOKEN` (the token itself) —
-if neither is set it falls back to `<NIGHTINGALE_DATA_DIR or ./data>/mcp-token`.
+Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 19 Data tools, 20 Calculation tools and two module controls.
 
 Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
 `N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
 parameter lookup does not create a version or log entry.
 
-18 tools, matching the family contract's cap. The Lab package (EDA/quality/drift, the model
-registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports, the visual pipeline
-graph — see `docs/LAB.md`) is reached entirely through new `mode`s on `data_profile` and new
-`action`s on `data_model`, so the cap never had to move:
+19 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -24,6 +16,7 @@ graph — see `docs/LAB.md`) is reached entirely through new `mode`s on `data_pr
 | `data_refresh` | write | Re-ingest a dataset's original source and replay its recorded recipe on the fresh data. |
 | `data_list` | read | Every registered dataset, with row/column counts and last update time. |
 | `data_profile` | read | `mode="profile"` (default): per-column profile (type, nulls %, distinct, min/max/mean/sd, histogram, top values, IQR outliers). `mode="eda"`: the Lab bundle — Pearson+Spearman correlation, null co-occurrence, IQR+z-score outliers, encoding suggestions, quality score. `mode="quality_score"`: just the 0-100 score. `mode="drift"`: KS test/PSI/Wasserstein/mean-sd shift against `other_dataset`. |
+| `data_versions_compare` | read | Compare saved `version_a` (default 0) and `version_b` (default current) of `dataset`: row/column counts, schema changes, nulls, approximate distinct counts and numeric ranges. Returns profiles by column name, B-minus-A deltas and explicit `row_alignment: false`; never changes the current version. REST: `GET /data/api/datasets/{name}/versions/compare`. |
 | `data_preview` | read | First rows of a dataset version, plus the total row count. |
 | `data_transform` | read-only for `op="help"`; write when `preview: false` | Apply or preview one of 22 native cleaning/reshaping steps, or look up contracts with `data_transform(op="help", help_for="replace", dataset="sales")` to include current column names/types, version, and row count (no cell values). Omit `dataset` for the catalog-only response. REST: `GET /api/transforms?op=replace&dataset=sales`. Missing required transform fields return a step-specific error. See [transform operation reference](TRANSFORM-OPERATIONS.md) / [Spanish reference](TRANSFORM-OPERATIONS.es.md). |
 | `data_undo` | write, non-destructive | Move a dataset to an earlier (`undo`) or later (`redo`) version. |
