@@ -2,13 +2,13 @@
 
 `mcp_server.py` is a stdio bridge. Discovery reads the shipped static catalog without starting a server or engine. Calls proxy to `POST /api/agent/call` on the explicitly started app with the bearer token from `<DATA_DIR>/mcp-token`; the bridge never opens the database directly.
 
-Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 19 Data tools, 20 Calculation tools and two module controls.
+Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 20 Data tools, 20 Calculation tools and two module controls.
 
 Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
 `N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
 parameter lookup does not create a version or log entry.
 
-19 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
+20 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -17,6 +17,7 @@ parameter lookup does not create a version or log entry.
 | `data_list` | read | Every registered dataset, with row/column counts and last update time. |
 | `data_profile` | read | `mode="profile"` (default): per-column profile (type, nulls %, distinct, min/max/mean/sd, histogram, top values, IQR outliers). `mode="eda"`: the Lab bundle — Pearson+Spearman correlation, null co-occurrence, IQR+z-score outliers, encoding suggestions, quality score. `mode="quality_score"`: just the 0-100 score. `mode="drift"`: KS test/PSI/Wasserstein/mean-sd shift against `other_dataset`. |
 | `data_versions_compare` | read | Compare saved `version_a` (default 0) and `version_b` (default current) of `dataset`: row/column counts, schema changes, nulls, approximate distinct counts and numeric ranges. Returns profiles by column name, B-minus-A deltas and explicit `row_alignment: false`; never changes the current version. REST: `GET /data/api/datasets/{name}/versions/compare`. |
+| `data_rows_compare` | read | `dataset`, `version_a=0`, `version_b` (default current), optional `columns`, independent `offset_a`/`offset_b`, `limit=50` (1–1000). Exact native `EXCEPT ALL` on same-name/same-type columns; counts preserve multiplicity and NULL. Returns common count, Only A / Only B counts and paged text previews, compared/omitted columns with reasons; no inferred row alignment or history writes. Empty compatible selection returns `no_comparable_columns`, not equality. Decimal preview text retains precision; existing 500-character cell display limit applies after comparison. REST: `POST /data/api/datasets/{name}/versions/rows`. |
 | `data_preview` | read | First rows of a dataset version, plus the total row count. |
 | `data_transform` | read-only for `op="help"`; write when `preview: false` | Apply or preview one of 22 native cleaning/reshaping steps, or look up contracts with `data_transform(op="help", help_for="replace", dataset="sales")` to include current column names/types, version, and row count (no cell values). Omit `dataset` for the catalog-only response. REST: `GET /api/transforms?op=replace&dataset=sales`. Missing required transform fields return a step-specific error. See [transform operation reference](TRANSFORM-OPERATIONS.md) / [Spanish reference](TRANSFORM-OPERATIONS.es.md). |
 | `data_undo` | write, non-destructive | Move a dataset to an earlier (`undo`) or later (`redo`) version. |
@@ -73,7 +74,7 @@ line up with the source dataset's rows, so `"new_version"` doesn't apply to it.
 
 ## Deleting a dataset
 
-There's no separate 19th tool for this (the family contract caps the tool count at 18): it's
+There is no separate Lab tool: this capability is
 `data_ingest` with `action="delete"` and `name` set to the dataset to remove. It also exists as
 `DELETE /api/datasets/{name}` in the HTTP API (`?force=true` to bypass the dependents check) and as
 a "Delete dataset" button with a confirmation dialog in the Datasets screen, which shows exactly

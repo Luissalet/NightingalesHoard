@@ -97,6 +97,13 @@ class CompareVersionsArgs(BaseModel):
     version_b: Optional[int] = Field(None, ge=0, description="Version B, default current version.")
 
 
+class CompareRowsArgs(CompareVersionsArgs):
+    columns: Optional[list[str]] = Field(None, description="Same-name, same-type columns to compare; omitted means all eligible columns. An empty list compares none.")
+    offset_a: int = Field(0, ge=0, description="Page offset for rows only in A.")
+    offset_b: int = Field(0, ge=0, description="Page offset for rows only in B.")
+    limit: int = Field(50, ge=1, le=1000, description="Rows per page, using the existing dataset preview range.")
+
+
 class TransformArgs(BaseModel):
     dataset: Optional[str] = Field(None, description="Required for a transform. With op='help', optionally name a dataset to include its current column names/types, version, and row count (no cell values).")
     op: str = Field(..., description="filter/select/drop/rename/cast/fill_null/drop_duplicates/derive/split_column/"
@@ -587,6 +594,11 @@ TOOLS: list[Tool] = [
          "Does not align rows or identify individual changed cells. Reads saved versions without changing the current one.\n"
          "Sinónimos: comparar versiones, antes y después, efecto de la limpieza, diferencias de columnas.",
          CompareVersionsArgs, _ann(True), lambda s, a: s.compare_versions(a.dataset, a.version_a, a.version_b), capped=False),
+    Tool("data_rows_compare", "Compare saved-version rows and duplicate counts. Comparar filas añadidas y retiradas.\n"
+         "Uses EXCEPT ALL on chosen same-name/same-type columns. Reports omitted columns, complete counts and paged text previews. "
+         "No guessed keys or paired edits; a changed row is one removal plus one addition. Preview cells use the existing 500-character display limit.\n"
+         "Sinónimos: comparar filas, filas añadidas, filas retiradas, duplicados entre versiones, row difference.",
+         CompareRowsArgs, _ann(True), lambda s, a: s.compare_rows(a.dataset, a.version_a, a.version_b, a.columns, a.offset_a, a.offset_b, a.limit), capped=False),
     Tool("data_preview", "First rows of a dataset version, with total row count.\n"
          "Sinónimos: ver datos, muestra de filas, primeras filas.",
          PreviewArgs, _ann(True), _run_preview),

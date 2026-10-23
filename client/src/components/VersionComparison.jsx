@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { formatNumber } from "../format.js";
+import RowComparison from "./RowComparison.jsx";
 
 export default function VersionComparison({ dataset, currentVersion, versionCount, t, lang }) {
   const [a, setA] = useState(0);
@@ -8,14 +9,16 @@ export default function VersionComparison({ dataset, currentVersion, versionCoun
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [onlyChanged, setOnlyChanged] = useState(false);
+  const [mode, setMode] = useState("profiles");
   useEffect(() => { setA(0); setB(currentVersion); }, [dataset, currentVersion]);
   useEffect(() => {
     let live = true;
     setResult(null); setError(null);
+    if (mode !== "profiles") return () => { live = false; };
     api.compareVersions(dataset, a, b).then((out) => { if (live) setResult(out); })
       .catch((cause) => { if (live) setError(cause.message); });
     return () => { live = false; };
-  }, [dataset, a, b, currentVersion, versionCount]);
+  }, [dataset, a, b, currentVersion, versionCount, mode]);
   const versions = Array.from({length: versionCount || 1}, (_, index) => index);
   const number = (value) => value === null || value === undefined ? "—" : formatNumber(value, lang);
   const delta = (value) => `${value > 0 ? "+" : ""}${number(value)}`;
@@ -24,11 +27,16 @@ export default function VersionComparison({ dataset, currentVersion, versionCoun
   const columns = (result?.columns || []).filter((column) => !onlyChanged || column.profile_changed);
   return <section className="panel-white min-w-0" aria-label={t("versions_compare")}>
     <h3 className="font-semibold mb-3">{t("versions_compare")}</h3>
+    <div className="flex gap-2 mb-4" aria-label={t("rows_view")}>
+      <button type="button" className={`btn ${mode === "profiles" ? "btn-active" : ""}`} aria-pressed={mode === "profiles"} onClick={() => setMode("profiles")}>{t("rows_profiles")}</button>
+      <button type="button" className={`btn ${mode === "rows" ? "btn-active" : ""}`} aria-pressed={mode === "rows"} onClick={() => setMode("rows")}>{t("rows_title")}</button>
+    </div>
     <div className="flex flex-wrap items-end gap-3 mb-3">
       <label className="block"><span className="label">{t("versions_a")}</span><select className="field" value={a} onChange={(event) => setA(Number(event.target.value))}>{versions.map((version) => <option key={version} value={version}>v{version}</option>)}</select></label>
       <label className="block"><span className="label">{t("versions_b")}</span><select className="field" value={b} onChange={(event) => setB(Number(event.target.value))}>{versions.map((version) => <option key={version} value={version}>v{version}</option>)}</select></label>
-      <label className="help flex items-center gap-2 pb-2"><input type="checkbox" checked={onlyChanged} onChange={(event) => setOnlyChanged(event.target.checked)} />{t("versions_only_changed")}</label>
+      {mode === "profiles" && <label className="help flex items-center gap-2 pb-2"><input type="checkbox" checked={onlyChanged} onChange={(event) => setOnlyChanged(event.target.checked)} />{t("versions_only_changed")}</label>}
     </div>
+    {mode === "rows" ? <RowComparison key={`${dataset}/${a}/${b}`} dataset={dataset} a={a} b={b} t={t} lang={lang} /> : <>
     <p className="help mb-4">{t("versions_help")}</p>
     {error && <p role="alert" className="help" style={{color:"var(--danger-ink)"}}>{error}</p>}
     {!result && !error && <p className="help" role="status">{t("common_loading")}</p>}
@@ -43,6 +51,7 @@ export default function VersionComparison({ dataset, currentVersion, versionCoun
           {(column.before?.min !== undefined || column.after?.min !== undefined) && <tr><td colSpan={5}><details><summary className="help cursor-pointer">{t("versions_range")} · {column.name}</summary><p className="help num mt-1">A: {rangeValue(column.before?.min)} – {rangeValue(column.before?.max)} · B: {rangeValue(column.after?.min)} – {rangeValue(column.after?.max)}</p></details></td></tr>}
         </React.Fragment>)}
       </tbody></table></div> : <p className="help">{t("versions_no_changed_profiles")}</p>}
+    </>}
     </>}
   </section>;
 }
