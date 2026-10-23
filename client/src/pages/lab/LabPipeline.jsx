@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api.js";
 import { useApp } from "../../App.jsx";
 import { EmptyState } from "../../components/ui.jsx";
@@ -45,6 +45,7 @@ export default function LabPipeline({ dataset, datasets }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const generation = useRef(0);
 
   const columnNames = useMemo(() => (datasets.find((d) => d.name === dataset)?.columns || []).map((c) => c.name), [datasets, dataset]);
 
@@ -62,24 +63,29 @@ export default function LabPipeline({ dataset, datasets }) {
     }
   };
   useEffect(() => {
+    generation.current += 1;
     load();
+    return () => { generation.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataset]);
 
   const selectedStep = steps.find((s) => s.localId === selected);
 
   const addStep = () => {
+    generation.current += 1;
     const s = { localId: nextLocalId++, op: addOp, params: {} };
     setSteps((old) => [...old, s]);
     setSelected(s.localId);
     setPreview(null);
   };
   const removeStep = (localId) => {
+    generation.current += 1;
     setSteps((old) => old.filter((s) => s.localId !== localId));
     if (selected === localId) setSelected(null);
     setPreview(null);
   };
   const moveStep = (localId, dir) => {
+    generation.current += 1;
     setSteps((old) => {
       const idx = old.findIndex((s) => s.localId === localId);
       const swap = idx + dir;
@@ -91,9 +97,14 @@ export default function LabPipeline({ dataset, datasets }) {
     setPreview(null);
   };
   const updateSelectedParams = (name, value) => {
+    generation.current += 1;
+    setPreview(null);
+    setError(null);
     setSteps((old) => old.map((s) => (s.localId === selected ? { ...s, formValues: { ...(s.formValues || paramsToValues(s.op, s.params)), [name]: value } } : s)));
   };
   const commitSelectedForm = () => {
+    generation.current += 1;
+    setError(null);
     setSteps((old) => old.map((s) => {
       if (s.localId !== selected || !s.formValues) return s;
       try {
@@ -107,15 +118,18 @@ export default function LabPipeline({ dataset, datasets }) {
   };
 
   const runPreview = async () => {
+    const current = generation.current;
     setBusy(true);
     setError(null);
     try {
       const graph = buildGraphPayload(steps);
       const r = await api.lab.pipelineApply(dataset, graph, true);
-      setPreview(r);
+      if (current === generation.current) setPreview(r);
     } catch (e) {
-      setError(e.message);
-      setPreview(null);
+      if (current === generation.current) {
+        setError(e.message);
+        setPreview(null);
+      }
     } finally {
       setBusy(false);
     }
@@ -174,11 +188,13 @@ export default function LabPipeline({ dataset, datasets }) {
         {selectedStep ? (
           <div className="panel flex flex-col gap-2" data-testid="lab-pipeline-params">
             <div className="text-[13px] font-semibold">{t("lab_pipeline_params")}: {selectedStep.op}</div>
+            {selectedStep.op === "group" && <p className="help">{t("aggregate_lab_save")}</p>}
             <StepFieldsGrid
               fields={STEP_FIELDS[selectedStep.op] || []}
               values={selectedStep.formValues || paramsToValues(selectedStep.op, selectedStep.params)}
               setField={updateSelectedParams}
               columnNames={columnNames}
+              t={t}
             />
             <button type="button" className="btn btn-sm self-start" onClick={commitSelectedForm} data-testid="lab-pipeline-commit">{t("common_save")}</button>
           </div>

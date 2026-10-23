@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
+import AggregationFields, { GroupColumnsField, parseGroupColumns } from "./AggregationFields.jsx";
 
 /** Field specs per step op: keeps the toolbar a real form (not a raw JSON box)
  * for the common cases, while still covering every op type from the brief. */
@@ -50,8 +51,8 @@ const STEP_FIELDS = {
     { name: "parts", label: "Parts (comma-separated)", type: "list", placeholder: "year,month,day" },
   ],
   group: [
-    { name: "group_by", label: "Group by (comma-separated)", type: "list" },
-    { name: "aggregations", label: 'Aggregations (JSON list, e.g. [{"column":"qty","fn":"sum","alias":"total_qty"}])', type: "json" },
+    { name: "group_by", label: "Group by", type: "group_columns" },
+    { name: "aggregations", label: "Aggregations", type: "aggregations" },
   ],
   pivot: [
     { name: "on", label: "Pivot column", type: "column" },
@@ -108,12 +109,16 @@ export function buildParams(op, values) {
   const params = {};
   for (const f of fields) {
     const raw = values[f.name];
+    if (f.type === "group_columns") {
+      params[f.name] = parseGroupColumns(raw);
+      continue;
+    }
     if (raw === undefined || raw === "") continue;
     if (f.type === "list") params[f.name] = parseList(raw);
     else if (f.type === "kv") params[f.name] = parseKv(raw);
     else if (f.type === "bool") params[f.name] = !!raw;
     else if (f.type === "number") params[f.name] = Number(raw);
-    else if (f.type === "json") {
+    else if (f.type === "json" || f.type === "aggregations") {
       try {
         params[f.name] = JSON.parse(raw);
       } catch {
@@ -135,7 +140,7 @@ export function paramsToValues(op, params) {
     if (raw === undefined) continue;
     if (f.type === "list") values[f.name] = Array.isArray(raw) ? raw.join(", ") : raw;
     else if (f.type === "kv") values[f.name] = raw && typeof raw === "object" ? Object.entries(raw).map(([k, v]) => `${k}:${v}`).join("\n") : raw;
-    else if (f.type === "json") values[f.name] = JSON.stringify(raw);
+    else if (["json", "aggregations", "group_columns"].includes(f.type)) values[f.name] = JSON.stringify(raw);
     else values[f.name] = raw;
   }
   return values;
@@ -143,10 +148,14 @@ export function paramsToValues(op, params) {
 
 /** The op-specific field grid shared by the dataset Recipe's step toolbar and
  * the Lab pipeline node editor, so both edit the exact same step shapes. */
-export function StepFieldsGrid({ fields, values, setField, columnNames }) {
+export function StepFieldsGrid({ fields, values, setField, columnNames, t }) {
   return (
     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-      {fields.map((f) => (
+      {fields.map((f) => f.type === "group_columns" ? (
+        <GroupColumnsField key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
+      ) : f.type === "aggregations" ? (
+        <AggregationFields key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
+      ) : (
         <div key={f.name} className={f.type === "textarea" || f.type === "json" || f.type === "kv" ? "md:col-span-2" : ""}>
           <label className="label">{f.label}</label>
           {f.type === "select" ? (
@@ -184,38 +193,54 @@ export default function StepToolbar({ dataset, columns, onApplied, t }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const generation = useRef(0);
+
+  useEffect(() => {
+    generation.current += 1;
+    setPreview(null);
+    return () => { generation.current += 1; };
+  }, [dataset]);
 
   const fields = STEP_FIELDS[op] || [];
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
 
-  const setField = (name, v) => setValues((old) => ({ ...old, [name]: v }));
+  const setField = (name, v) => {
+    generation.current += 1;
+    setPreview(null);
+    setError(null);
+    setValues((old) => ({ ...old, [name]: v }));
+  };
 
   const runPreview = async () => {
+    const current = generation.current;
     setError(null);
     setBusy(true);
     try {
       const params = buildParams(op, values);
       const result = await api.transform(dataset, op, params, true);
-      setPreview(result);
+      if (current === generation.current) setPreview(result);
     } catch (e) {
-      setError(e.message);
-      setPreview(null);
+      if (current === generation.current) {
+        setError(e.message);
+        setPreview(null);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const apply = async () => {
+    const current = generation.current;
     setError(null);
     setBusy(true);
     try {
       const params = buildParams(op, values);
       await api.transform(dataset, op, params, false);
       setPreview(null);
-      setValues({});
+      if (current === generation.current) setValues({});
       onApplied();
     } catch (e) {
-      setError(e.message);
+      if (current === generation.current) setError(e.message);
     } finally {
       setBusy(false);
     }
@@ -231,9 +256,11 @@ export default function StepToolbar({ dataset, columns, onApplied, t }) {
           style={{ width: "auto" }}
           value={op}
           onChange={(e) => {
+            generation.current += 1;
             setOp(e.target.value);
             setValues({});
             setPreview(null);
+            setError(null);
           }}
         >
           {STEP_OPS.map((o) => (
@@ -242,7 +269,7 @@ export default function StepToolbar({ dataset, columns, onApplied, t }) {
         </select>
       </div>
 
-      <StepFieldsGrid fields={fields} values={values} setField={setField} columnNames={columnNames} />
+      <StepFieldsGrid fields={fields} values={values} setField={setField} columnNames={columnNames} t={t} />
 
       {error && <div className="help" style={{ color: "var(--danger-ink)" }}>{error}</div>}
 
