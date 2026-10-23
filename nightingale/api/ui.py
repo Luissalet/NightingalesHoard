@@ -121,6 +121,21 @@ def compare_versions(request: Request, name: str, version_a: int = 0, version_b:
     return services(request).compare_versions(name, version_a, version_b)
 
 
+class CompareRowsBody(BaseModel):
+    version_a: int = 0
+    version_b: Optional[int] = None
+    columns: Optional[list[str]] = None
+    offset_a: int = 0
+    offset_b: int = 0
+    limit: int = 50
+
+
+@router.post("/datasets/{name}/versions/rows")
+@api_errors
+def compare_rows(request: Request, name: str, body: CompareRowsBody):
+    return services(request).compare_rows(name, **body.model_dump())
+
+
 @router.get("/datasets/{name}/preview")
 @api_errors
 def preview(request: Request, name: str, version: Optional[int] = None, limit: int = 50):

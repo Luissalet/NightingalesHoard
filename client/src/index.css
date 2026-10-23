@@ -9,6 +9,15 @@
 .version-comparison-table { width:100%; min-width:680px; border-collapse:collapse; font-size:12px; }
 .version-comparison-table th, .version-comparison-table td { padding:10px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
 .version-comparison-table th[scope="row"] { color:var(--ink); overflow-wrap:anywhere; }
+.row-diff-columns { border:1px solid var(--line); padding:12px; border-radius:8px; margin:16px 0; min-width:0; }
+.row-diff-columns legend { font-size:12px; padding:0 6px; }
+.row-diff-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.row-diff-side { min-width:0; border-top:2px solid var(--line); padding-top:12px; }
+.row-diff-scroll { overflow:auto; max-height:430px; margin-top:12px; }
+.row-diff-table { width:100%; font-size:12px; border-collapse:collapse; }
+.row-diff-table th,.row-diff-table td { padding:8px; border-bottom:1px solid var(--line); text-align:left; min-width:100px; max-width:300px; overflow-wrap:anywhere; vertical-align:top; }
+.row-diff-table td { white-space:pre-wrap; font-family:var(--font-mono,monospace); }
+@media(max-width:760px) { .row-diff-grid { grid-template-columns:minmax(0,1fr); } }
 
 /* Tokens mapped onto the shared Hoard theme (hoard-theme.css): dark by default.
    The light palette stays available with <html data-theme="light">. */

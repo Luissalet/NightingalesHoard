@@ -361,6 +361,89 @@
     "module": "data"
   },
   {
+    "name": "data_rows_compare",
+    "description": "Compare saved-version rows and duplicate counts. Comparar filas añadidas y retiradas.\nUses EXCEPT ALL on chosen same-name/same-type columns. Reports omitted columns, complete counts and paged text previews. No guessed keys or paired edits; a changed row is one removal plus one addition. Preview cells use the existing 500-character display limit.\nSinónimos: comparar filas, filas añadidas, filas retiradas, duplicados entre versiones, row difference.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "version_a": {
+          "default": 0,
+          "description": "Version A, default original import (0).",
+          "minimum": 0,
+          "title": "Version A",
+          "type": "integer"
+        },
+        "version_b": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version B, default current version.",
+          "title": "Version B"
+        },
+        "columns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Same-name, same-type columns to compare; omitted means all eligible columns. An empty list compares none.",
+          "title": "Columns"
+        },
+        "offset_a": {
+          "default": 0,
+          "description": "Page offset for rows only in A.",
+          "minimum": 0,
+          "title": "Offset A",
+          "type": "integer"
+        },
+        "offset_b": {
+          "default": 0,
+          "description": "Page offset for rows only in B.",
+          "minimum": 0,
+          "title": "Offset B",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 50,
+          "description": "Rows per page, using the existing dataset preview range.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "CompareRowsArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_preview",
     "description": "First rows of a dataset version, with total row count.\nSinónimos: ver datos, muestra de filas, primeras filas.",
     "annotations": {

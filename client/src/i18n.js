@@ -18,6 +18,14 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    rows_view: "Comparison view", rows_profiles: "Column profiles", rows_title: "Rows",
+    rows_help: "Compare rows using columns with the same name and type. Repeated rows count separately. Changed rows appear on each side; rows are not matched by an inferred ID.",
+    rows_columns: "Columns to compare", rows_apply: "Compare selected columns", rows_pending: "Column selection changed. Compare again to update the results.",
+    rows_omitted: "Columns outside this comparison", rows_missing_in_a: "Only in B", rows_missing_in_b: "Only in A", rows_type_changed: "Different types", rows_not_selected: "Not selected",
+    rows_none: "No columns selected with the same name and type in both versions. No row equality has been established.",
+    rows_common: "Rows in common", rows_scope: "Compared columns", rows_only_a: "Only in A", rows_only_b: "Only in B",
+    rows_preview: "Counts compare complete values. Previews show DuckDB text and NULL; each cell displays up to {limit} characters, as in dataset previews.",
+    rows_empty: "No rows on this side.", rows_previous: "Previous", rows_next: "Next", rows_retry: "Retry",
     recipe_open_version: "Open version",
     recipe_current: "current",
     recipe_version_help: "Switches the active data version. Later versions remain available until you apply a new transformation.",
@@ -376,6 +384,14 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    rows_view: "Vista de comparación", rows_profiles: "Perfiles de columnas", rows_title: "Filas",
+    rows_help: "Compara filas usando columnas con el mismo nombre y tipo. Las filas repetidas cuentan por separado. Una fila modificada aparece en ambos lados; no se emparejan filas suponiendo un identificador.",
+    rows_columns: "Columnas que comparar", rows_apply: "Comparar columnas seleccionadas", rows_pending: "Has cambiado las columnas. Vuelve a comparar para actualizar los resultados.",
+    rows_omitted: "Columnas fuera de esta comparación", rows_missing_in_a: "Sólo en B", rows_missing_in_b: "Sólo en A", rows_type_changed: "Tipos diferentes", rows_not_selected: "Sin seleccionar",
+    rows_none: "No hay columnas seleccionadas con el mismo nombre y tipo en ambas versiones. No se ha establecido igualdad entre las filas.",
+    rows_common: "Filas en común", rows_scope: "Columnas comparadas", rows_only_a: "Sólo en A", rows_only_b: "Sólo en B",
+    rows_preview: "Los recuentos comparan los valores completos. Las muestras muestran texto de DuckDB y NULL; cada celda presenta hasta {limit} caracteres, como en la vista previa del conjunto.",
+    rows_empty: "No hay filas en este lado.", rows_previous: "Anterior", rows_next: "Siguiente", rows_retry: "Reintentar",
     recipe_open_version: "Abrir versión",
     recipe_current: "actual",
     recipe_version_help: "Cambia la versión activa de los datos. Las versiones posteriores siguen disponibles hasta aplicar una transformación nueva.",

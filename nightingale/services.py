@@ -44,7 +44,7 @@ from .lab import tuning as lab_tuning
 from . import hoard_source
 from .workbench import ask as ask_engine
 from .workbench.charts import ChartSpec, render_png, run_chart, to_vega_lite
-from .workbench.engine import DataError, Engine, slugify_name
+from .workbench.engine import DataError, Engine, MAX_CELL_CHARS, q, slugify_name
 from .workbench import models as model_engine
 from .workbench.quality import QualityError, RULE_KINDS, build_check
 from .workbench.steps import StepError, STEP_KINDS, step_parameter_catalog
@@ -704,6 +704,55 @@ class Services:
                 "columns": columns,
                 "comparison_kind": "column_profiles", "distinct_kind": "approximate",
                 "row_alignment": False}
+
+    def compare_rows(self, dataset_name: str, version_a: int = 0, version_b: Optional[int] = None,
+                     columns: Optional[list[str]] = None, offset_a: int = 0, offset_b: int = 0, limit: int = 50) -> dict:
+        """Multiset difference on explicitly comparable columns; never align guessed row identities."""
+        import json
+
+        dataset = self._dataset_row(dataset_name)
+        with self._dataset_lock(dataset["id"]):
+            dataset = self._dataset_row(dataset_name)
+            a, b = self._version_row(dataset, version_a), self._version_row(dataset, version_b)
+            schema_a, schema_b = json.loads(a["columns_json"]), json.loads(b["columns_json"])
+            types_a = {column["name"]: column["type"] for column in schema_a}
+            types_b = {column["name"]: column["type"] for column in schema_b}
+            eligible = [name for name in types_a if name in types_b and types_a[name] == types_b[name]]
+            requested = set(eligible if columns is None else columns)
+            if requested - set(eligible):
+                raise DataError("Choose columns present with the same type in both versions: " + ", ".join(eligible))
+            selected = [name for name in eligible if name in requested]
+            if offset_a < 0 or offset_b < 0 or not 1 <= limit <= 1000:
+                raise DataError("Offsets must be nonnegative and limit must be 1–1000, as for dataset previews")
+            omitted = [{"name": name, "type_a": types_a.get(name), "type_b": types_b.get(name),
+                        "reason": "missing_in_a" if name not in types_a else "missing_in_b" if name not in types_b
+                        else "type_changed" if types_a[name] != types_b[name] else "not_selected"}
+                       for name in dict.fromkeys([*types_a, *types_b]) if name not in selected]
+            result = {"dataset": dataset["name"], "a": {"version": a["version"], "row_count": a["row_count"]},
+                      "b": {"version": b["version"], "row_count": b["row_count"]},
+                      "available_columns": [{"name": name, "type": types_a[name]} for name in eligible],
+                      "compared_columns": selected, "omitted_columns": omitted, "comparison_kind": "row_multiset",
+                      "row_alignment": False, "value_format": "duckdb_text", "cell_char_limit": MAX_CELL_CHARS,
+                      "limit": limit, "status": "compared" if selected else "no_comparable_columns"}
+            if not selected:
+                return {**result, "common_count": None, "only_a": None, "only_b": None}
+            projection = ", ".join(q(name) for name in selected)
+            left = f"SELECT {projection} FROM {q(a['table_name'])}"
+            right = f"SELECT {projection} FROM {q(b['table_name'])}"
+            display = ", ".join(f"CAST({q(name)} AS VARCHAR) AS {q(name)}" for name in selected)
+
+            def difference(first, second, offset):
+                sql = f"{first} EXCEPT ALL {second}"
+                count = self.engine.query(f"SELECT count(*) AS n FROM ({sql})", limit=1)["rows"][0]["n"]
+                # Compare native values first; format previews as text to preserve decimal precision.
+                rows = self.engine.query(f"SELECT {display} FROM ({sql} ORDER BY ALL) OFFSET {offset}", limit=limit)["rows"]
+                return {"count": count, "rows": rows, "offset": offset,
+                        "next_offset": offset + limit if offset + limit < count else None}
+
+            result["only_a"] = difference(left, right, offset_a)
+            result["only_b"] = difference(right, left, offset_b)
+            result["common_count"] = a["row_count"] - result["only_a"]["count"]
+            return result
 
     def preview(self, dataset_name: str, version: Optional[int] = None, limit: int = 50) -> dict:
         dataset_row = self._dataset_row(dataset_name)
