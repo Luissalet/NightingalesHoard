@@ -18,6 +18,7 @@ export default function ChartsPage() {
   const [agg, setAgg] = useState("sum");
   const [color, setColor] = useState("");
   const [title, setTitle] = useState("");
+  const [filter, setFilter] = useState("");
   const [charts, setCharts] = useState([]);
   const [rendered, setRendered] = useState({});
   const [error, setError] = useState(null);
@@ -60,18 +61,20 @@ export default function ChartsPage() {
   useCopilotRefresh(loadCharts); // the agent may have saved or deleted charts
   // the new-chart form: the copilot sees only what the user has changed from the defaults
   useCopilotForm("chart-draft", {
-    initial: { dataset: datasets[0]?.name || "", kind: "bar", x: "", y: "", agg: "sum", color: "", title: "" },
-    current: { dataset: active || datasets[0]?.name || "", kind, x, y, agg, color, title: title.trim() },
+    initial: { dataset: datasets[0]?.name || "", kind: "bar", x: "", y: "", agg: "sum", color: "", title: "", filter: "" },
+    current: { dataset: active || datasets[0]?.name || "", kind, x, y, agg, color, title: title.trim(), filter },
   });
 
   const create = async (e) => {
     e.preventDefault();
+    setError(null);
     setBusy(true);
     try {
       const body = { dataset: active, kind, agg, title };
       if (x) body.x = x;
       if (y) body.y = y;
       if (color) body.color = color;
+      if (filter.trim()) body.filter = filter.trim();
       const result = await api.chartCreate(body);
       setRendered((r) => ({ ...r, [result.chart_id]: result }));
       setTitle("");
@@ -164,6 +167,12 @@ export default function ChartsPage() {
             </div>
           </div>
           <div>
+            <label className="label" htmlFor="chart-row-filter">{t("charts_filter_label")}</label>
+            <input id="chart-row-filter" className="field font-mono" value={filter} onChange={(e) => setFilter(e.target.value)}
+              aria-describedby="chart-row-filter-help" placeholder={t("charts_filter_example")} />
+            <p id="chart-row-filter-help" className="help mt-1">{t("charts_filter_help")}</p>
+          </div>
+          <div>
             <label className="label">{t("common_name")}</label>
             <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${active}: ${kind}`} />
           </div>
@@ -183,6 +192,7 @@ export default function ChartsPage() {
                 <div className="font-medium">{c.name}</div>
                 <button type="button" className="btn-link text-xs" onClick={() => remove(c.id)}>{t("common_delete")}</button>
               </div>
+              {rendered[c.id] && <p className="help break-words">{t("charts_filter_saved")}: <code className="break-all">{rendered[c.id].spec.filter || t("charts_filter_none")}</code></p>}
               {rendered[c.id] ? <VegaChart spec={rendered[c.id].vega_lite} /> : <div className="help">{t("common_loading")}</div>}
               <ChartDownload key={`${c.id}:${lang}`} chart={c} dataset={rendered[c.id]?.spec?.dataset} lang={lang} t={t} />
             </div>
