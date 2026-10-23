@@ -143,7 +143,7 @@ export default function LabExplore({ dataset }) {
             </div>
           }
         >
-          {eda.correlation.columns.length >= 2 ? (
+          {eda.correlation?.columns.length >= 2 ? (
             <>
               <VegaChart spec={correlationHeatmapSpec(eda.correlation.columns, eda.correlation[corrMethod])} height={Math.max(220, eda.correlation.columns.length * 32)} />
               {eda.correlation.top_pairs?.length > 0 && (
