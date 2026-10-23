@@ -18,6 +18,9 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    charts_png_download: "Download PNG", charts_png_busy: "Preparing PNG…", charts_png_retry: "Retry PNG download",
+    charts_png_error: "Could not download this chart.", charts_png_started: "Download started:", charts_png_dataset_unknown: "Dataset not available",
+    charts_png_help: "PNG images are generated from the dataset's current version when requested. They may differ from the interactive view; they are not historical screenshots or exports of every dataset row.",
     rows_view: "Comparison view", rows_profiles: "Column profiles", rows_title: "Rows",
     rows_help: "Compare rows using columns with the same name and type. Repeated rows count separately. Changed rows appear on each side; rows are not matched by an inferred ID.",
     rows_columns: "Columns to compare", rows_apply: "Compare selected columns", rows_pending: "Column selection changed. Compare again to update the results.",
@@ -384,6 +387,9 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    charts_png_download: "Descargar PNG", charts_png_busy: "Preparando PNG…", charts_png_retry: "Reintentar descarga PNG",
+    charts_png_error: "No se pudo descargar esta gráfica.", charts_png_started: "Descarga iniciada:", charts_png_dataset_unknown: "Dataset no disponible",
+    charts_png_help: "El PNG se genera con la versión actual del dataset al pedirlo. Puede diferir del visor interactivo; no es una captura histórica ni exporta todas las filas del dataset.",
     rows_view: "Vista de comparación", rows_profiles: "Perfiles de columnas", rows_title: "Filas",
     rows_help: "Compara filas usando columnas con el mismo nombre y tipo. Las filas repetidas cuentan por separado. Una fila modificada aparece en ambos lados; no se emparejan filas suponiendo un identificador.",
     rows_columns: "Columnas que comparar", rows_apply: "Comparar columnas seleccionadas", rows_pending: "Has cambiado las columnas. Vuelve a comparar para actualizar los resultados.",

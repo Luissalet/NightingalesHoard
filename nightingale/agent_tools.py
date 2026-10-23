@@ -144,8 +144,10 @@ class QualityArgs(BaseModel):
 
 
 class ChartArgs(BaseModel):
-    dataset: str
-    kind: str = Field(..., description="bar/grouped_bar/stacked_bar/line/area/scatter/histogram/box/heatmap/pie/donut")
+    action: Literal["create", "get"] = Field("create", description="create saves a new chart; get reads an existing chart without creating one.")
+    chart_id: Optional[int] = Field(None, description="Saved chart ID for action=get.")
+    dataset: Optional[str] = Field(None, description="Required for action=create.")
+    kind: Optional[str] = Field(None, description="Required for create: bar/grouped_bar/stacked_bar/line/area/scatter/histogram/box/heatmap/pie/donut")
     x: Optional[str] = None
     y: Optional[str] = None
     agg: str = Field("sum", description="sum/avg/count/min/max/median")
@@ -154,6 +156,7 @@ class ChartArgs(BaseModel):
     title: str = ""
     name: Optional[str] = None
     image: bool = Field(False, description="true also returns a base64 PNG; keep false unless an image was asked for.")
+    lang: str = Field("en", description="action=get: PNG number locale (es or en). Reads the dataset's current version, not historical pixels.")
 
 
 class DashboardArgs(BaseModel):
@@ -406,6 +409,12 @@ def _run_quality(s: Services, a: QualityArgs) -> dict:
 
 
 def _run_chart(s: Services, a: ChartArgs) -> dict:
+    if a.action == "get":
+        if a.chart_id is None:
+            raise ValueError("get needs chart_id")
+        return s.chart_get(a.chart_id, a.image, lang=a.lang)
+    if not a.dataset or not a.kind:
+        raise ValueError("create needs dataset and kind")
     return s.chart_create(a.dataset, a.kind, a.x, a.y, a.agg, a.color, a.filter, a.title, a.name, a.image, source="agent")
 
 
@@ -618,8 +627,9 @@ TOOLS: list[Tool] = [
     Tool("data_quality", "Define, run or report data-quality rules on a dataset. Reglas de calidad, validar datos.\n"
          "Rule kinds: not_null/unique/range/regex/row_count/freshness/referential/custom_sql (write on define/delete).\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
          QualityArgs, _ann(False, False, False), _run_quality),
-    Tool("data_chart", "Build and save a chart from a dataset (aggregated in SQL); image=true also returns a PNG (write).\n"
-         "Sinónimos: crear gráfico, gráfica de barras, histograma, dispersión, mapa de calor.",
+    Tool("data_chart", "Create a chart, or read a saved chart by ID; image=true returns its native PNG.\n"
+         "action=create (default) saves a new SQL-aggregated chart. action=get needs chart_id, creates nothing and uses the dataset's current version. With get/image=true, MCP returns complete PNG ImageContent and JSON metadata; lang=es/en selects PNG number formatting. The native PNG may differ from the interactive view and is not a historical screenshot or every dataset row.\n"
+         "Sinónimos: crear gráfico, descargar PNG, leer gráfico guardado, gráfica de barras, histograma, dispersión, mapa de calor.",
          ChartArgs, _ann(False, False, False), _run_chart),
     Tool("data_dashboard", "Dashboards: create, add charts/KPIs, list; or dashboards as code (YAML + metrics). Panel.\n"
          "Create a dashboard, add a chart/KPI item to it, list/get dashboards (write on "
@@ -678,6 +688,15 @@ def call_tool_sync(services: Services, name: str, arguments: dict | None) -> Any
     for bad arguments."""
     if name in ASYNC_TOOLS:
         raise ValueError(f"{name} is async: use call_tool")
+    if name == "data_chart":
+        args = ChartArgs.model_validate(arguments or {})
+        if args.action == "get" and args.image:
+            # Image bytes are an artifact, not a preview string. Keep the
+            # existing metadata cap and leave every other call unchanged.
+            with agentkit.uncapped():
+                result = agentkit.call_tool(TOOLS, services, name, args.model_dump())
+            png = result.pop("image_base64")
+            return {**cap_result(result), "image_base64": png}
     return agentkit.call_tool(TOOLS, services, name, arguments)
 
 

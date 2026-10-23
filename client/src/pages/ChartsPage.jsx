@@ -3,13 +3,14 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
 import VegaChart from "../components/VegaChart.jsx";
+import ChartDownload from "../components/ChartDownload.jsx";
 import { useCopilotActive, useCopilotForm, useCopilotRefresh } from "../copilot-hooks.js";
 
 const CHART_KINDS = ["bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut"];
 const AGGS = ["sum", "avg", "count", "min", "max", "median"];
 
 export default function ChartsPage() {
-  const { t, datasets, notify } = useApp();
+  const { t, lang, datasets, notify } = useApp();
   const [active, setActive] = useState(null);
   const [kind, setKind] = useState("bar");
   const [x, setX] = useState("");
@@ -29,7 +30,7 @@ export default function ChartsPage() {
   const view = async (chartId) => {
     try {
       const result = await api.chartGet(chartId);
-      setRendered((r) => ({ ...r, [chartId]: result.vega_lite }));
+      setRendered((r) => ({ ...r, [chartId]: result }));
     } catch (e) {
       setError(e.message);
     }
@@ -72,7 +73,7 @@ export default function ChartsPage() {
       if (y) body.y = y;
       if (color) body.color = color;
       const result = await api.chartCreate(body);
-      setRendered((r) => ({ ...r, [result.chart_id]: result.vega_lite }));
+      setRendered((r) => ({ ...r, [result.chart_id]: result }));
       setTitle("");
       notify("Chart created");
       await loadCharts();
@@ -100,6 +101,7 @@ export default function ChartsPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold">{t("charts_title")}</h1>
+      <p className="help max-w-3xl">{t("charts_png_help")}</p>
 
       {error && <div className="help" style={{ color: "var(--danger-ink)" }}>{error}</div>}
 
@@ -181,7 +183,8 @@ export default function ChartsPage() {
                 <div className="font-medium">{c.name}</div>
                 <button type="button" className="btn-link text-xs" onClick={() => remove(c.id)}>{t("common_delete")}</button>
               </div>
-              {rendered[c.id] ? <VegaChart spec={rendered[c.id]} /> : <div className="help">{t("common_loading")}</div>}
+              {rendered[c.id] ? <VegaChart spec={rendered[c.id].vega_lite} /> : <div className="help">{t("common_loading")}</div>}
+              <ChartDownload key={`${c.id}:${lang}`} chart={c} dataset={rendered[c.id]?.spec?.dataset} lang={lang} t={t} />
             </div>
           ))}
         </div>

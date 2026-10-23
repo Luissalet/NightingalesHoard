@@ -742,7 +742,7 @@
   },
   {
     "name": "data_chart",
-    "description": "Build and save a chart from a dataset (aggregated in SQL); image=true also returns a PNG (write).\nSinónimos: crear gráfico, gráfica de barras, histograma, dispersión, mapa de calor.",
+    "description": "Create a chart, or read a saved chart by ID; image=true returns its native PNG.\naction=create (default) saves a new SQL-aggregated chart. action=get needs chart_id, creates nothing and uses the dataset's current version. With get/image=true, MCP returns complete PNG ImageContent and JSON metadata; lang=es/en selects PNG number formatting. The native PNG may differ from the interactive view and is not a historical screenshot or every dataset row.\nSinónimos: crear gráfico, descargar PNG, leer gráfico guardado, gráfica de barras, histograma, dispersión, mapa de calor.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -751,14 +751,54 @@
     },
     "inputSchema": {
       "properties": {
-        "dataset": {
-          "title": "Dataset",
+        "action": {
+          "default": "create",
+          "description": "create saves a new chart; get reads an existing chart without creating one.",
+          "enum": [
+            "create",
+            "get"
+          ],
+          "title": "Action",
           "type": "string"
         },
+        "chart_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Saved chart ID for action=get.",
+          "title": "Chart Id"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for action=create.",
+          "title": "Dataset"
+        },
         "kind": {
-          "description": "bar/grouped_bar/stacked_bar/line/area/scatter/histogram/box/heatmap/pie/donut",
-          "title": "Kind",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for create: bar/grouped_bar/stacked_bar/line/area/scatter/histogram/box/heatmap/pie/donut",
+          "title": "Kind"
         },
         "x": {
           "anyOf": [
@@ -838,12 +878,14 @@
           "description": "true also returns a base64 PNG; keep false unless an image was asked for.",
           "title": "Image",
           "type": "boolean"
+        },
+        "lang": {
+          "default": "en",
+          "description": "action=get: PNG number locale (es or en). Reads the dataset's current version, not historical pixels.",
+          "title": "Lang",
+          "type": "string"
         }
       },
-      "required": [
-        "dataset",
-        "kind"
-      ],
       "title": "ChartArgs",
       "type": "object"
     },

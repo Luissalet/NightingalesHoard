@@ -2,6 +2,21 @@
 
 # Nightingale's Hoard
 
+Charts → **Download PNG** retrieves the selected saved chart through the existing
+`GET /api/charts/{id}?image=true&lang=en` renderer. Each card identifies its chart,
+dataset and requested interface language; a failed request can be retried without
+changing the chart constructor draft. Download started means the file was handed
+to the browser, not that a browser save was confirmed. The PNG reads the dataset's
+current version when requested, uses the native chart query limits and may differ
+from the interactive Vega view. It is neither a historical snapshot nor an export
+of every dataset row. Downloading creates no chart, dataset version or analysis-log entry.
+
+MCP `data_chart` also accepts `action="get", chart_id=<saved id>, image=true,
+lang="en"|"es"`. Its PNG is returned as complete `image/png` ImageContent, with
+JSON metadata separately capped and without a duplicate base64 field. `image=false`
+returns metadata only. Omitting `action` retains the existing create behavior and
+its existing response limits. The combined catalog remains 42 tools.
+
 Datasets → **Export data** downloads every row of the displayed version as CSV,
 JSON, Parquet or a single-sheet XLSX. The request captures the version explicitly
 and uses the existing native `data_export` writer through
