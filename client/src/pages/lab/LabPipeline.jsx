@@ -194,6 +194,7 @@ export default function LabPipeline({ dataset, datasets }) {
               values={selectedStep.formValues || paramsToValues(selectedStep.op, selectedStep.params)}
               setField={updateSelectedParams}
               columnNames={columnNames}
+              datasets={datasets}
               t={t}
             />
             <button type="button" className="btn btn-sm self-start" onClick={commitSelectedForm} data-testid="lab-pipeline-commit">{t("common_save")}</button>

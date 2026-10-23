@@ -550,6 +550,73 @@
     "module": "data"
   },
   {
+    "name": "data_join_preview",
+    "description": "Inspect left-row match coverage without applying a join. Cobertura de unión.\nReads both current saved dataset versions. Counts left rows with at least one matching right row, not matching pairs or final joined rows; duplicates on the right count only once per left row. Independent of INNER/LEFT/RIGHT/FULL choice. Equality does not match NULLs. Returns left_rows, matched, unmatched and match_rate (0–1; zero for an empty left side). No new version, pending pipeline evaluation or analysis record.\nSinónimos: cobertura de unión, filas con coincidencia, claves de tablas, join coverage.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "$defs": {
+        "JoinKeyPair": {
+          "properties": {
+            "left": {
+              "description": "Exact column name in the left dataset.",
+              "minLength": 1,
+              "title": "Left",
+              "type": "string"
+            },
+            "right": {
+              "description": "Exact column name in the right dataset.",
+              "minLength": 1,
+              "title": "Right",
+              "type": "string"
+            }
+          },
+          "required": [
+            "left",
+            "right"
+          ],
+          "title": "JoinKeyPair",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "dataset": {
+          "description": "Existing left dataset name; reads its current saved version.",
+          "minLength": 1,
+          "title": "Dataset",
+          "type": "string"
+        },
+        "other_dataset": {
+          "description": "Existing right dataset name; reads its current saved version.",
+          "minLength": 1,
+          "title": "Other Dataset",
+          "type": "string"
+        },
+        "on": {
+          "description": "Equality key pairs combined with AND, preserving exact names. NULL does not match NULL.",
+          "items": {
+            "$ref": "#/$defs/JoinKeyPair"
+          },
+          "minItems": 1,
+          "title": "On",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dataset",
+        "other_dataset",
+        "on"
+      ],
+      "title": "JoinPreviewArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_undo",
     "description": "Move a dataset to an earlier (undo) or later (redo) version (write, non-destructive).\nSinónimos: deshacer, rehacer, volver a la versión anterior.",
     "annotations": {

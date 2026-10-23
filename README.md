@@ -2,6 +2,8 @@
 
 # Nightingale's Hoard
 
+Data → Recipe lets you choose the other dataset and add exact column pairs for a join; the same editor works in Pipeline. Manual JSON is retained, including comma, quote and Unicode column names or names from earlier pipeline steps. Native left, inner, right and full join types remain available. Check matches counts current saved left rows with at least one match in the current saved right version. It creates no version or analysis-log entry. Duplicate right keys can multiply joined rows; Preview shows that actual result. Coverage does not describe pending pipeline nodes. The existing API and new MCP `data_join_preview` share the native calculation; the combined catalog has 43 tools (21 Data, 20 Calculation and two controls).
+
 The Charts constructor supports an optional **Row filter** using the native SQL
 condition accepted by `data_chart` and `POST /api/charts`. Write a condition without
 `WHERE`, using columns from the selected dataset; it selects input rows before
@@ -26,7 +28,7 @@ MCP `data_chart` also accepts `action="get", chart_id=<saved id>, image=true,
 lang="en"|"es"`. Its PNG is returned as complete `image/png` ImageContent, with
 JSON metadata separately capped and without a duplicate base64 field. `image=false`
 returns metadata only. Omitting `action` retains the existing create behavior and
-its existing response limits. The combined catalog remains 42 tools.
+its existing response limits. The combined catalog remains 43 tools.
 
 Datasets → **Export data** downloads every row of the displayed version as CSV,
 JSON, Parquet or a single-sheet XLSX. The request captures the version explicitly
@@ -46,7 +48,7 @@ or charts; validation metadata is retained, not enforced. It is not a project
 backup or a promise of complete Excel fidelity. Multi-sheet updates remain
 available through the existing API/MCP `data_export` contract.
 
-The dataset recipe panel opens any saved version using the existing undo/redo operations. Earlier steps are clickable, and later versions remain selectable until a new transformation replaces that branch. Export SQL now includes copy and `.sql` download actions in English and Spanish. The script uses local dataset tables; it is not a self-contained data backup. UI, API and MCP `data_undo`/`data_recipe` share the existing native calculation; the combined catalog remains 42 tools.
+The dataset recipe panel opens any saved version using the existing undo/redo operations. Earlier steps are clickable, and later versions remain selectable until a new transformation replaces that branch. Export SQL now includes copy and `.sql` download actions in English and Spanish. The script uses local dataset tables; it is not a self-contained data backup. UI, API and MCP `data_undo`/`data_recipe` share the existing native calculation; the combined catalog remains 43 tools.
 
 ## Native data and calculation modules
 
@@ -192,12 +194,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (20 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (21 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 42-tool catalog.
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 43-tool catalog.
 
 ## Tests
 
@@ -259,4 +261,4 @@ columns. Existing node parameters round-trip without splitting names.
 Editing invalidates the previous preview. Preview creates no dataset version;
 the existing explicit Apply does. In Lab, Save updates the node's parameters and
 Preview uses those saved parameters. These forms use the existing transform and
-pipeline APIs and `data_transform` MCP capability; the 42-tool catalog is unchanged.
+pipeline APIs and `data_transform` MCP capability; the 43-tool catalog is unchanged.

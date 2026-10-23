@@ -2,6 +2,8 @@
 
 # Nightingale's Hoard
 
+Datos → Receta permite elegir el otro conjunto y añadir pares de columnas para una unión; el mismo editor funciona en Canalización. El JSON manual se conserva, incluidos nombres con coma, comillas o Unicode y nombres de pasos anteriores. Los tipos nativos siguen siendo left, inner, right y full. «Comprobar coincidencias» cuenta filas de la versión actual izquierda que encuentran al menos una coincidencia en la versión actual derecha. No crea versiones ni entradas de análisis; los duplicados derechos pueden multiplicar las filas de la unión, que se consultan con Vista previa. La cobertura no representa nodos pendientes de Canalización. API existente y nueva herramienta MCP `data_join_preview` comparten el cálculo nativo; el catálogo combinado tiene 43 herramientas (21 Datos, 20 Cálculo y dos controles).
+
 Gráficos → **Descargar PNG** obtiene la gráfica guardada seleccionada mediante el
 renderizador existente `GET /api/charts/{id}?image=true&lang=es`. Cada tarjeta
 identifica su gráfica, dataset e idioma solicitado; un error se puede reintentar
@@ -15,7 +17,7 @@ MCP `data_chart` admite también `action="get", chart_id=<id guardado>, image=tr
 lang="en"|"es"`. Devuelve el PNG completo como ImageContent `image/png`, con los
 metadatos JSON acotados por separado y sin duplicar el base64. `image=false`
 devuelve sólo metadatos. Omitir `action` conserva la creación anterior y sus límites
-de respuesta. El catálogo conjunto sigue teniendo 42 herramientas.
+de respuesta. El catálogo conjunto sigue teniendo 43 herramientas.
 
 En Datasets, **Conservar libro original (.xlsx)** muestra origen, hoja/rango,
 estructura importada, pestañas y coincidencia de la huella registrada. Descarga una
@@ -36,7 +38,7 @@ crea archivos de exportación y la entrada habitual del registro de análisis.
 El XLSX plano no conserva el libro original y estos archivos no son un backup
 del proyecto.
 
-El panel de receta de un conjunto abre cualquier versión guardada mediante las operaciones existentes de deshacer/rehacer. Se puede pulsar un paso anterior o elegir una versión posterior hasta que una transformación nueva sustituya esa rama. Exportar SQL incorpora copia y descarga `.sql`, en castellano e inglés. El script usa tablas locales del conjunto; no es una copia autónoma de los datos. UI, API y MCP `data_undo`/`data_recipe` comparten el cálculo nativo existente; el catálogo combinado sigue en 42 herramientas.
+El panel de receta de un conjunto abre cualquier versión guardada mediante las operaciones existentes de deshacer/rehacer. Se puede pulsar un paso anterior o elegir una versión posterior hasta que una transformación nueva sustituya esa rama. Exportar SQL incorpora copia y descarga `.sql`, en castellano e inglés. El script usa tablas locales del conjunto; no es una copia autónoma de los datos. UI, API y MCP `data_undo`/`data_recipe` comparten el cálculo nativo existente; el catálogo combinado sigue en 43 herramientas.
 
 ## Módulos nativos de datos y cálculo
 
@@ -189,13 +191,13 @@ Todo JSON; los errores son `{ "error": "..." }`.
 
 ## Herramientas MCP
 
-Consulta `docs/MCP.md` para la referencia del módulo Datos (20 herramientas, de `data_ingest` a
+Consulta `docs/MCP.md` para la referencia del módulo Datos (21 herramientas, de `data_ingest` a
 `data_ask`) y un recorrido mínimo. Las instrucciones incluidas indican al asistente que previsualice
 una transformación antes de aplicarla cuando el efecto no sea obviamente seguro, que nunca asuma el
 nombre de un conjunto de datos (`data_list` primero), y que cite el id del registro de análisis
 (`N-000123`) al informar de un resultado. Cálculo aporta otras 20 herramientas nativas,
 documentadas en [su referencia](fusion/laplace-docs/MCP.md), con las tres colisiones prefijadas
-como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 42.
+como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 43.
 
 ## Pruebas
 

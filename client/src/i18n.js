@@ -18,6 +18,15 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    join_other: "Other dataset", join_kind: "Join type", join_default_left: "left — default",
+    join_keys: "Join keys", join_left_column: "Left column", join_right_column: "Right column",
+    join_keys_help: "Pair exact column names. All pairs must match; NULL does not match NULL. Choices use the current dataset schemas; manual names are retained for earlier pipeline steps.",
+    join_add_key: "Add key pair", join_remove_key: "Remove pair", join_manual: "Join keys — manual JSON",
+    join_manual_only: "This JSON cannot be represented by the pair editor. Your text is preserved below.",
+    join_coverage: "Left-row match coverage", join_check: "Check matches", join_checking: "Checking…",
+    join_coverage_help: "Reads the current saved versions of both datasets. Counts left rows with at least one match, independently of the join type. No dataset version is created.",
+    join_left_rows: "Left rows", join_matched: "With a match", join_unmatched: "Without a match", join_rate: "Coverage",
+    join_coverage_rows: "This is not the joined row count: repeated right keys can multiply rows. Preview shows the actual transform result.",
     aggregate_lab_save: "Save updates this pipeline node. Preview uses the saved node parameters; only Apply creates a dataset version.",
     aggregate_group: "Group by", aggregate_group_help: "Select no columns for one summary of all rows.",
     aggregate_group_manual: "Columns manually (JSON array or comma-separated names)",
@@ -400,6 +409,15 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    join_other: "Otro conjunto", join_kind: "Tipo de unión", join_default_left: "left — predeterminado",
+    join_keys: "Claves de unión", join_left_column: "Columna izquierda", join_right_column: "Columna derecha",
+    join_keys_help: "Empareja nombres exactos. Todos los pares deben coincidir; NULL no coincide con NULL. Las opciones usan los esquemas actuales; se conservan nombres manuales para pasos anteriores de la canalización.",
+    join_add_key: "Añadir par de claves", join_remove_key: "Quitar par", join_manual: "Claves de unión — JSON manual",
+    join_manual_only: "Este JSON no se puede representar con el editor de pares. Tu texto se conserva debajo.",
+    join_coverage: "Cobertura de filas izquierdas", join_check: "Comprobar coincidencias", join_checking: "Comprobando…",
+    join_coverage_help: "Lee las versiones guardadas actuales de ambos conjuntos. Cuenta filas izquierdas con al menos una coincidencia, independientemente del tipo de unión. No crea una versión.",
+    join_left_rows: "Filas izquierdas", join_matched: "Con coincidencia", join_unmatched: "Sin coincidencia", join_rate: "Cobertura",
+    join_coverage_rows: "No es el número de filas resultante: claves derechas repetidas pueden multiplicarlas. Vista previa muestra el efecto real de la transformación.",
     aggregate_lab_save: "Guardar actualiza este nodo. La vista previa usa sus parámetros guardados; solo Aplicar crea una versión del conjunto de datos.",
     aggregate_group: "Agrupar por", aggregate_group_help: "Sin columnas seleccionadas, se obtiene un resumen de todas las filas.",
     aggregate_group_manual: "Columnas manuales (array JSON o nombres separados por comas)",
