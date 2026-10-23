@@ -2,6 +2,21 @@
 
 # Nightingale's Hoard
 
+Gráficos → **Descargar PNG** obtiene la gráfica guardada seleccionada mediante el
+renderizador existente `GET /api/charts/{id}?image=true&lang=es`. Cada tarjeta
+identifica su gráfica, dataset e idioma solicitado; un error se puede reintentar
+sin cambiar el borrador del constructor. «Descarga iniciada» indica que se entregó
+el archivo al navegador, no que se haya confirmado su guardado. El PNG consulta la
+versión actual del dataset al pedirlo, respeta los límites de consulta nativos y
+puede diferir del visor interactivo Vega. No es una captura histórica ni exporta
+todas las filas. Descargar no crea gráficas, versiones ni entradas del registro.
+
+MCP `data_chart` admite también `action="get", chart_id=<id guardado>, image=true,
+lang="en"|"es"`. Devuelve el PNG completo como ImageContent `image/png`, con los
+metadatos JSON acotados por separado y sin duplicar el base64. `image=false`
+devuelve sólo metadatos. Omitir `action` conserva la creación anterior y sus límites
+de respuesta. El catálogo conjunto sigue teniendo 42 herramientas.
+
 En Datasets, **Conservar libro original (.xlsx)** muestra origen, hoja/rango,
 estructura importada, pestañas y coincidencia de la huella registrada. Descarga una
 copia actualizando sólo la hoja del dataset y versión seleccionados mediante el

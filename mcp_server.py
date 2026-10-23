@@ -58,9 +58,14 @@ async def call_tool(name, arguments):
             response = await client.post(url.rstrip("/") + "/api/agent/call", json={"name": name, "arguments": arguments or {}},
                                           headers={"Authorization": "Bearer " + token})
         body = response.json()
-        png = body.pop("png_base64", "") if name == "laplace_data_chart" and isinstance(body, dict) else ""
+        saved_chart = name == "data_chart" and (arguments or {}).get("action") == "get"
+        png = ""
+        if name == "laplace_data_chart" and isinstance(body, dict):
+            png = body.pop("png_base64", "")
+        elif saved_chart and isinstance(body, dict):
+            png = body.pop("image_base64", "")
         content = [TextContent(type="text", text=json.dumps(body, ensure_ascii=False))]
-        if png and (arguments or {}).get("include_image"):
+        if png and (saved_chart or (arguments or {}).get("include_image")):
             content.append(ImageContent(type="image", data=png, mimeType="image/png"))
         return CallToolResult(content=content,
                               structuredContent=body if isinstance(body, dict) else None, isError=response.is_error)

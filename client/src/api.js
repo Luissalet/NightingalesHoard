@@ -66,7 +66,7 @@ export const api = {
 
   chartCreate: (body) => post("/api/charts", body),
   chartList: () => get("/api/charts"),
-  chartGet: (id, image) => get(`/api/charts/${id}`, { image }),
+  chartGet: (id, image, lang) => get(`/api/charts/${id}`, { image, lang }),
   chartDelete: (id) => del(`/api/charts/${id}`),
 
   dashboardCreate: (body) => post("/api/dashboards", body),
