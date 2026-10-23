@@ -2,6 +2,17 @@
 
 # Nightingale's Hoard
 
+The Charts constructor supports an optional **Row filter** using the native SQL
+condition accepted by `data_chart` and `POST /api/charts`. Write a condition without
+`WHERE`, using columns from the selected dataset; it selects input rows before
+aggregation and does not transform the dataset. An empty field is omitted. SQL
+errors keep the filter and chart draft for correction. Each rendered saved card
+shows the filter from its persisted specification, or explicitly No filter; PNG
+and interactive views use that same native specification against the current
+dataset version. The complete filter is also included in the Faustus draft.
+This extends the existing chart flow, with no new parser, tool or dependency.
+Definitions follow [DuckDB's WHERE documentation](https://duckdb.org/docs/lts/sql/query_syntax/where).
+
 Charts → **Download PNG** retrieves the selected saved chart through the existing
 `GET /api/charts/{id}?image=true&lang=en` renderer. Each card identifies its chart,
 dataset and requested interface language; a failed request can be retried without
