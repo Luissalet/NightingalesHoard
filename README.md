@@ -237,3 +237,26 @@ panel comes from Hoard Link (`install_spa`) and talks to Faustus through this ap
 Native module data can be relocated into `data/native/<module>/data`, with per-module configuration beside it. Writer fiction uses the owning desktop profile `writers-hoard/fiction/data`. Move complete data trees, including SQLite WAL/SHM, media, downloaded models and browser sessions; update saved absolute paths before enabling a module. The compatibility manifests in `compatibility/<id>/faustus-plugin.json` preserve native IDs, tool schemas and tokens without a retired checkout. Add each merged application's `compatibility` directory to Hub roots before the general repository root. Discovery and compatibility bridges never start an application. All modules remain OFF during relocation.
 
 Legacy in-place adoption scripts are optional import helpers; keeping the old repository is unnecessary once relocation and route updates have been verified.
+
+## Aggregation editor
+
+Dataset steps and Lab → Pipeline share a visual `group` editor: select grouping
+columns, add/remove metric rows, choose a function and column, and optionally name
+each result. Column names containing commas, spaces or Unicode remain complete
+names. No grouping columns sends `group_by: []` for a global summary.
+
+All existing native functions are available: `sum`, `avg`, `min`, `max`, `count`,
+`count_distinct`, `median`, `stddev`. Count without a column means `COUNT(*)`;
+column counts and distinct counts ignore NULL. `stddev` is sample standard
+deviation. Values are calculated by the existing dataset engine, not JavaScript.
+
+The manual aggregation JSON remains visible and updates the row controls when its
+shape is representable. Invalid text and other JSON shapes remain editable without
+being replaced. Grouping columns also accept a JSON array or the existing comma
+list; use JSON for column names containing commas and for intermediate pipeline
+columns. Existing node parameters round-trip without splitting names.
+
+Editing invalidates the previous preview. Preview creates no dataset version;
+the existing explicit Apply does. In Lab, Save updates the node's parameters and
+Preview uses those saved parameters. These forms use the existing transform and
+pipeline APIs and `data_transform` MCP capability; the 42-tool catalog is unchanged.

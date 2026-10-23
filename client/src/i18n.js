@@ -18,6 +18,15 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    aggregate_lab_save: "Save updates this pipeline node. Preview uses the saved node parameters; only Apply creates a dataset version.",
+    aggregate_group: "Group by", aggregate_group_help: "Select no columns for one summary of all rows.",
+    aggregate_group_manual: "Columns manually (JSON array or comma-separated names)",
+    aggregate_metrics: "Metrics", aggregate_metric: "Metric", aggregate_add: "Add metric", aggregate_remove: "Remove metric",
+    aggregate_function: "Function", aggregate_column: "Column", aggregate_alias: "Result name (optional)", aggregate_all_rows: "All rows — COUNT(*)",
+    aggregate_help: "Count without a column includes every row. Column counts and distinct counts ignore NULL. Standard deviation uses the sample formula.",
+    aggregate_json: "Aggregations — manual JSON", aggregate_manual_only: "This JSON cannot be represented by the row editor. Your text is preserved; continue editing it below.",
+    aggregate_fn_sum: "Sum", aggregate_fn_avg: "Mean", aggregate_fn_min: "Minimum", aggregate_fn_max: "Maximum",
+    aggregate_fn_count: "Count", aggregate_fn_count_distinct: "Distinct count", aggregate_fn_median: "Median", aggregate_fn_stddev: "Sample standard deviation",
     charts_png_download: "Download PNG", charts_png_busy: "Preparing PNG…", charts_png_retry: "Retry PNG download",
     charts_png_error: "Could not download this chart.", charts_png_started: "Download started:", charts_png_dataset_unknown: "Dataset not available",
     charts_png_help: "PNG images are generated from the dataset's current version when requested. They may differ from the interactive view; they are not historical screenshots or exports of every dataset row.",
@@ -391,6 +400,15 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    aggregate_lab_save: "Guardar actualiza este nodo. La vista previa usa sus parámetros guardados; solo Aplicar crea una versión del conjunto de datos.",
+    aggregate_group: "Agrupar por", aggregate_group_help: "Sin columnas seleccionadas, se obtiene un resumen de todas las filas.",
+    aggregate_group_manual: "Columnas manuales (array JSON o nombres separados por comas)",
+    aggregate_metrics: "Métricas", aggregate_metric: "Métrica", aggregate_add: "Añadir métrica", aggregate_remove: "Quitar métrica",
+    aggregate_function: "Función", aggregate_column: "Columna", aggregate_alias: "Nombre del resultado (opcional)", aggregate_all_rows: "Todas las filas — COUNT(*)",
+    aggregate_help: "El recuento sin columna incluye todas las filas. Los recuentos de columna y de valores distintos ignoran NULL. La desviación típica es muestral.",
+    aggregate_json: "Agregaciones — JSON manual", aggregate_manual_only: "Este JSON no se puede representar con las filas del editor. El texto se conserva; puedes seguir editándolo abajo.",
+    aggregate_fn_sum: "Suma", aggregate_fn_avg: "Media", aggregate_fn_min: "Mínimo", aggregate_fn_max: "Máximo",
+    aggregate_fn_count: "Recuento", aggregate_fn_count_distinct: "Valores distintos", aggregate_fn_median: "Mediana", aggregate_fn_stddev: "Desviación típica muestral",
     charts_png_download: "Descargar PNG", charts_png_busy: "Preparando PNG…", charts_png_retry: "Reintentar descarga PNG",
     charts_png_error: "No se pudo descargar esta gráfica.", charts_png_started: "Descarga iniciada:", charts_png_dataset_unknown: "Dataset no disponible",
     charts_png_help: "El PNG se genera con la versión actual del dataset al pedirlo. Puede diferir del visor interactivo; no es una captura histórica ni exporta todas las filas del dataset.",
