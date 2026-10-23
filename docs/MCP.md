@@ -2,13 +2,13 @@
 
 `mcp_server.py` is a stdio bridge. Discovery reads the shipped static catalog without starting a server or engine. Calls proxy to `POST /api/agent/call` on the explicitly started app with the bearer token from `<DATA_DIR>/mcp-token`; the bridge never opens the database directly.
 
-Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 20 Data tools, 20 Calculation tools and two module controls.
+Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 21 Data tools, 20 Calculation tools and two module controls (43 tools).
 
 Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
 `N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
-parameter lookup does not create a version or log entry.
+parameter lookup and `data_join_preview` coverage calculation do not create a version or analysis-log entry. The existing agent call event remains independent of the analysis log.
 
-20 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
+21 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ parameter lookup does not create a version or log entry.
 | `data_preview` | read | First rows of a dataset version, plus the total row count. |
 | `data_transform` | read-only for `op="help"`; write when `preview: false` | Apply or preview one of 22 native cleaning/reshaping steps, or look up contracts with `data_transform(op="help", help_for="replace", dataset="sales")` to include current column names/types, version, and row count (no cell values). Omit `dataset` for the catalog-only response. REST: `GET /api/transforms?op=replace&dataset=sales`. Missing required transform fields return a step-specific error. See [transform operation reference](TRANSFORM-OPERATIONS.md) / [Spanish reference](TRANSFORM-OPERATIONS.es.md). |
 | `data_undo` | write, non-destructive | Move a dataset to an earlier (`undo`) or later (`redo`) version. |
+| `data_join_preview` | read | `dataset`, `other_dataset`, `on: [{"left":"column","right":"column"}]`. Coverage of the current saved left version against the current saved right version: `left_rows`, `matched`, `unmatched`, `match_rate`. Pairs combine with AND; NULL never matches NULL. A left row counts once even if multiple right rows match. Independent of join type; not the final joined row count or a pending pipeline preview. No dataset version or analysis-log entry. Existing REST: `POST /data/api/datasets/{name}/join-preview`. |
 | `data_recipe` | read / write on `replay` | Show a dataset's step history, export it as a runnable SQL script, or replay it (same as `data_refresh`). |
 | `data_query` | read | Run one read-only `SELECT`/`WITH`/`DESCRIBE`/`SUMMARIZE` over registered dataset views. |
 | `data_quality` | write on `define`/`delete` | Define, run, or report data-quality rules: `not_null`, `unique`, `accepted_values`, `range`, `regex`, `row_count`, `freshness`, `referential`, `custom_sql`. |

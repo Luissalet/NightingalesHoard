@@ -209,7 +209,7 @@ export default function DatasetsPage({ param }) {
       {dataset && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex flex-col gap-4">
-            <StepToolbar dataset={active} columns={columnList} onApplied={onStepApplied} t={t} />
+            <StepToolbar dataset={active} columns={columnList} datasets={datasets} onApplied={onStepApplied} lang={lang} t={t} />
 
             <div className="seg max-w-full flex-wrap self-start" role="tablist">
               <button type="button" aria-pressed={tab === "preview"} onClick={() => setTab("preview")}>{t("datasets_preview_tab")}</button>

@@ -23,7 +23,7 @@ AGENT_INSTRUCTIONS = (
     "'N-000123'; read-only help lookups do not create log entries. Cite an analysis id when reporting its result. Always preview a transform "
     "(data_transform with preview=true) before applying it when the change is not obviously safe. Never assume a "
     "dataset name: call data_list first if unsure. This app never reads files or the database directly outside "
-    "these tools."
+    "these tools. Join coverage (data_join_preview) reads current saved versions without changing versions or creating an analysis record."
 )
 
 
@@ -112,6 +112,17 @@ class TransformArgs(BaseModel):
     help_for: Optional[str] = Field(None, description="With op='help', filter the read-only contract lookup to one transform operation. Add dataset when choosing fields so its current schema is included.")
     params: dict[str, Any] = Field(default_factory=dict, description="Operation-specific JSON object; use op='help' to look up its exact fields and nested shapes.")
     preview: bool = Field(True, description="true: show the effect without applying; false: apply and create a new version.")
+
+
+class JoinKeyPair(BaseModel):
+    left: str = Field(..., min_length=1, description="Exact column name in the left dataset.")
+    right: str = Field(..., min_length=1, description="Exact column name in the right dataset.")
+
+
+class JoinPreviewArgs(BaseModel):
+    dataset: str = Field(..., min_length=1, description="Existing left dataset name; reads its current saved version.")
+    other_dataset: str = Field(..., min_length=1, description="Existing right dataset name; reads its current saved version.")
+    on: list[JoinKeyPair] = Field(..., min_length=1, description="Equality key pairs combined with AND, preserving exact names. NULL does not match NULL.")
 
 
 class UndoArgs(BaseModel):
@@ -615,6 +626,14 @@ TOOLS: list[Tool] = [
          "For MCP-only clients, use op='help'; add dataset to include current column names/types, version, and row count without values.\n"
          "Sinónimos: transformar datos, limpiar columna, filtrar filas, renombrar columna, agrupar datos.",
          TransformArgs, _ann(False, False, False), _run_transform),
+    Tool("data_join_preview", "Inspect left-row match coverage without applying a join. Cobertura de unión.\n"
+         "Reads both current saved dataset versions. Counts left rows with at least one matching right row, "
+         "not matching pairs or final joined rows; duplicates on the right count only once per left row. "
+         "Independent of INNER/LEFT/RIGHT/FULL choice. Equality does not match NULLs. "
+         "Returns left_rows, matched, unmatched and match_rate (0–1; zero for an empty left side). "
+         "No new version, pending pipeline evaluation or analysis record.\n"
+         "Sinónimos: cobertura de unión, filas con coincidencia, claves de tablas, join coverage.",
+         JoinPreviewArgs, _ann(True), lambda s, a: s.join_preview(a.dataset, a.other_dataset, [pair.model_dump() for pair in a.on])),
     Tool("data_undo", "Move a dataset to an earlier (undo) or later (redo) version (write, non-destructive).\n"
          "Sinónimos: deshacer, rehacer, volver a la versión anterior.",
          UndoArgs, _ann(False, False, True), _run_undo),

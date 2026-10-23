@@ -122,8 +122,8 @@ def test_stdio_discovery_works_with_no_server_or_data(tmp_path):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert len(tools.tools) == 41
-                assert {'calc', 'data_ingest', 'laplace_data_query'} <= {tool.name for tool in tools.tools}
+                assert len(tools.tools) == 43
+                assert {'calc', 'data_ingest', 'laplace_data_query', 'data_join_preview'} <= {tool.name for tool in tools.tools}
     asyncio.run(discover())
     assert not (tmp_path/'no-data').exists()
 

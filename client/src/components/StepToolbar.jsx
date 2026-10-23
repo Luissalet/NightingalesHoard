@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import AggregationFields, { GroupColumnsField, parseGroupColumns } from "./AggregationFields.jsx";
+import JoinKeyPairs from "./JoinKeyPairs.jsx";
+import JoinCoverage from "./JoinCoverage.jsx";
 
 /** Field specs per step op: keeps the toolbar a real form (not a raw JSON box)
  * for the common cases, while still covering every op type from the brief. */
@@ -66,9 +68,9 @@ const STEP_FIELDS = {
     { name: "value_col", label: "Value column name", type: "text", default: "value" },
   ],
   join: [
-    { name: "other_dataset", label: "Other dataset", type: "text" },
-    { name: "on", label: 'Join keys (JSON, e.g. [{"left":"region","right":"region"}])', type: "json" },
-    { name: "how", label: "Join type", type: "select", options: ["left", "inner", "right", "full"] },
+    { name: "other_dataset", label: "Other dataset", labelKey: "join_other", type: "dataset" },
+    { name: "on", label: "Join keys", type: "join_keys" },
+    { name: "how", label: "Join type", labelKey: "join_kind", emptyLabelKey: "join_default_left", type: "select", options: ["left", "inner", "right", "full"] },
   ],
   union: [
     { name: "other_dataset", label: "Other dataset", type: "text" },
@@ -118,7 +120,7 @@ export function buildParams(op, values) {
     else if (f.type === "kv") params[f.name] = parseKv(raw);
     else if (f.type === "bool") params[f.name] = !!raw;
     else if (f.type === "number") params[f.name] = Number(raw);
-    else if (f.type === "json" || f.type === "aggregations") {
+    else if (["json", "aggregations", "join_keys"].includes(f.type)) {
       try {
         params[f.name] = JSON.parse(raw);
       } catch {
@@ -140,7 +142,7 @@ export function paramsToValues(op, params) {
     if (raw === undefined) continue;
     if (f.type === "list") values[f.name] = Array.isArray(raw) ? raw.join(", ") : raw;
     else if (f.type === "kv") values[f.name] = raw && typeof raw === "object" ? Object.entries(raw).map(([k, v]) => `${k}:${v}`).join("\n") : raw;
-    else if (["json", "aggregations", "group_columns"].includes(f.type)) values[f.name] = JSON.stringify(raw);
+    else if (["json", "aggregations", "group_columns", "join_keys"].includes(f.type)) values[f.name] = JSON.stringify(raw);
     else values[f.name] = raw;
   }
   return values;
@@ -148,37 +150,46 @@ export function paramsToValues(op, params) {
 
 /** The op-specific field grid shared by the dataset Recipe's step toolbar and
  * the Lab pipeline node editor, so both edit the exact same step shapes. */
-export function StepFieldsGrid({ fields, values, setField, columnNames, t }) {
+export function StepFieldsGrid({ fields, values, setField, columnNames, datasets = [], t }) {
+  const id = useId();
+  const rightColumnNames = (datasets.find((item) => item.name === values.other_dataset)?.columns || []).map((column) => column.name);
   return (
     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
       {fields.map((f) => f.type === "group_columns" ? (
         <GroupColumnsField key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
       ) : f.type === "aggregations" ? (
         <AggregationFields key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
+      ) : f.type === "join_keys" ? (
+        <JoinKeyPairs key={f.name} value={values[f.name]} columnNames={columnNames} rightColumnNames={rightColumnNames} onChange={(value) => setField(f.name, value)} t={t} />
       ) : (
         <div key={f.name} className={f.type === "textarea" || f.type === "json" || f.type === "kv" ? "md:col-span-2" : ""}>
-          <label className="label">{f.label}</label>
-          {f.type === "select" ? (
-            <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
+          <label className="label" htmlFor={`${id}-${f.name}`}>{f.labelKey ? t(f.labelKey) : f.label}</label>
+          {f.type === "dataset" ? (
+            <select id={`${id}-${f.name}`} className="field" value={values[f.name] ?? ""} onChange={(event) => setField(f.name, event.target.value)}>
               <option value="">—</option>
+              {[...new Set([...datasets.map((item) => item.name), ...(values[f.name] ? [values[f.name]] : [])])].map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          ) : f.type === "select" ? (
+            <select id={`${id}-${f.name}`} className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
+              <option value="">{f.emptyLabelKey ? t(f.emptyLabelKey) : "—"}</option>
               {f.options.map((o) => (
                 <option key={o} value={o}>{o}</option>
               ))}
             </select>
           ) : f.type === "column" ? (
-            <select className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
+            <select id={`${id}-${f.name}`} className="field" value={values[f.name] ?? ""} onChange={(e) => setField(f.name, e.target.value)}>
               <option value="">—</option>
               {columnNames.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
           ) : f.type === "bool" ? (
-            <input type="checkbox" checked={!!values[f.name]} onChange={(e) => setField(f.name, e.target.checked)} />
+            <input id={`${id}-${f.name}`} type="checkbox" checked={!!values[f.name]} onChange={(e) => setField(f.name, e.target.checked)} />
           ) : f.type === "textarea" || f.type === "json" || f.type === "kv" ? (
-            <textarea className="field" rows={3} placeholder={f.placeholder} value={values[f.name] ?? ""}
+            <textarea id={`${id}-${f.name}`} className="field" rows={3} placeholder={f.placeholder} value={values[f.name] ?? ""}
                       onChange={(e) => setField(f.name, e.target.value)} />
           ) : (
-            <input className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
+            <input id={`${id}-${f.name}`} className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
                    value={values[f.name] ?? f.default ?? ""} onChange={(e) => setField(f.name, e.target.value)} />
           )}
         </div>
@@ -187,7 +198,7 @@ export function StepFieldsGrid({ fields, values, setField, columnNames, t }) {
   );
 }
 
-export default function StepToolbar({ dataset, columns, onApplied, t }) {
+export default function StepToolbar({ dataset, columns, datasets = [], onApplied, lang, t }) {
   const [op, setOp] = useState("filter");
   const [values, setValues] = useState({});
   const [preview, setPreview] = useState(null);
@@ -269,7 +280,8 @@ export default function StepToolbar({ dataset, columns, onApplied, t }) {
         </select>
       </div>
 
-      <StepFieldsGrid fields={fields} values={values} setField={setField} columnNames={columnNames} t={t} />
+      <StepFieldsGrid fields={fields} values={values} setField={setField} columnNames={columnNames} datasets={datasets} t={t} />
+      {op === "join" && <JoinCoverage dataset={dataset} otherDataset={values.other_dataset} keys={values.on} datasets={datasets} lang={lang} t={t} />}
 
       {error && <div className="help" style={{ color: "var(--danger-ink)" }}>{error}</div>}
 
