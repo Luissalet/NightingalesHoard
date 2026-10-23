@@ -4,6 +4,14 @@ Nightingale still offers the ordinary flat export to one-sheet XLSX, CSV,
 Parquet or JSON. For an imported `.xlsx`, it also supports a conservative
 workbook-preserving copy:
 
+The Datasets UI exposes this as **Preserve original workbook (.xlsx)**, alongside
+the unchanged flat export. It inspects the linked workbook through the existing
+inventory route and downloads one selected dataset/version's sheet through
+`POST /api/export/workbook/download` (`dataset` and explicit nonnegative `version`).
+That route returns the native exported file; it does not create another exporter.
+Changing the displayed dataset/version clears the previous inventory and download
+state. The UI reports that a browser download was requested, not that it was saved.
+
 1. Ingest the workbook with `data_ingest(kind="file", path=..., name=...)`.
    Each selected worksheet becomes its own dataset. The source record stores a
    SHA-256 snapshot, worksheet/table inventory and hashes of the original OOXML

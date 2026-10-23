@@ -4,6 +4,13 @@ Nightingale mantiene la exportación plana habitual a un XLSX de una hoja,
 CSV, Parquet o JSON. Para un `.xlsx` importado también puede crear una copia
 conservando el libro:
 
+En Datasets, **Conservar libro original (.xlsx)** aparece junto a la exportación
+plana. Consulta el inventario nativo y descarga la hoja del dataset/versión
+seleccionados mediante `POST /api/export/workbook/download` (`dataset` y `version`
+no negativa explícita). La ruta devuelve el archivo del motor existente. Cambiar
+dataset/versión retira el inventario y estado anteriores. La UI indica que se
+solicitó la descarga al navegador, sin afirmar que se guardó el archivo.
+
 1. Importa el archivo con `data_ingest(kind="file", path=..., name=...)`.
    Cada hoja seleccionada pasa a ser un dataset. El origen guarda una huella
    SHA-256, el inventario de hojas/tablas y las huellas de las partes OOXML.

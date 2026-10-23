@@ -493,6 +493,20 @@ def export_download(request: Request, body: ExportDownloadBody):
     return FileResponse(result["path"], filename=filename)
 
 
+class WorkbookDownloadBody(BaseModel):
+    dataset: str
+    version: int = Field(..., ge=0)
+
+
+@router.post("/export/workbook/download")
+@api_errors
+def workbook_download(request: Request, body: WorkbookDownloadBody):
+    filename = f"{body.dataset}_v{body.version}_workbook.xlsx"
+    result = services(request).export(body.dataset, "xlsx", filename,
+                                      mode="preserve_workbook", version=body.version)
+    return FileResponse(result["path"], filename=filename)
+
+
 # ---- log ---------------------------------------------------------------
 
 @router.get("/log")

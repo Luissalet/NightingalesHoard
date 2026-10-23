@@ -8,6 +8,7 @@ import StepToolbar from "../components/StepToolbar.jsx";
 import RecipePanel from "../components/RecipePanel.jsx";
 import VersionComparison from "../components/VersionComparison.jsx";
 import DatasetExport from "../components/DatasetExport.jsx";
+import WorkbookExport from "../components/WorkbookExport.jsx";
 import { formatNumber } from "../format.js";
 import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -161,6 +162,7 @@ export default function DatasetsPage({ param }) {
       </div>
 
       {dataset && <DatasetExport key={`${active}:${dataset.current_version}`} dataset={active} version={dataset.current_version} rowCount={dataset.row_count} lang={lang} />}
+      {dataset && <WorkbookExport key={`workbook:${active}:${dataset.current_version}`} dataset={active} version={dataset.current_version} lang={lang} />}
 
       {refreshQuality && (
         <section className="panel text-[13px]" aria-live="polite" data-testid="dataset-refresh-quality">
