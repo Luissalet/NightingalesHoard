@@ -115,6 +115,12 @@ def correlation(request: Request, name: str):
     return services(request).correlation(name)
 
 
+@router.get("/datasets/{name}/versions/compare")
+@api_errors
+def compare_versions(request: Request, name: str, version_a: int = 0, version_b: Optional[int] = None):
+    return services(request).compare_versions(name, version_a, version_b)
+
+
 @router.get("/datasets/{name}/preview")
 @api_errors
 def preview(request: Request, name: str, version: Optional[int] = None, limit: int = 50):

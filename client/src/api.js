@@ -35,6 +35,7 @@ export const api = {
   datasets: () => get("/api/datasets"),
   refresh: (name) => post(`/api/datasets/${encodeURIComponent(name)}/refresh`),
   profile: (name, version) => get(`/api/datasets/${encodeURIComponent(name)}/profile`, { version }),
+  compareVersions: (name, version_a, version_b) => get(`/api/datasets/${encodeURIComponent(name)}/versions/compare`, { version_a, version_b }),
   correlation: (name) => get(`/api/datasets/${encodeURIComponent(name)}/correlation`),
   preview: (name, version, limit) => get(`/api/datasets/${encodeURIComponent(name)}/preview`, { version, limit }),
   lineage: (name) => get(`/api/datasets/${encodeURIComponent(name)}/lineage`),
