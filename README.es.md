@@ -2,6 +2,14 @@
 
 # Nightingale's Hoard
 
+Conjuntos de datos → **Exportar datos** descarga todas las filas de la versión
+mostrada a CSV, JSON, Parquet o XLSX con una sola hoja. La petición captura la
+versión explícitamente y usa el escritor nativo de `data_export` mediante
+`POST /api/export/download`. No modifica la fuente ni las versiones guardadas;
+crea archivos de exportación y la entrada habitual del registro de análisis.
+El XLSX plano no conserva el libro original y estos archivos no son un backup
+del proyecto.
+
 El panel de receta de un conjunto abre cualquier versión guardada mediante las operaciones existentes de deshacer/rehacer. Se puede pulsar un paso anterior o elegir una versión posterior hasta que una transformación nueva sustituya esa rama. Exportar SQL incorpora copia y descarga `.sql`, en castellano e inglés. El script usa tablas locales del conjunto; no es una copia autónoma de los datos. UI, API y MCP `data_undo`/`data_recipe` comparten el cálculo nativo existente; el catálogo combinado sigue en 42 herramientas.
 
 ## Módulos nativos de datos y cálculo
