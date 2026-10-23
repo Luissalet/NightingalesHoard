@@ -97,7 +97,7 @@ export default function App() {
     },
     [refreshDatasets],
   );
-  const value = useMemo(() => ({ t, lang, datasets, refreshDatasets, notify, act }), [t, lang, datasets, refreshDatasets, notify, act]);
+  const value = useMemo(() => ({ t, lang, setLang, datasets, refreshDatasets, notify, act }), [t, lang, setLang, datasets, refreshDatasets, notify, act]);
 
   const page = PAGES.find((p) => p.path === route.page) || PAGES[1];
   const Component = page.component;

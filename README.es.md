@@ -2,6 +2,8 @@
 
 # Nightingale's Hoard
 
+El panel de receta de un conjunto abre cualquier versión guardada mediante las operaciones existentes de deshacer/rehacer. Se puede pulsar un paso anterior o elegir una versión posterior hasta que una transformación nueva sustituya esa rama. Exportar SQL incorpora copia y descarga `.sql`, en castellano e inglés. El script usa tablas locales del conjunto; no es una copia autónoma de los datos. UI, API y MCP `data_undo`/`data_recipe` comparten el cálculo nativo existente; el catálogo combinado sigue en 41 herramientas.
+
 ## Módulos nativos de datos y cálculo
 
 Nightingale incorpora todas las funciones de Laplace: aritmética exacta, álgebra, unidades, fechas, estadística, SQL sobre archivos, gráficos e historial de cálculo. Datos y Cálculo son interruptores independientes, ambos OFF en la primera instalación o migración. Arranca la app expresamente desde Hoard Hub y activa lo que necesites. La calculadora funciona sin cargar el workbench ni DuckDB. Las interfaces completas están en `/data/` y `/calculation/`, dentro de un único servidor.

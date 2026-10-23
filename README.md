@@ -2,6 +2,8 @@
 
 # Nightingale's Hoard
 
+The dataset recipe panel opens any saved version using the existing undo/redo operations. Earlier steps are clickable, and later versions remain selectable until a new transformation replaces that branch. Export SQL now includes copy and `.sql` download actions in English and Spanish. The script uses local dataset tables; it is not a self-contained data backup. UI, API and MCP `data_undo`/`data_recipe` share the existing native calculation; the combined catalog remains 41 tools.
+
 ## Native data and calculation modules
 
 Nightingale incorporates all of Laplace's arithmetic, symbolic math, units, dates, statistics, SQL-over-files, charts and calculation history. Data and Calculation are independent switches, both OFF on first installation or migration. Start the app explicitly from Hoard Hub, then enable only what you need. Calculation works without loading the data workbench or DuckDB. Full native interfaces live under `/data/` and `/calculation/`; one server owns both.
