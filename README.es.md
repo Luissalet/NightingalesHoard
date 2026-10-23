@@ -2,6 +2,17 @@
 
 # Nightingale's Hoard
 
+En Datasets, **Conservar libro original (.xlsx)** muestra origen, hoja/rango,
+estructura importada, pestañas y coincidencia de la huella registrada. Descarga una
+copia actualizando sólo la hoja del dataset y versión seleccionados mediante el
+exportador nativo (`POST /api/export/workbook/download`). La exportación plana
+CSV/JSON/Parquet/XLSX sigue disponible por separado. El original y las versiones
+guardadas no cambian; se añaden recibo y registro de análisis normales. Requiere un
+`.xlsx` importado con estructura compatible. No sobrescribe fórmulas ni recalcula
+fórmulas o gráficos; conserva las validaciones sin comprobar sus valores. No es
+un backup del proyecto ni una promesa de fidelidad universal de Excel. Actualizar
+varias hojas sigue disponible mediante la API/MCP `data_export` existente.
+
 Conjuntos de datos → **Exportar datos** descarga todas las filas de la versión
 mostrada a CSV, JSON, Parquet o XLSX con una sola hoja. La petición captura la
 versión explícitamente y usa el escritor nativo de `data_export` mediante

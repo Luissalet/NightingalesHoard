@@ -9,6 +9,17 @@ and uses the existing native `data_export` writer through
 files and the normal analysis-log entry are created. Flat XLSX does not preserve
 the source workbook, and these files are not a project backup.
 
+**Preserve original workbook (.xlsx)** is a separate dataset action. It shows the
+recorded source, sheet/range, imported shape, sheet names and source fingerprint
+match, then downloads a copy with only the selected dataset/version's sheet
+patched by the existing native workbook exporter (`POST /api/export/workbook/download`).
+The original file, datasets and saved versions stay unchanged; native receipts and
+analysis-log entries are written normally. This requires a compatible imported
+`.xlsx` with the same shape. It does not overwrite formulas or recalculate formulas
+or charts; validation metadata is retained, not enforced. It is not a project
+backup or a promise of complete Excel fidelity. Multi-sheet updates remain
+available through the existing API/MCP `data_export` contract.
+
 The dataset recipe panel opens any saved version using the existing undo/redo operations. Earlier steps are clickable, and later versions remain selectable until a new transformation replaces that branch. Export SQL now includes copy and `.sql` download actions in English and Spanish. The script uses local dataset tables; it is not a self-contained data backup. UI, API and MCP `data_undo`/`data_recipe` share the existing native calculation; the combined catalog remains 42 tools.
 
 ## Native data and calculation modules

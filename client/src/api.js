@@ -23,6 +23,15 @@ async function request(method, path, { params, body } = {}) {
 const get = (path, params) => request("GET", path, { params });
 const post = (path, body) => request("POST", path, { body: body ?? {} });
 const del = (path, params) => request("DELETE", path, { params });
+async function download(path, body) {
+  const url = new URL(import.meta.env.BASE_URL + path, window.location.origin);
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Error ${response.status}`);
+  }
+  return response.blob();
+}
 
 export const api = {
   health: () => get("/api/health"),
@@ -97,15 +106,9 @@ export const api = {
   models: (dataset) => get("/api/models", { dataset }),
 
   exportDataset: (body) => post("/api/export", body),
-  exportDownload: async (body) => {
-    const url = new URL(import.meta.env.BASE_URL + "api/export/download", window.location.origin);
-    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `Error ${response.status}`);
-    }
-    return response.blob();
-  },
+  exportDownload: (body) => download("api/export/download", body),
+  workbookInventory: (dataset) => get(`/api/workbooks/${encodeURIComponent(dataset)}`),
+  workbookDownload: (body) => download("api/export/workbook/download", body),
 
   log: (params) => get("/api/log", params),
   logGet: (id) => get(`/api/log/${id}`),

@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import zipfile
 
 import duckdb
 import openpyxl
@@ -44,3 +45,34 @@ def test_download_all_formats_uses_explicit_saved_version_without_changing_data(
     assert svc.lineage("export_fixture") == lineage
     assert source.read_bytes() == original
     assert svc.preview("export_fixture")["row_count_total"] == 4
+
+
+def test_workbook_download_uses_saved_version_preserves_parts_and_reports_native_error(client, tmp_path):
+    from test_workbook_export import _rich_workbook, _ingest_target
+
+    source = _rich_workbook(tmp_path / "book.xlsx", target_validation=True)
+    original = source.read_bytes()
+    svc = client.services
+    dataset = _ingest_target(svc, source)
+    svc.transform_apply(dataset, "replace", {"column": "categoria", "pattern": "café", "replacement": "té"})
+    svc.transform_apply(dataset, "filter", {"expr": "importe > 10"})
+    datasets, lineage = svc.list_datasets(), svc.lineage(dataset)
+    response = client.post("/api/export/workbook/download", json={"dataset": dataset, "version": 1})
+    assert response.status_code == 200, response.text
+    assert f"{dataset}_v1_workbook.xlsx" in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(original)) as before, zipfile.ZipFile(io.BytesIO(response.content)) as after:
+        assert before.namelist() == after.namelist()
+        changed = {name for name in before.namelist() if before.read(name) != after.read(name)}
+        assert changed == {"xl/worksheets/sheet1.xml", "xl/workbook.xml"}
+    book = openpyxl.load_workbook(io.BytesIO(response.content))
+    assert book["Ventas"]["C2"].value == "té"
+    assert book["Ventas"]["C3"].value == "té"
+    assert book["Ventas"]["F2"].value == "00123"
+    assert book["Resumen"]["B1"].value == "=SUM(Ventas!B2:B4)"
+    assert book["Ventas"].data_validations.count == 1
+    book.close()
+    incompatible = client.post("/api/export/workbook/download", json={"dataset": dataset, "version": 2})
+    assert incompatible.status_code == 400, incompatible.text
+    assert "row" in incompatible.json()["error"].lower()
+    assert source.read_bytes() == original
+    assert svc.list_datasets() == datasets and svc.lineage(dataset) == lineage
