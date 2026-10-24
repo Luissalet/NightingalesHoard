@@ -84,6 +84,8 @@ const STEP_FIELDS = {
   window: [
     { name: "fn", label: "Function", type: "select", options: ["lag", "lead", "rolling_mean", "rolling_sum", "row_number", "rank"] },
     { name: "column", label: "Column", type: "column" },
+    { name: "offset", label: "Offset (rows)", labelKey: "window_offset", type: "number", placeholder: "1", functions: ["lag", "lead"], helpKey: "window_offset_help" },
+    { name: "window_size", label: "Window size (rows)", labelKey: "window_size_label", type: "number", placeholder: "3", functions: ["rolling_mean", "rolling_sum"], helpKey: "window_size_help" },
     { name: "order_by", label: "Order by (comma-separated)", type: "list" },
     { name: "partition_by", label: "Partition by (comma-separated, optional)", type: "list" },
     { name: "new_column", label: "New column name (optional)", type: "text" },
@@ -155,7 +157,7 @@ export function StepFieldsGrid({ fields, values, setField, columnNames, datasets
   const rightColumnNames = (datasets.find((item) => item.name === values.other_dataset)?.columns || []).map((column) => column.name);
   return (
     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-      {fields.map((f) => f.type === "group_columns" ? (
+      {fields.filter((f) => !f.functions || f.functions.includes(values.fn)).map((f) => f.type === "group_columns" ? (
         <GroupColumnsField key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
       ) : f.type === "aggregations" ? (
         <AggregationFields key={f.name} value={values[f.name]} columnNames={columnNames} onChange={(value) => setField(f.name, value)} t={t} />
@@ -190,8 +192,10 @@ export function StepFieldsGrid({ fields, values, setField, columnNames, datasets
                       onChange={(e) => setField(f.name, e.target.value)} />
           ) : (
             <input id={`${id}-${f.name}`} className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
+                   aria-describedby={f.helpKey ? `${id}-${f.name}-help` : undefined}
                    value={values[f.name] ?? f.default ?? ""} onChange={(e) => setField(f.name, e.target.value)} />
           )}
+          {f.helpKey && <p id={`${id}-${f.name}-help`} className="help mt-1">{t(f.helpKey)}</p>}
         </div>
       ))}
     </div>

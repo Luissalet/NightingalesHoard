@@ -2,6 +2,17 @@
 
 # Nightingale's Hoard
 
+El editor compartido del paso **window** en Datos y Lab → Pipeline permite elegir
+**Desplazamiento (filas)** para `lag`/`lead` y **Tamaño de ventana** para sumas/medias
+móviles. Vacío conserva los valores nativos 1/3; los explícitos, incluido cero,
+se conservan al editar un paso guardado o cambiar su nombre de salida. Los campos
+se muestran según la función sin descartar ninguno de los dos parámetros.
+Vista previa/aplicar usan el motor `data_transform` y API/MCP43 existentes, sin
+cálculo frontend. Las ventanas incluyen la fila actual, empiezan parcialmente en
+cada partición y cuentan filas, no días de calendario. Las claves de orden todas
+empatadas no determinan posiciones estables. Se conservan NULL/errores nativos y
+el comportamiento de versiones/receta.
+
 Datos → Receta permite elegir el otro conjunto y añadir pares de columnas para una unión; el mismo editor funciona en Canalización. El JSON manual se conserva, incluidos nombres con coma, comillas o Unicode y nombres de pasos anteriores. Los tipos nativos siguen siendo left, inner, right y full. «Comprobar coincidencias» cuenta filas de la versión actual izquierda que encuentran al menos una coincidencia en la versión actual derecha. No crea versiones ni entradas de análisis; los duplicados derechos pueden multiplicar las filas de la unión, que se consultan con Vista previa. La cobertura no representa nodos pendientes de Canalización. API existente y nueva herramienta MCP `data_join_preview` comparten el cálculo nativo; el catálogo combinado tiene 43 herramientas (21 Datos, 20 Cálculo y dos controles).
 
 Gráficos → **Descargar PNG** obtiene la gráfica guardada seleccionada mediante el
