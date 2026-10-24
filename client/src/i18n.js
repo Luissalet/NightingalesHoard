@@ -18,6 +18,10 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    bin_edges: "Interval edges (optional JSON)",
+    bin_edges_help: "A non-empty array replaces Number of bins. Each interval includes its lower edge and excludes its upper edge: [0, 10, 25] gives [0, 10) and [10, 25). The last edge, out-of-range values and NULL remain uncategorised. Blank or [] keeps Number of bins.",
+    bin_labels: "Interval labels (optional JSON)",
+    bin_labels_help: "One label per interval, in the same order. Missing labels use [lower, upper); an empty label stays empty. Used only with non-empty edges. JSON preserves commas, quotes and Unicode in each label.",
     window_offset: "Offset (rows)",
     window_offset_help: "Leave blank for the native default of 1. lag reads earlier rows and lead later rows within each ordered partition; 0 reads the current row. Out-of-range rows return NULL. This counts rows, not calendar days. Ties in every ordering column do not define a stable row order.",
     window_size_label: "Window size (rows, including current)",
@@ -413,6 +417,10 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    bin_edges: "Límites de intervalos (JSON opcional)",
+    bin_edges_help: "Un array no vacío sustituye Número de intervalos. Cada tramo incluye el límite inferior y excluye el superior: [0, 10, 25] produce [0, 10) y [10, 25). El último límite, los valores fuera de rango y NULL quedan sin categoría. Vacío o [] conserva Número de intervalos.",
+    bin_labels: "Etiquetas de intervalos (JSON opcional)",
+    bin_labels_help: "Una etiqueta por tramo, en el mismo orden. Las que falten usan [inferior, superior); una etiqueta vacía queda vacía. Sólo se usan con límites no vacíos. JSON conserva comas, comillas y Unicode en cada etiqueta.",
     window_offset: "Desplazamiento (filas)",
     window_offset_help: "Vacío usa el valor nativo 1. lag lee filas anteriores y lead posteriores dentro de cada partición ordenada; 0 lee la fila actual. Si no existe esa fila, devuelve NULL. Cuenta filas, no días de calendario. Empatar en todas las columnas de orden no define un orden estable.",
     window_size_label: "Tamaño de ventana (filas, incluye actual)",

@@ -47,6 +47,8 @@ const STEP_FIELDS = {
     { name: "column", label: "Column", type: "column" },
     { name: "bins", label: "Number of bins", type: "number", default: 5 },
     { name: "new_column", label: "New column name (optional)", type: "text" },
+    { name: "edges", label: "Interval edges (optional JSON)", labelKey: "bin_edges", type: "json", placeholder: "[0, 10, 25]", helpKey: "bin_edges_help" },
+    { name: "labels", label: "Interval labels (optional JSON)", labelKey: "bin_labels", type: "json", placeholder: '["Bajo", "Medio"]', helpKey: "bin_labels_help" },
   ],
   date_parts: [
     { name: "column", label: "Date/timestamp column", type: "column" },
@@ -189,6 +191,7 @@ export function StepFieldsGrid({ fields, values, setField, columnNames, datasets
             <input id={`${id}-${f.name}`} type="checkbox" checked={!!values[f.name]} onChange={(e) => setField(f.name, e.target.checked)} />
           ) : f.type === "textarea" || f.type === "json" || f.type === "kv" ? (
             <textarea id={`${id}-${f.name}`} className="field" rows={3} placeholder={f.placeholder} value={values[f.name] ?? ""}
+                      aria-describedby={f.helpKey ? `${id}-${f.name}-help` : undefined}
                       onChange={(e) => setField(f.name, e.target.value)} />
           ) : (
             <input id={`${id}-${f.name}`} className="field" type={f.type === "number" ? "number" : "text"} placeholder={f.placeholder}
