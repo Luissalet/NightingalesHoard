@@ -2,6 +2,18 @@
 
 # Nightingale's Hoard
 
+The shared **bin** editor in Datasets → Recipe and Lab → Pipeline accepts optional
+JSON **Interval edges** and **Interval labels**. Non-empty edges override the bin
+count and create native `[lower, upper)` intervals; the final upper edge, values
+outside the intervals and NULL stay uncategorised. Missing labels use generated
+interval text, while an explicit empty label stays empty. Blank edges or `[]`
+keep the existing bin-count mode. Editing a saved step retains both arrays,
+including zero edges and labels containing commas, quotes or Unicode. Preview
+creates no dataset version; Recipe preview creates no analysis log, while Pipeline
+records its normal dry run. Apply uses normal native version and recipe behavior.
+Recipe preview shows up to eight rows. No frontend binning,
+new validation, API or MCP tool is added; the combined catalogue remains43.
+
 Datasets → **Column frequencies** reads every distinct value of a selected column
 in the displayed saved version, with exact counts and percentages over all rows.
 NULL and empty text stay distinct; full DuckDB text values are not truncated.

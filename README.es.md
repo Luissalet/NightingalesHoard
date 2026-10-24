@@ -2,6 +2,19 @@
 
 # Nightingale's Hoard
 
+El editor compartido de **bin** en Datos → Receta y Lab → Canalización acepta
+**Límites de intervalos** y **Etiquetas** opcionales en JSON. Los límites no vacíos
+sustituyen el número de intervalos y crean tramos nativos `[inferior, superior)`;
+el último extremo superior, los valores fuera de los tramos y NULL quedan sin
+categoría. Las etiquetas que falten usan el texto del tramo; una etiqueta vacía
+explícita queda vacía. Límites vacíos o `[]` conservan el modo actual por número
+de intervalos. Editar un paso guardado conserva ambos arrays, incluidos cero,
+comas, comillas y Unicode. Vista previa no crea versiones: Receta no añade análisis,
+mientras Canalización registra su ejecución de prueba nativa. Aplicar usa el
+comportamiento nativo de versiones y receta. La previa de Receta muestra hasta
+ocho filas. Sin cálculo frontend, nueva validación, API ni herramienta
+MCP; el catálogo combinado sigue en43.
+
 En Conjuntos de datos, **Frecuencias por columna** recorre los valores de una
 columna de la versión guardada mostrada, con recuentos exactos y porcentajes sobre
 todas sus filas. Distingue NULL y cadena vacía y conserva el texto completo.
