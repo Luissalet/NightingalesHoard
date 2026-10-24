@@ -18,6 +18,10 @@ export function setLang(lang) {
 
 export const dict = {
   en: {
+    window_offset: "Offset (rows)",
+    window_offset_help: "Leave blank for the native default of 1. lag reads earlier rows and lead later rows within each ordered partition; 0 reads the current row. Out-of-range rows return NULL. This counts rows, not calendar days. Ties in every ordering column do not define a stable row order.",
+    window_size_label: "Window size (rows, including current)",
+    window_size_help: "Leave blank for the native default of 3. Includes the current row and the preceding rows in each ordered partition; initial windows may contain fewer rows. SUM/AVG ignore NULL values. This is a row window, not a calendar period; add ordering keys to distinguish tied rows.",
     join_other: "Other dataset", join_kind: "Join type", join_default_left: "left — default",
     join_keys: "Join keys", join_left_column: "Left column", join_right_column: "Right column",
     join_keys_help: "Pair exact column names. All pairs must match; NULL does not match NULL. Choices use the current dataset schemas; manual names are retained for earlier pipeline steps.",
@@ -409,6 +413,10 @@ export const dict = {
     lab_report_generated: "Report generated",
   },
   es: {
+    window_offset: "Desplazamiento (filas)",
+    window_offset_help: "Vacío usa el valor nativo 1. lag lee filas anteriores y lead posteriores dentro de cada partición ordenada; 0 lee la fila actual. Si no existe esa fila, devuelve NULL. Cuenta filas, no días de calendario. Empatar en todas las columnas de orden no define un orden estable.",
+    window_size_label: "Tamaño de ventana (filas, incluye actual)",
+    window_size_help: "Vacío usa el valor nativo 3. Incluye la fila actual y las anteriores de cada partición ordenada; al principio puede haber menos filas. SUM/AVG ignoran los valores NULL. Es una ventana de filas, no un período de calendario; añade claves de orden para distinguir empates.",
     join_other: "Otro conjunto", join_kind: "Tipo de unión", join_default_left: "left — predeterminado",
     join_keys: "Claves de unión", join_left_column: "Columna izquierda", join_right_column: "Columna derecha",
     join_keys_help: "Empareja nombres exactos. Todos los pares deben coincidir; NULL no coincide con NULL. Las opciones usan los esquemas actuales; se conservan nombres manuales para pasos anteriores de la canalización.",

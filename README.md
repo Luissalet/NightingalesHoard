@@ -2,6 +2,16 @@
 
 # Nightingale's Hoard
 
+The shared **window** step editor in Datasets and Lab → Pipeline now exposes
+**Offset (rows)** for `lag`/`lead` and **Window size** for rolling sums/means.
+Blank inputs keep native defaults of 1/3; explicit values, including zero, survive
+editing a saved step and changing its output name. Function-specific controls
+hide without discarding either stored parameter. Preview/apply use the existing
+`data_transform` engine and API/MCP43, with no frontend calculation. Rolling
+windows include the current row, start partially at partition boundaries and
+count rows rather than calendar days. All-equal ordering keys do not determine
+stable row positions. Native NULL/error and version/recipe behavior are unchanged.
+
 Data → Recipe lets you choose the other dataset and add exact column pairs for a join; the same editor works in Pipeline. Manual JSON is retained, including comma, quote and Unicode column names or names from earlier pipeline steps. Native left, inner, right and full join types remain available. Check matches counts current saved left rows with at least one match in the current saved right version. It creates no version or analysis-log entry. Duplicate right keys can multiply joined rows; Preview shows that actual result. Coverage does not describe pending pipeline nodes. The existing API and new MCP `data_join_preview` share the native calculation; the combined catalog has 43 tools (21 Data, 20 Calculation and two controls).
 
 The Charts constructor supports an optional **Row filter** using the native SQL
