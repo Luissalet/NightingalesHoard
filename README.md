@@ -298,3 +298,7 @@ Editing invalidates the previous preview. Preview creates no dataset version;
 the existing explicit Apply does. In Lab, Save updates the node's parameters and
 Preview uses those saved parameters. These forms use the existing transform and
 pipeline APIs and `data_transform` MCP capability; the 43-tool catalog is unchanged.
+
+## Reuse a chart's settings
+
+In Charts, **Use as a starting point** loads a saved chart's dataset, kind, axes, aggregation, color, row filter and title into the editable builder. It identifies the original chart and focuses the title. Loading the form saves nothing; **Save chart** creates another chart ID and preserves the original. Fields remain after saving or an error, including later edits made while saving. List refreshes do not reapply the starting settings. This uses the existing chart get/create API and `data_chart` MCP actions; all43 tools remain unchanged. It uses current dataset rows and does not duplicate data, historical pixels, dashboards or analysis history.
