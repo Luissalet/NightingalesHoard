@@ -116,6 +116,13 @@ def correlation(request: Request, name: str):
     return services(request).correlation(name)
 
 
+@router.get("/datasets/{name}/frequencies")
+@api_errors
+def column_frequencies(request: Request, name: str, column: str, version: Optional[int] = None,
+                       offset: int = 0, limit: int = 50):
+    return services(request).column_frequencies(name, column, version, offset, limit)
+
+
 @router.get("/datasets/{name}/versions/compare")
 @api_errors
 def compare_versions(request: Request, name: str, version_a: int = 0, version_b: Optional[int] = None):

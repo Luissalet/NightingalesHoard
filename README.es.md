@@ -2,6 +2,20 @@
 
 # Nightingale's Hoard
 
+En Conjuntos de datos, **Frecuencias por columna** recorre los valores de una
+columna de la versión guardada mostrada, con recuentos exactos y porcentajes sobre
+todas sus filas. Distingue NULL y cadena vacía y conserva el texto completo.
+Cargar más lee la siguiente página nativa; un fallo conserva las filas anteriores
+para Reintentar. Cambiar columna/versión o cerrar retira resultados incompatibles.
+Consultar no crea versiones, entradas de análisis ni archivos. La API
+`GET /api/datasets/{name}/frequencies` y `data_profile(mode="frequencies",
+column=..., version=..., offset=..., limit=...)` comparten el cálculo. Sólo este
+modo nuevo devuelve páginas completas para que su offset no omita grupos por
+recortes; los otros modos conservan su salida. El catálogo combinado sigue en43.
+Los valores usan texto VARCHAR de DuckDB, no bytes binarios originales; la UI
+redondea porcentajes. El contexto normal de Faustus recibe consulta y metadatos
+de la página aplicada cuando la sección está abierta.
+
 El editor compartido del paso **window** en Datos y Lab → Pipeline permite elegir
 **Desplazamiento (filas)** para `lag`/`lead` y **Tamaño de ventana** para sumas/medias
 móviles. Vacío conserva los valores nativos 1/3; los explícitos, incluido cero,

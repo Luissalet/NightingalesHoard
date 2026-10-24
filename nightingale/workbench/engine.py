@@ -394,6 +394,28 @@ class Engine:
                 profile[cname] = entry
             return profile
 
+    def column_frequencies(self, table_name: str, column: str, offset: int = 0, limit: int = 50) -> dict:
+        """Read exact group counts, including NULL, without truncating value text."""
+        offset, limit = max(0, int(offset)), max(1, min(1000, int(limit)))
+        table, field = q(table_name), q(column)
+        with self._lock:
+            total = int(self._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            groups = int(self._conn.execute(
+                f"SELECT COUNT(*) FROM (SELECT {field} FROM {table} GROUP BY {field})"
+            ).fetchone()[0])
+            rows = self._conn.execute(
+                f"SELECT CAST(value AS VARCHAR), value IS NULL, n FROM "
+                f"(SELECT {field} AS value, COUNT(*) AS n FROM {table} GROUP BY {field}) "
+                f"ORDER BY n DESC, value ASC NULLS LAST LIMIT ? OFFSET ?", [limit, offset]
+            ).fetchall()
+        entries = [{"value": value, "is_null": is_null, "count": int(count),
+                    "percent": 100.0 * count / total if total else 0.0}
+                   for value, is_null, count in rows]
+        next_offset = offset + len(entries)
+        return {"row_count": total, "value_count": groups, "offset": offset, "limit": limit,
+                "rows": entries, "has_more": next_offset < groups,
+                "next_offset": next_offset if next_offset < groups else None}
+
     def correlation_matrix(self, table_name: str, columns: list[str]) -> dict:
         with self._lock:
             conn = self._conn

@@ -44,6 +44,7 @@ export const api = {
   datasets: () => get("/api/datasets"),
   refresh: (name) => post(`/api/datasets/${encodeURIComponent(name)}/refresh`),
   profile: (name, version) => get(`/api/datasets/${encodeURIComponent(name)}/profile`, { version }),
+  frequencies: (name, column, version, offset = 0, limit = 50) => get(`/api/datasets/${encodeURIComponent(name)}/frequencies`, { column, version, offset, limit }),
   compareVersions: (name, version_a, version_b) => get(`/api/datasets/${encodeURIComponent(name)}/versions/compare`, { version_a, version_b }),
   compareRows: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/versions/rows`, body),
   correlation: (name) => get(`/api/datasets/${encodeURIComponent(name)}/correlation`),
