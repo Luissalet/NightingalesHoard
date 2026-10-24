@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState } from "../components/ui.jsx";
@@ -23,6 +23,9 @@ export default function ChartsPage() {
   const [rendered, setRendered] = useState({});
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [baseChart, setBaseChart] = useState(null);
+  const form = useRef(null);
+  const titleInput = useRef(null);
 
   useEffect(() => {
     if (!active && datasets.length > 0) setActive(datasets[0].name);
@@ -61,9 +64,18 @@ export default function ChartsPage() {
   useCopilotRefresh(loadCharts); // the agent may have saved or deleted charts
   // the new-chart form: the copilot sees only what the user has changed from the defaults
   useCopilotForm("chart-draft", {
-    initial: { dataset: datasets[0]?.name || "", kind: "bar", x: "", y: "", agg: "sum", color: "", title: "", filter: "" },
-    current: { dataset: active || datasets[0]?.name || "", kind, x, y, agg, color, title: title.trim(), filter },
+    initial: { dataset: datasets[0]?.name || "", kind: "bar", x: "", y: "", agg: "sum", color: "", title: "", filter: "", base_chart: null },
+    current: { dataset: active || datasets[0]?.name || "", kind, x, y, agg, color, title: title.trim(), filter, base_chart: baseChart },
   });
+
+  const useAsBase = (chart) => {
+    const spec = rendered[chart.id].spec;
+    setActive(spec.dataset); setKind(spec.kind); setX(spec.x ?? ""); setY(spec.y ?? "");
+    setAgg(spec.agg); setColor(spec.color ?? ""); setFilter(spec.filter ?? ""); setTitle(spec.title);
+    setBaseChart({ id: chart.id, name: chart.name }); setError(null);
+    form.current?.scrollIntoView({ block: "start" });
+    titleInput.current?.focus({ preventScroll: true });
+  };
 
   const create = async (e) => {
     e.preventDefault();
@@ -77,8 +89,7 @@ export default function ChartsPage() {
       if (filter.trim()) body.filter = filter.trim();
       const result = await api.chartCreate(body);
       setRendered((r) => ({ ...r, [result.chart_id]: result }));
-      setTitle("");
-      notify("Chart created");
+      notify(`${t("charts_created")} · ID ${result.chart_id}`);
       await loadCharts();
     } catch (e2) {
       setError(e2.message);
@@ -111,36 +122,37 @@ export default function ChartsPage() {
       {datasets.length === 0 ? (
         <EmptyState>{t("datasets_empty")}</EmptyState>
       ) : (
-        <form onSubmit={create} className="panel flex flex-col gap-3" data-testid="chart-form">
+        <form ref={form} onSubmit={create} className="panel flex flex-col gap-3" data-testid="chart-form">
           <div className="text-[13px] font-semibold">{t("charts_builder")}</div>
+          {baseChart && <p className="help break-words" role="status">{t("charts_base_loaded")} {baseChart.name} · ID {baseChart.id}. {t("charts_base_help")}</p>}
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <div>
-              <label className="label">{t("nav_datasets")}</label>
-              <select className="field" value={active || ""} onChange={(e) => setActive(e.target.value)}>
+              <label className="label" htmlFor="chart-dataset">{t("nav_datasets")}</label>
+              <select id="chart-dataset" className="field" value={active || ""} onChange={(e) => setActive(e.target.value)}>
                 {datasets.map((d) => (
                   <option key={d.name} value={d.name}>{d.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label">{t("charts_kind")}</label>
-              <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <label className="label" htmlFor="chart-kind">{t("charts_kind")}</label>
+              <select id="chart-kind" className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
                 {CHART_KINDS.map((k) => (
                   <option key={k} value={k}>{k}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label">{t("charts_agg")}</label>
-              <select className="field" value={agg} onChange={(e) => setAgg(e.target.value)}>
+              <label className="label" htmlFor="chart-agg">{t("charts_agg")}</label>
+              <select id="chart-agg" className="field" value={agg} onChange={(e) => setAgg(e.target.value)}>
                 {AGGS.map((a) => (
                   <option key={a} value={a}>{a}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label">{t("charts_x")}</label>
-              <select className="field" value={x} onChange={(e) => setX(e.target.value)}>
+              <label className="label" htmlFor="chart-x">{t("charts_x")}</label>
+              <select id="chart-x" className="field" value={x} onChange={(e) => setX(e.target.value)}>
                 <option value="">—</option>
                 {columnNames.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -148,8 +160,8 @@ export default function ChartsPage() {
               </select>
             </div>
             <div>
-              <label className="label">{t("charts_y")}</label>
-              <select className="field" value={y} onChange={(e) => setY(e.target.value)}>
+              <label className="label" htmlFor="chart-y">{t("charts_y")}</label>
+              <select id="chart-y" className="field" value={y} onChange={(e) => setY(e.target.value)}>
                 <option value="">—</option>
                 {columnNames.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -157,8 +169,8 @@ export default function ChartsPage() {
               </select>
             </div>
             <div>
-              <label className="label">{t("charts_color")}</label>
-              <select className="field" value={color} onChange={(e) => setColor(e.target.value)}>
+              <label className="label" htmlFor="chart-color">{t("charts_color")}</label>
+              <select id="chart-color" className="field" value={color} onChange={(e) => setColor(e.target.value)}>
                 <option value="">—</option>
                 {columnNames.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -173,8 +185,8 @@ export default function ChartsPage() {
             <p id="chart-row-filter-help" className="help mt-1">{t("charts_filter_help")}</p>
           </div>
           <div>
-            <label className="label">{t("common_name")}</label>
-            <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${active}: ${kind}`} />
+            <label className="label" htmlFor="chart-title">{t("common_name")}</label>
+            <input ref={titleInput} id="chart-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${active}: ${kind}`} />
           </div>
           <div>
             <button type="submit" className="btn btn-primary" disabled={busy} data-testid="chart-save">{t("charts_save")}</button>
@@ -194,6 +206,8 @@ export default function ChartsPage() {
               </div>
               {rendered[c.id] && <p className="help break-words">{t("charts_filter_saved")}: <code className="break-all">{rendered[c.id].spec.filter || t("charts_filter_none")}</code></p>}
               {rendered[c.id] ? <VegaChart spec={rendered[c.id].vega_lite} /> : <div className="help">{t("common_loading")}</div>}
+              <button type="button" className="btn btn-sm self-start" disabled={!rendered[c.id]?.spec}
+                aria-label={`${t("charts_use_base")} · ${c.name} · ID ${c.id}`} onClick={() => useAsBase(c)}>{t("charts_use_base")}</button>
               <ChartDownload key={`${c.id}:${lang}`} chart={c} dataset={rendered[c.id]?.spec?.dataset} lang={lang} t={t} />
             </div>
           ))}
