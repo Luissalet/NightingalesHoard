@@ -240,7 +240,7 @@
   },
   {
     "name": "data_profile",
-    "description": "Column profile, or (mode=) deep EDA, a 0-100 quality score, or drift vs another dataset.\nSinónimos: perfil de datos, describir columnas, estadísticas de columna, análisis exploratorio, eda, puntuación de calidad, calidad de datos, deriva de datos, drift, correlación, valores atípicos, outliers.",
+    "description": "Column profile, exact paged value frequencies, deep EDA, quality score or drift.\nmode='frequencies' reads column in a saved version without changing data or creating an analysis record. Includes NULL groups, full VARCHAR value text and percentages over all rows; use next_offset for more.\nSinónimos: perfil de datos, describir columnas, estadísticas de columna, análisis exploratorio, eda, puntuación de calidad, calidad de datos, deriva de datos, drift, correlación, valores atípicos, outliers.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -267,15 +267,44 @@
         },
         "mode": {
           "default": "profile",
-          "description": "'profile' (default): the original per-column profile. 'eda': correlation (Pearson+Spearman), null co-occurrence, outliers (IQR+z-score), and encoding suggestions, plus the quality score. 'quality_score': just the 0-100 score and its components. 'drift': compare numeric-column distributions against `other_dataset` (KS test, PSI, Wasserstein distance, mean/sd shift).",
+          "description": "'profile' (default): the original per-column profile. 'eda': correlation (Pearson+Spearman), null co-occurrence, outliers (IQR+z-score), and encoding suggestions, plus the quality score. 'quality_score': just the 0-100 score and its components. 'drift': compare numeric-column distributions against `other_dataset` (KS test, PSI, Wasserstein distance, mean/sd shift). 'frequencies': exact counts for column in the selected saved version, including NULL, paged by offset/limit. Values are full DuckDB VARCHAR strings, not original binary values; percent uses all rows.",
           "enum": [
             "profile",
             "eda",
             "quality_score",
-            "drift"
+            "drift",
+            "frequencies"
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "mode='frequencies': exact column name.",
+          "title": "Column"
+        },
+        "offset": {
+          "default": 0,
+          "description": "mode='frequencies': group offset in count-descending, value-ascending order.",
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 50,
+          "description": "mode='frequencies': groups per page, using the existing preview page range.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
         },
         "other_dataset": {
           "anyOf": [

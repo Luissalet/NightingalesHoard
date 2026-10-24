@@ -74,12 +74,17 @@ class DatasetArgs(BaseModel):
 class ProfileArgs(BaseModel):
     dataset: str
     version: Optional[int] = None
-    mode: Literal["profile", "eda", "quality_score", "drift"] = Field(
+    mode: Literal["profile", "eda", "quality_score", "drift", "frequencies"] = Field(
         "profile", description="'profile' (default): the original per-column profile. 'eda': correlation "
                                  "(Pearson+Spearman), null co-occurrence, outliers (IQR+z-score), and encoding "
                                  "suggestions, plus the quality score. 'quality_score': just the 0-100 score and its "
                                  "components. 'drift': compare numeric-column distributions against `other_dataset` "
-                                 "(KS test, PSI, Wasserstein distance, mean/sd shift).")
+                                 "(KS test, PSI, Wasserstein distance, mean/sd shift). 'frequencies': exact counts "
+                                 "for column in the selected saved version, including NULL, paged by offset/limit. "
+                                 "Values are full DuckDB VARCHAR strings, not original binary values; percent uses all rows.")
+    column: Optional[str] = Field(None, description="mode='frequencies': exact column name.")
+    offset: int = Field(0, ge=0, description="mode='frequencies': group offset in count-descending, value-ascending order.")
+    limit: int = Field(50, ge=1, le=1000, description="mode='frequencies': groups per page, using the existing preview page range.")
     other_dataset: Optional[str] = Field(None, description="mode='drift' only: the dataset (or slice, as its own "
                                           "dataset) to compare distributions against.")
     columns: Optional[list[str]] = Field(None, description="mode='drift' only: restrict to these shared columns.")
@@ -354,6 +359,10 @@ def _run_list(s: Services, _: Empty) -> dict:
 
 
 def _run_profile(s: Services, a: ProfileArgs) -> dict:
+    if a.mode == "frequencies":
+        if a.column is None:
+            raise ValueError("mode='frequencies' needs column")
+        return s.column_frequencies(a.dataset, a.column, a.version, a.offset, a.limit)
     if a.mode == "profile":
         return s.profile(a.dataset, a.version)
     if a.mode == "eda":
@@ -605,7 +614,9 @@ TOOLS: list[Tool] = [
     Tool("data_list", "List every registered dataset with row/column counts and last update time.\n"
          "Sinónimos: listar datasets, qué datos hay, ver tablas.",
          Empty, _ann(True), _run_list),
-    Tool("data_profile", "Column profile, or (mode=) deep EDA, a 0-100 quality score, or drift vs another dataset.\n"
+    Tool("data_profile", "Column profile, exact paged value frequencies, deep EDA, quality score or drift.\n"
+         "mode='frequencies' reads column in a saved version without changing data or creating an analysis record. "
+         "Includes NULL groups, full VARCHAR value text and percentages over all rows; use next_offset for more.\n"
          "Sinónimos: perfil de datos, describir columnas, estadísticas de columna, análisis exploratorio, eda, "
          "puntuación de calidad, calidad de datos, deriva de datos, drift, correlación, valores atípicos, outliers.",
          ProfileArgs, _ann(True), _run_profile),
@@ -707,6 +718,10 @@ def call_tool_sync(services: Services, name: str, arguments: dict | None) -> Any
     for bad arguments."""
     if name in ASYNC_TOOLS:
         raise ValueError(f"{name} is async: use call_tool")
+    if name == "data_profile" and (arguments or {}).get("mode") == "frequencies":
+        # A page must keep its complete values and rows so next_offset does not
+        # skip groups. Other profile modes keep their existing preview cap.
+        return agentkit.call_tool(TOOLS, services, name, arguments, cap=False)
     if name == "data_chart":
         args = ChartArgs.model_validate(arguments or {})
         if args.action == "get" and args.image:

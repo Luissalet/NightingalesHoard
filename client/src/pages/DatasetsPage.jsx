@@ -9,6 +9,7 @@ import RecipePanel from "../components/RecipePanel.jsx";
 import VersionComparison from "../components/VersionComparison.jsx";
 import DatasetExport from "../components/DatasetExport.jsx";
 import WorkbookExport from "../components/WorkbookExport.jsx";
+import ColumnFrequencies from "../components/ColumnFrequencies.jsx";
 import { formatNumber } from "../format.js";
 import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
@@ -210,6 +211,7 @@ export default function DatasetsPage({ param }) {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex flex-col gap-4">
             <StepToolbar dataset={active} columns={columnList} datasets={datasets} onApplied={onStepApplied} lang={lang} t={t} />
+            <ColumnFrequencies key={`frequencies:${active}:${dataset.current_version}`} dataset={active} version={dataset.current_version} columns={columnList} lang={lang} />
 
             <div className="seg max-w-full flex-wrap self-start" role="tablist">
               <button type="button" aria-pressed={tab === "preview"} onClick={() => setTab("preview")}>{t("datasets_preview_tab")}</button>

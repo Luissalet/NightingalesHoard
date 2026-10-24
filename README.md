@@ -2,6 +2,20 @@
 
 # Nightingale's Hoard
 
+Datasets → **Column frequencies** reads every distinct value of a selected column
+in the displayed saved version, with exact counts and percentages over all rows.
+NULL and empty text stay distinct; full DuckDB text values are not truncated.
+Load more reads the next native page; a failed page keeps the preceding rows for
+Retry. Changing the column/version or closing the section clears incompatible
+results. Reading creates no dataset version, analysis-log entry or output file.
+`GET /api/datasets/{name}/frequencies` and `data_profile(mode="frequencies",
+column=..., version=..., offset=..., limit=...)` share this calculation. Only this
+new mode returns complete pages so its next offset cannot skip trimmed groups;
+other profile modes keep their existing output behavior. The combined catalog
+remains43tools. Values use DuckDB VARCHAR representation, not original binary
+bytes; percentages are rounded in the UI. The selected query and applied page
+metadata reach the normal Faustus context when the section is open.
+
 The shared **window** step editor in Datasets and Lab → Pipeline now exposes
 **Offset (rows)** for `lag`/`lead` and **Window size** for rolling sums/means.
 Blank inputs keep native defaults of 1/3; explicit values, including zero, survive

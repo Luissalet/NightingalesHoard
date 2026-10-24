@@ -666,6 +666,21 @@ class Services:
         return {"dataset": dataset_row["name"], "version": v["version"], "row_count": v["row_count"],
                 "columns": columns, "profile": prof}
 
+    def column_frequencies(self, dataset_name: str, column: str, version: Optional[int] = None,
+                           offset: int = 0, limit: int = 50) -> dict:
+        import json
+
+        dataset = self._dataset_row(dataset_name)
+        with self._dataset_lock(dataset["id"]):
+            v = self._version_row(dataset, version)
+            columns = json.loads(v["columns_json"])
+            selected = next((c for c in columns if c["name"] == column), None)
+            if selected is None:
+                raise DataError(f"column not found in version {v['version']}: {column}")
+            return {"dataset": dataset["name"], "version": v["version"], "column": column,
+                    "type": selected["type"], "value_format": "DuckDB VARCHAR; NULL is explicit",
+                    **self.engine.column_frequencies(v["table_name"], column, offset, limit)}
+
     def correlation(self, dataset_name: str) -> dict:
         dataset_row = self._dataset_row(dataset_name)
         v = self._version_row(dataset_row)
