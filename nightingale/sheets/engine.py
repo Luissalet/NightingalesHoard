@@ -127,26 +127,26 @@ class Compiled:
                 "skipped_volatile": sum(1 for c in self.model.cells.values() if c.volatile)}
 
 
-def export_python(model: Model) -> str:
+def export_python(model: Model, *, cli: bool = True) -> str:
     """Standalone module: runtime + generated cells + engine + constants. Standard library only."""
     src = inspect.getsource(rt).replace("from __future__ import annotations\n", "")
     consts = {k: to_json(c.value) for k, c in model.cells.items() if not c.formula or c.frozen}
     params = {addr(k): k for k in model.parameters}
     results = {addr(k): k for k in model.results}
     labels = {addr(k): v for k, v in model.labels.items()}
-    head = (
-        f'"""Cálculo del libro {model.name!r} compilado por Nightingale\'s Hoard.\n\n'
+    head = repr(
+        f'Cálculo del libro {model.name!r} compilado por Nightingale\'s Hoard.\n\n'
         f"Origen sha256 {model.sha256}. Solo biblioteca estándar.\n\n"
         "    import calculo\n    calculo.compute({'Hoja!B3': 120})  # -> {celda: valor de cada resultado}\n\n"
         "Desde consola: python calculo.py '{\"Hoja!B3\": 120}'\n"
-        f'Celdas congeladas (valor fijo de Excel): {len([c for c in model.cells.values() if c.frozen])}.\n"""\n'
-    )
+        f'Celdas congeladas (valor fijo de Excel): {len([c for c in model.cells.values() if c.frozen])}.\n'
+    ) + "\n"
     body = [head, "from __future__ import annotations", "# ---- runtime ----", src, "# ---- workbook ----",
             f"SHEETS = {dict(model.sheets)!r}",
             "_CONSTANTS = " + repr({k: v for k, v in consts.items()}),
             f"PARAMETERS = {params!r}", f"RESULTS = {results!r}", f"LABELS = {labels!r}",
             "ADDRESSES = " + repr({addr(k): k for k in consts}),
-            generate(model), ENGINE, _API]
+            generate(model), ENGINE, _API, _CLI if cli else ""]
     return "\n".join(body)
 
 
@@ -186,8 +186,10 @@ def compute(overrides=None, as_of=None):
         values[_key(ref)] = _value(v)
     out = evaluate(values, as_of)
     return {a: _plain(out.get(k)) for a, k in RESULTS.items()}
+'''
 
 
+_CLI = '''
 if __name__ == "__main__":
     import json
     import sys

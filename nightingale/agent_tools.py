@@ -617,6 +617,7 @@ class WorkbookArgs(BaseModel):
     cases: Optional[list[dict[str, Any]]] = Field(None, description="verify: explicit cases ({address: value}); default seeded random cases")
     n: int = Field(12, ge=1, le=200, description="verify: number of generated cases")
     seed: int = Field(7, description="verify: seed of the generated cases")
+    format: Literal["python", "app"] = Field("python", description="export: python is the existing calculation module; app is one self-contained Python web calculator with forms, fonts and results, standard library only")
 
 
 def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
@@ -651,7 +652,7 @@ def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
             raise ValueError("cell is required to trace")
         return st.trace(need(), a.cell)
     if a.action == "export":
-        return st.export(need())
+        return st.export(need(), format=a.format)
     return st.delete(need())
 
 

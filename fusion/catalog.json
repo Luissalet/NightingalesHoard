@@ -1904,6 +1904,16 @@
           "description": "verify: seed of the generated cases",
           "title": "Seed",
           "type": "integer"
+        },
+        "format": {
+          "default": "python",
+          "description": "export: python is the existing calculation module; app is one self-contained Python web calculator with forms, fonts and results, standard library only",
+          "enum": [
+            "python",
+            "app"
+          ],
+          "title": "Format",
+          "type": "string"
         }
       },
       "title": "WorkbookArgs",
