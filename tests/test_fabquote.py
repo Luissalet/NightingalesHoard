@@ -415,3 +415,11 @@ def test_agent_tool_actions_and_spanish(services):
     with pytest.raises(LookupError):
         call({"action": "get", "name": "ghost"})
     assert call({"action": "delete", "name": "t"})["deleted"]
+
+
+def test_vulcan_and_templates_routes_take_the_request_language(tmp_path):
+    """The notes on fetched measurements follow ?lang= like every other route."""
+    import inspect
+    from nightingale.api import fabquote as routes
+    for fn in (routes.templates, routes.vulcan):
+        assert "request" in inspect.signature(inspect.unwrap(fn)).parameters
