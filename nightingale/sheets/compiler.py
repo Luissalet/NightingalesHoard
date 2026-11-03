@@ -54,10 +54,10 @@ def is_date_format(fmt: str) -> bool:
     return bool(re.search(r"[dy]", f)) or ("m" in f and not re.search(r"[0#?]", f))
 
 
-def _plain(v):
+def _plain(v, date_system="1900"):
     """Cell value as stored by openpyxl → runtime value."""
     if isinstance(v, (dt.datetime, dt.date, dt.time)):
-        return rt.to_serial(v)
+        return rt.to_serial(v, date_system)
     if isinstance(v, bool):
         return v
     if isinstance(v, (int, float)):
@@ -116,12 +116,14 @@ class Model:
     diagnostics: list[dict] = field(default_factory=list)
     cycles: list[list[Key]] = field(default_factory=list)
     source: str = ""
+    date_system: str = "1900"
 
     def summary(self) -> dict:
         formulas = [k for k in self.order]
         return {
             "name": self.name,
             "sha256": self.sha256,
+            "date_system": self.date_system,
             "sheets": [{"name": s, "rows": r, "cols": c} for s, (r, c) in self.sheets.items()],
             "formulas": len([c for c in self.cells.values() if c.formula]),
             "executed": len([k for k in formulas if not self.cells[k].frozen]),
@@ -146,7 +148,7 @@ class Model:
         if c and c.number_format and c.number_format != "General":
             d["number_format"] = c.number_format
             if is_date_format(c.number_format) and isinstance(c.value, float):
-                d["display"] = rt.from_serial(c.value).date().isoformat()
+                d["display"] = rt.from_serial(c.value, self.date_system).date().isoformat()
         return d
 
 
@@ -169,6 +171,7 @@ def load(path: str | Path, *, name: str | None = None) -> Model:
     raw = path.read_bytes()
     wb_f = openpyxl.load_workbook(path, data_only=False)
     wb_v = openpyxl.load_workbook(path, data_only=True)
+    date_system = "1904" if wb_f.epoch.year == 1904 else "1900"
     diagnostics: list[dict] = []
     if path.suffix.lower() == ".xlsm" or getattr(wb_f, "vba_archive", None):
         diagnostics.append({"kind": "macros", "message": "El libro contiene macros VBA: no se ejecutan; solo se compilan las fórmulas."})
@@ -186,18 +189,20 @@ def load(path: str | Path, *, name: str | None = None) -> Model:
                 if v is None:
                     continue
                 key = (ws.title, c.row, c.column)
-                cached = _plain(vs.cell(c.row, c.column).value)
+                cached = _plain(vs.cell(c.row, c.column).value, date_system)
+                is_formula = c.data_type == "f"
                 if isinstance(v, ArrayFormula):
                     if v.ref and ":" in v.ref and v.ref.split(":")[0] != v.ref.split(":")[1]:
                         cells[key] = Cell(key, formula=v.text, value=cached, frozen="fórmula matricial de varias celdas", number_format=c.number_format)
                         continue
                     v = v.text
-                if isinstance(v, str) and v.startswith("=") and len(v) > 1:
+                    is_formula = True
+                if is_formula and isinstance(v, str) and v.startswith("=") and len(v) > 1:
                     cells[key] = Cell(key, formula=v, value=cached, number_format=c.number_format)
                 elif not isinstance(v, (str, int, float, bool, dt.datetime, dt.date, dt.time)):
                     cells[key] = Cell(key, formula=str(v), value=cached, frozen=f"tipo de fórmula no soportado ({type(v).__name__})")
                 else:
-                    cells[key] = Cell(key, value=_plain(v), number_format=c.number_format)
+                    cells[key] = Cell(key, value=_plain(v, date_system), number_format=c.number_format)
         rules = [(dv.formula1, str(dv.sqref)) for dv in ws.data_validations.dataValidation if dv.type == "list" and dv.formula1]
         rules += x14.get(ws.title, [])
         for formula1, sqref in rules:
@@ -237,11 +242,12 @@ def load(path: str | Path, *, name: str | None = None) -> Model:
         elif not any(n[0] in ("ref", "range") for n in walk(ast)) and not cell.volatile:
             # =0,21 or =TRUE(): a constant typed as a formula is a parameter, not a calculation
             from .engine import literal_value
-            lit = literal_value(ast)
+            lit = literal_value(ast, date_system=date_system)
             if lit is not None:
                 cell.value, cell.formula, cell.ast = lit, None, None
                 cell.literal_formula = True
     model = _graph(name or path.stem, hashlib.sha256(raw).hexdigest(), sheets, cells, options, names_text, diagnostics)
+    model.date_system = date_system
     _label(model, wb_v)
     return model
 
@@ -281,20 +287,21 @@ def _x14_list_validations(path: Path) -> dict[str, list[tuple[str, str]]]:
 
 
 def _validation_options(formula1: str, sheet: str, wb_v) -> list | None:
+    date_system = "1904" if wb_v.epoch.year == 1904 else "1900"
     f = formula1.strip()
     if f.startswith('"') and f.endswith('"'):
-        return [_plain(x) for x in f[1:-1].split(",")]
+        return [_plain(x, date_system) for x in f[1:-1].split(",")]
     node = parse_reference(f.lstrip("="), sheet)
     if node and node[0] in ("ref", "range") and node[1] in wb_v.sheetnames:
         ws = wb_v[node[1]]
         if node[0] == "ref":
-            return [_plain(ws.cell(node[2], node[3]).value)]
+            return [_plain(ws.cell(node[2], node[3]).value, date_system)]
         vals = []
         for r in range(node[2], min(node[4], ws.max_row) + 1):
             for c in range(node[3], min(node[5], ws.max_column) + 1):
                 v = ws.cell(r, c).value
                 if v is not None:
-                    vals.append(_plain(v))
+                    vals.append(_plain(v, date_system))
         return vals
     return None
 
@@ -539,6 +546,7 @@ def generate(model: Model) -> str:
     """Python source of the model's calculation (expects the runtime names in scope)."""
     g = _Gen()
     lines = ["# Generated by Nightingale's Hoard from workbook " + repr(model.name) + " (sha256 " + model.sha256[:12] + ")",
+             f"DATE_SYSTEM = {model.date_system!r}",
              "CELLS = ["]
     for k in model.order:
         c = model.cells[k]
@@ -578,10 +586,11 @@ def evaluate(values, as_of=None):
         r2, c2 = min(r2, max(mr, r1)), min(c2, max(mc, c1))
         return Area([[V.get((sheet, r, c)) for c in range(c1, c2 + 1)] for r in range(r1, r2 + 1)])
 
-    C = _Context(as_of)
-    for key, fn in CELLS:
-        if fn is None:
-            continue
-        V[key] = normalise(guard(lambda: fn(V, R, C)))
+    with date_context(DATE_SYSTEM):
+        C = _Context(as_of)
+        for key, fn in CELLS:
+            if fn is None:
+                continue
+            V[key] = normalise(guard(lambda: fn(V, R, C)))
     return V
 '''
