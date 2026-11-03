@@ -793,6 +793,123 @@ def _run_migrate(s: Services, a: MigrateArgs) -> dict:
     return mg.rehearse_spec(s, a.spec, a.name, a.save_rejected, a.sample, source="agent")
 
 
+class TwinArgs(BaseModel):
+    action: Literal["fit", "simulate", "list", "get", "delete"] = Field(
+        "list", description="fit = learn a dynamic model from a time series (saved when name is given); simulate = what-if "
+        "with an input profile on a saved twin; list/get/delete = stored twins.")
+    name: Optional[str] = Field(None, description="twin name (fit saves under it; simulate/get/delete need it)")
+    dataset: Optional[str] = Field(None, description="fit: dataset name")
+    time: Optional[str] = Field(None, description="fit: time column (numeric or date); rows must be regularly spaced")
+    outputs: Optional[list[str]] = Field(None, description="fit: output (measured response) columns")
+    inputs: Optional[list[str]] = Field(None, description="fit: input (control) columns")
+    model: Literal["arx", "fopdt", "auto"] = Field("arx", description="fit: arx = multi-output linear ARX with lag chosen on a "
+                                                   "selection block; fopdt = first order plus dead time (one input, one output); "
+                                                   "auto = pick the better on the held-out block")
+    max_lag: Optional[int] = Field(None, ge=1, le=12, description="fit: largest lag order tried (default 8)")
+    validation_fraction: float = Field(0.25, description="fit: share of the record held out at the end (0.1 to 0.5)")
+    input_lag_start: int = Field(1, description="fit: first input lag in samples (0 allows an instantaneous effect)")
+    n_boot: int = Field(200, ge=20, le=500, description="fit: bootstrap refits for parameter uncertainty")
+    seed: int = 0
+    profile: Optional[dict[str, Any]] = Field(None, description="simulate: per input a number (held), a list of values per step, "
+                                              "{step:{at,from,to}} or {ramp:{from,to}}; inputs not listed hold their last value")
+    steps: Optional[int] = Field(None, ge=1, le=5000, description="simulate: number of steps ahead")
+    initial: Optional[dict[str, Any]] = Field(None, description="simulate: {outputs:{name:value}, inputs:{name:value}} to start "
+                                              "from a steady state instead of the end of the record")
+    level: Optional[float] = Field(None, gt=0.5, lt=1, description="simulate: interval level (default 0.95)")
+    allow_extrapolation: bool = Field(False, description="simulate: run even when an input lies far outside the training range")
+    max_extrapolation: float = Field(0.25, ge=0, le=5, description="simulate: refuse beyond this excess, as a fraction of the training range")
+    save_as: Optional[str] = Field(None, description="simulate: also save the simulated series as a dataset")
+
+
+def _run_twin(s: Services, a: TwinArgs) -> dict:
+    from . import twin as tw
+    need = lambda v, what: v if v else (_ for _ in ()).throw(ValueError(f"{what} is required for {a.action}"))  # noqa: E731
+    if a.action == "list":
+        return tw.list_twins(s)
+    if a.action == "get":
+        return tw.get_twin(s, need(a.name, "name"))
+    if a.action == "delete":
+        return tw.delete_twin(s, need(a.name, "name"), source="agent")
+    if a.action == "simulate":
+        return tw.simulate_twin(s, need(a.name, "name"), a.profile, a.steps, a.initial, a.level, 300, a.seed,
+                                a.allow_extrapolation, a.max_extrapolation, a.save_as, source="agent")
+    return tw.fit_twin(s, need(a.dataset, "dataset"), a.time, need(a.outputs, "outputs"), need(a.inputs, "inputs"), a.model,
+                       a.max_lag, a.validation_fraction, a.input_lag_start, a.n_boot, a.seed, a.name, source="agent")
+
+
+class ExperimentArgs(BaseModel):
+    action: Literal["design", "analyze", "next", "choose_test"] = Field(
+        "design", description="design = plan runs; analyze = effects and response surface from results; next = the run(s) to "
+        "measure next; choose_test = cheapest informative test among discrete hypotheses.")
+    factors: Optional[list[dict[str, Any]]] = Field(None, description="design/analyze/next: [{name, low, high, integer?}]; "
+                                                    "for analyze/next low/high may be omitted (taken from the data)")
+    kind: Literal["full", "fractional", "ccd", "lhs"] = Field("fractional", description="design: 2-level full or fractional "
+                                                              "factorial, central composite, or Latin hypercube")
+    fraction: Optional[int] = Field(None, description="design: fractional p in 2^(k-p) (default: largest meeting min_resolution)")
+    min_resolution: int = Field(4, description="design: minimum resolution for an automatic fraction (3 to 5)")
+    max_runs: Optional[int] = Field(None, description="design: prefer designs with at most this many runs")
+    center_points: Optional[int] = Field(None, description="design: centre replicates (default 3 factorial, 4 ccd)")
+    variant: Literal["face", "inscribed", "circumscribed"] = Field("face", description="design ccd: axial placement")
+    runs: Optional[int] = Field(None, description="design lhs: number of runs")
+    seed: int = 0
+    randomize: bool = True
+    forbidden: Optional[list[Any]] = Field(None, description="forbidden combinations: expression strings like 'A + B > 15 and C < 2' "
+                                           "or boxes {factor:[low,high]}")
+    save_as: Optional[str] = Field(None, description="design: also save the plan as a dataset")
+    dataset: Optional[str] = Field(None, description="analyze/next: dataset with factor columns and the response")
+    response: Optional[str] = Field(None, description="analyze/next: response column")
+    model: Literal["auto", "main", "interactions", "quadratic"] = "auto"
+    level: float = Field(0.95, gt=0.5, lt=1)
+    objective: Literal["explore", "maximize", "minimize"] = Field("explore", description="next: explore = largest prediction "
+                                                                  "variance; maximize/minimize = expected improvement")
+    n: int = Field(1, ge=1, le=20, description="next: how many runs to recommend")
+    candidates: Optional[list[dict[str, Any]]] = Field(None, description="next: restrict to these settings (default: sampled feasible points)")
+    hypotheses: Optional[list[Any]] = Field(None, description="choose_test: names or [{name, prior}]")
+    tests: Optional[list[dict[str, Any]]] = Field(None, description="choose_test: [{name, cost, outcomes:{hypothesis: label or "
+                                                  "{label: probability}}}]")
+    threshold: float = Field(0.95, gt=0.5, le=1, description="choose_test: stop planning when one hypothesis reaches this posterior")
+
+
+def _run_experiment(s: Services, a: ExperimentArgs) -> dict:
+    from . import experiments as ex
+    need = lambda v, what: v if v else (_ for _ in ()).throw(ValueError(f"{what} is required for {a.action}"))  # noqa: E731
+    if a.action == "design":
+        return ex.design(s, need(a.factors, "factors"), a.kind, a.save_as, "agent", fraction=a.fraction, min_resolution=a.min_resolution,
+                         max_runs=a.max_runs, center_points=a.center_points, variant=a.variant, runs=a.runs, seed=a.seed,
+                         randomize=a.randomize, forbidden=a.forbidden)
+    if a.action == "analyze":
+        return ex.analyze(s, need(a.dataset, "dataset"), need(a.factors, "factors"), need(a.response, "response"), a.model, a.level, source="agent")
+    if a.action == "next":
+        return ex.next_run(s, need(a.dataset, "dataset"), need(a.factors, "factors"), need(a.response, "response"), a.objective, a.n,
+                           a.model, a.forbidden, a.candidates, a.seed, source="agent")
+    return ex.choose(s, need(a.hypotheses, "hypotheses"), need(a.tests, "tests"), a.threshold, source="agent")
+
+
+class EffectArgs(BaseModel):
+    method: Literal["did", "its", "adjust"] = Field(
+        description="did = difference-in-differences with a control group; its = interrupted time series (level and slope "
+        "change); adjust = regression adjustment for listed confounders.")
+    dataset: str
+    outcome: str = Field(description="outcome column")
+    time: Optional[str] = Field(None, description="did/its: time column (numeric or date)")
+    intervention: Optional[Any] = Field(None, description="did/its: the time the change happened (number or date, e.g. 2026-03-01)")
+    group: Optional[str] = Field(None, description="did: group column")
+    treated_value: Optional[Any] = Field(None, description="did/adjust: the value marking the treated group (default 1/true)")
+    unit: Optional[str] = Field(None, description="did: unit id column for cluster-robust errors")
+    confounders: Optional[list[str]] = Field(None, description="did/adjust: covariate columns to adjust for (text columns become dummies)")
+    treatment: Optional[str] = Field(None, description="adjust: treatment column (binary or numeric dose)")
+    placebo_time: Optional[Any] = Field(None, description="did: fake change time inside the pre-period (default: its middle)")
+    placebo_outcome: Optional[str] = Field(None, description="adjust: an outcome the change cannot affect, to test for hidden bias")
+    season_period: Optional[int] = Field(None, ge=2, le=366, description="its: seasonal period in steps (adds seasonal dummies)")
+    level: float = Field(0.95, gt=0.5, lt=1)
+
+
+def _run_effect(s: Services, a: EffectArgs) -> dict:
+    from . import effects as ef
+    return ef.estimate(s, a.method, a.dataset, a.outcome, a.time, a.intervention, a.group, a.treated_value, a.unit, a.confounders,
+                       a.treatment, a.placebo_time, a.placebo_outcome, a.season_period, a.level, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -926,6 +1043,31 @@ TOOLS: list[Tool] = [
          "Sinónimos: ensayo de migración, simulacro de migración, migrar datos, cargar en SQLite, filas rechazadas, claves "
          "foráneas, idempotencia, cuadre de totales, migration dry run.",
          MigrateArgs, _ann(False, False, False), _run_migrate, capped=False),
+    Tool("data_twin", "Learn a dynamic twin from a time series and simulate what-ifs with prediction intervals.\n"
+         "fit: interpretable linear ARX (lag chosen on a selection block) or first-order-plus-dead-time model; the last part of "
+         "the record is held out and scored (one-step and free-run NRMSE, residual autocorrelation, interval coverage); parameters, "
+         "steady-state gains and poles carry bootstrap uncertainty. simulate: an input profile on a saved twin gives the response "
+         "with an interval and a baseline; it refuses to extrapolate far outside the input range seen in training and flags "
+         "mild excursions. Twins are saved by name.\n"
+         "Sinónimos: gemelo digital, modelo dinámico, identificación de sistemas, respuesta a escalón, ARX, qué pasa si cambio, "
+         "simular proceso, predicción con intervalo, system identification, digital twin.",
+         TwinArgs, _ann(False, False, False), _run_twin, capped=False),
+    Tool("data_experiment", "Design experiments, analyse the results and decide what to measure next.\n"
+         "design: 2-level full or fractional factorial (resolution, generators, aliases), central composite or seeded Latin "
+         "hypercube, with bounds and forbidden combinations. analyze: main effects, interactions and a response surface with "
+         "confidence intervals (Lenth when saturated), curvature and lack-of-fit checks. next: the run(s) with the largest "
+         "prediction variance or best expected improvement, with the reason. choose_test: among hypotheses with predicted "
+         "outcomes per test, the best information gain per cost.\n"
+         "Sinónimos: diseño de experimentos, DOE, factorial fraccionado, superficie de respuesta, hipercubo latino, "
+         "próximo experimento, qué medir ahora, ganancia de información, optimización experimental.",
+         ExperimentArgs, _ann(False, False, False), _run_experiment, capped=False),
+    Tool("data_effect", "Estimate the effect of a change from data: difference-in-differences, interrupted time series, adjustment.\n"
+         "Gives the effect with a confidence interval, the assumptions the design needs with their status (parallel pre-trends, "
+         "placebo dates, pre-trend linearity, balance and overlap, robustness to an unmeasured confounder) and explicit warnings "
+         "when a testable assumption fails. Never claims causation: untestable assumptions are named.\n"
+         "Sinónimos: efecto de una intervención, diferencias en diferencias, serie temporal interrumpida, antes y después, "
+         "grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its.",
+         EffectArgs, _ann(False, False, False), _run_effect, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
