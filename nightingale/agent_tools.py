@@ -904,8 +904,8 @@ TOOLS: list[Tool] = [
          "Sinónimos: conciliar tablas, cuadrar dos excel, comparar clientes de dos sistemas, filas que faltan, "
          "duplicados entre tablas, correspondencia de columnas, reconcile, match records.",
          ReconcileArgs, _ann(False, False, False), _run_reconcile, capped=False),
-    Tool("data_scenario", "Scenario lab: model demand, capacity, service times, stock and cost of an operation, "
-         "simulate it (discrete events, seeded, replications with 95% intervals) and compare variants.\n"
+    Tool("data_scenario", "Simulate an operation (demand, capacity, times, stock, cost) and compare scenarios.\n"
+         "Scenario lab: discrete events, seeded, replications with 95% intervals. "
          "Gives scenarios under stated assumptions, not predictions. Results include throughput, lead time "
          "(mean/p50/p90), waiting, utilisation and queue per station, WIP, lost jobs, stockouts and total cost, a "
          "Little's-law check and, for a single M/M/c station, the Erlang-C waiting time. compare runs named "
