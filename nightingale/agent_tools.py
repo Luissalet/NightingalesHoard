@@ -757,6 +757,86 @@ def _run_scenario(s: Services, a: ScenarioArgs) -> dict:
         return sc.sweep_scenario(s, a.name, a.model, need(a.param, "param"), need(a.values, "values"),
                                  a.replications, a.seed, a.save_as, source="agent")
     return sc.calibrate_scenario(s, need(a.dataset, "dataset"), need(a.column, "column"), a.kind, a.unit, source="agent")
+class FabQuoteArgs(BaseModel):
+    action: Literal["templates", "vulcan", "create", "list", "get", "delete", "set", "options", "scenario_save",
+                    "scenario_delete", "compare", "sensitivity", "actual", "actuals", "actual_delete", "export"] = Field(
+        "list", description="templates = processes with their parameters; vulcan = fetch measurements of a library model "
+        "(preview, nothing saved); create = new quote (process + measurements/parameters/rate_card/vulcan_model_id); "
+        "list/get/delete = stored quotes by name; set = change base parameters (reports the items that changed and why); "
+        "options = volume_only policy; scenario_save/scenario_delete = named assumption variations; compare = scenarios "
+        "against the base with diffs; sensitivity = one-at-a-time +-pct on parameters; actual = record what a line item "
+        "really cost or took; actuals = actual versus quote per item; actual_delete; export = json, csv or markdown.")
+    name: Optional[str] = Field(None, description="quote name")
+    process: Optional[Literal["fdm", "cnc_laser", "concrete"]] = Field(None, description="create: manufacturing process template")
+    measurements: Optional[dict[str, Any]] = Field(None, description="create: measured values {parameter: number | "
+                                                   "{value, unit}}, e.g. volume_cm3, surface_cm2, part_height_mm, cut_length_mm. "
+                                                   "Missing ones stay missing and block the items that need them")
+    parameters: Optional[dict[str, Any]] = Field(None, description="create/set: {parameter: number | {value, unit, source, note}}; "
+                                                 "source is user, assumed, measured or rate card")
+    rate_card: Optional[dict[str, Any]] = Field(None, description="create: rates and prices {parameter: value}; source = rate card")
+    vulcan_model_id: Optional[str] = Field(None, description="create/vulcan: id of a Vulcan library model whose measurements "
+                                           "are fetched (optional; provenance recorded)")
+    vulcan_url: Optional[str] = Field(None, description="Vulcan base URL (default http://127.0.0.1:5186)")
+    target: Optional[str] = Field(None, description="vulcan: destination of the inspection report (default fdm-print)")
+    volume_only: Optional[Literal["coarse", "block"]] = Field(None, description="create/options: what to do when FDM time can "
+                                                              "only be estimated from volume: coarse (labelled estimate) or block")
+    currency: Literal["EUR", "USD"] = "EUR"
+    spec: Optional[dict[str, Any]] = Field(None, description="create: a complete custom definition instead of a template")
+    replace: bool = Field(False, description="create: overwrite an existing quote")
+    scenario: Optional[str] = Field(None, description="scenario name (scenario_save/scenario_delete; sensitivity, actuals, export on it)")
+    overrides: Optional[dict[str, Any]] = Field(None, description="scenario_save: {parameter: number | {value, unit, source}}")
+    description: str = Field("", description="scenario_save: free text")
+    scenario_names: Optional[list[str]] = Field(None, description="compare: which scenarios (default all)")
+    params: Optional[list[str]] = Field(None, description="sensitivity: parameters to vary (default every numeric one in use)")
+    pct: float = Field(10.0, gt=0, lt=100, description="sensitivity: variation in percent")
+    item: Optional[str] = Field(None, description="actual: line item or derived quantity id")
+    value: Optional[float] = Field(None, description="actual: what it really cost or took")
+    unit: Optional[str] = Field(None, description="actual: unit of value (default the item's own)")
+    ledger_ref: Optional[str] = Field(None, description="actual: id of the related movement in the books (reference only)")
+    note: str = ""
+    actual_id: Optional[int] = Field(None, description="actual_delete: record id")
+    format: Literal["json", "csv", "markdown"] = "json"
+
+
+def _run_fabquote(s: Services, a: FabQuoteArgs) -> dict:
+    from . import fabquote as fq
+    need = lambda v, what: v if v not in (None, "") else (_ for _ in ()).throw(ValueError(f"{what} is required for {a.action}"))  # noqa: E731
+    if a.action == "templates":
+        return fq.templates()
+    if a.action == "list":
+        return fq.list_quotes(s)
+    if a.action == "vulcan":
+        return fq.fetch_vulcan(need(a.vulcan_model_id, "vulcan_model_id"), a.vulcan_url, a.target or "fdm-print")
+    n = lambda: need(a.name, "name")  # noqa: E731
+    if a.action == "create":
+        vul = {"model_id": a.vulcan_model_id, "base_url": a.vulcan_url, "target": a.target} if a.vulcan_model_id else None
+        return fq.create_quote(s, n(), a.process, a.measurements, a.parameters, a.rate_card, vul, a.volume_only,
+                               a.currency, a.spec, a.replace, source="agent")
+    if a.action == "get":
+        return fq.get_quote(s, n())
+    if a.action == "delete":
+        return fq.delete_quote(s, n(), source="agent")
+    if a.action == "set":
+        return fq.set_parameters(s, n(), need(a.parameters, "parameters"), source="agent")
+    if a.action == "options":
+        return fq.set_options(s, n(), need(a.volume_only, "volume_only"), source="agent")
+    if a.action == "scenario_save":
+        return fq.save_scenario(s, n(), need(a.scenario, "scenario"), need(a.overrides, "overrides"), a.description, source="agent")
+    if a.action == "scenario_delete":
+        return fq.delete_scenario(s, n(), need(a.scenario, "scenario"), source="agent")
+    if a.action == "compare":
+        return fq.compare_scenarios(s, n(), a.scenario_names, source="agent")
+    if a.action == "sensitivity":
+        return fq.run_sensitivity(s, n(), a.params, a.pct, a.scenario, source="agent")
+    if a.action == "actual":
+        return fq.record_actual(s, n(), need(a.item, "item"), need(a.value, "value"), a.unit, a.ledger_ref, a.note, source="agent")
+    if a.action == "actuals":
+        return fq.compare_actuals(s, n(), a.scenario)
+    if a.action == "actual_delete":
+        return fq.delete_actual(s, n(), need(a.actual_id, "actual_id"), source="agent")
+    return fq.export_quote(s, n(), a.format, a.scenario)
+
+
 class MigrateArgs(BaseModel):
     action: Literal["suggest", "save", "list", "get", "delete", "rehearse", "ddl"] = Field(
         "list", description="suggest = draft a target table from a dataset (a labelled suggestion, not applied); "
@@ -1118,6 +1198,20 @@ TOOLS: list[Tool] = [
          "Sinónimos: simulación, escenarios, qué pasaría si, colas, capacidad, cuello de botella, plantilla, turnos, "
          "inventario, punto de pedido, rotura de stock, simulación de eventos discretos, Erlang, what-if.",
          ScenarioArgs, _ann(False, False, False), _run_scenario, capped=False),
+    Tool("data_fabquote", "Fabrication quote by scenario: parameters with units and sources, formula line items, actuals.\n"
+         "Vulcan measures and prepares, this tool computes with explicit rates, density and settings; the books record "
+         "what happened. Line items are split into geometric material, process material, setup, labour, machine, waste "
+         "and margin, each a formula over named parameters (Pint units, dependency graph). Templates: fdm, cnc_laser, "
+         "concrete. FDM time is never taken from solid volume alone without a labelled coarse-estimate warning (or a "
+         "block); concrete printing refuses volume-only time and needs toolpath length, speed and layers. Missing "
+         "measurements are never invented: they block the items that need them. scenario_save/compare recompute only the "
+         "dependent items and give a before/after diff with formulas and sources; sensitivity varies one parameter at a "
+         "time; actual/actuals compare real costs and times with the quote per item (optional reference to a ledger "
+         "movement, nothing is written there); export gives json, csv or markdown. Geometry may come from Vulcan "
+         "(vulcan_model_id, optional, with provenance).\n"
+         "Sinónimos: presupuesto de fabricación, impresión 3D, FDM, hormigón, corte láser, CNC, coste de pieza, tarifa, "
+         "escenarios de coste, sensibilidad, desperdicio, tiempo de máquina, calibración con costes reales, quote.",
+         FabQuoteArgs, _ann(False, False, False), _run_fabquote, capped=False),
     Tool("data_migrate", "Rehearse a data migration before the real one: load datasets into a target schema in a fresh SQLite file.\n"
          "The spec names target tables, typed columns (expression over source columns, representation or correction), primary, "
          "unique and foreign keys, total checks and functional query checks. rehearse loads parents first and reports per table "
@@ -1190,7 +1284,7 @@ def tool_catalog() -> list[dict]:
 
 #: tools whose human-readable messages can be asked for in Spanish with an extra `lang` argument
 LANG_TOOLS = frozenset({"data_workbook", "data_reconcile", "data_scenario", "data_migrate", "data_process", "data_twin",
-                        "data_experiment", "data_effect"})
+                        "data_experiment", "data_effect", "data_fabquote"})
 
 
 def call_tool_sync(services: Services, name: str, arguments: dict | None) -> Any:
