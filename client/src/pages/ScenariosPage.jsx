@@ -136,7 +136,7 @@ export default function ScenariosPage() {
             {arr.type !== "poisson" && <span className="help">{t("sc_arr_json")}</span>}
           </div>
           <table className="w-full text-[13px]" data-testid="sc-stations">
-            <thead><tr><th className="text-left">{t("sc_station")}</th><th className="text-right">{t("sc_servers")}</th><th className="text-left">{t("sc_service")}</th><th className="text-right">{t("sc_mean_h")}</th><th className="text-right">{t("sc_buffer")}</th><th className="text-left">{t("sc_if_full")}</th><th /></tr></thead>
+            <thead><tr><th className="px-2 font-medium text-left">{t("sc_station")}</th><th className="px-2 font-medium text-right">{t("sc_servers")}</th><th className="px-2 font-medium text-left">{t("sc_service")}</th><th className="px-2 font-medium text-right">{t("sc_mean_h")}</th><th className="px-2 font-medium text-right">{t("sc_buffer")}</th><th className="px-2 font-medium text-left">{t("sc_if_full")}</th><th /></tr></thead>
             <tbody>{model.stations.map((s, i) => {
               const d = s.service?.dist;
               const simple = d === "fixed" || d === "exponential";
