@@ -2156,6 +2156,206 @@
     "module": "data"
   },
   {
+    "name": "data_scenario",
+    "description": "Scenario lab: model demand, capacity, service times, stock and cost of an operation, simulate it (discrete events, seeded, replications with 95% intervals) and compare variants.\nGives scenarios under stated assumptions, not predictions. Results include throughput, lead time (mean/p50/p90), waiting, utilisation and queue per station, WIP, lost jobs, stockouts and total cost, a Little's-law check and, for a single M/M/c station, the Erlang-C waiting time. compare runs named overrides with common random numbers and says which differences are distinguishable; sweep varies one parameter; calibrate fits arrivals or service times from a dataset column and reports the sample size and warns when it is small. Models are saved by name.\nSinónimos: simulación, escenarios, qué pasaría si, colas, capacidad, cuello de botella, plantilla, turnos, inventario, punto de pedido, rotura de stock, simulación de eventos discretos, Erlang, what-if.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "default": "list",
+          "description": "save/list/get/delete = stored models by name; run = simulate; compare = named variants against the base with common random numbers; sweep = one parameter over a list of values; calibrate = fit a distribution from a dataset column.",
+          "enum": [
+            "save",
+            "list",
+            "get",
+            "delete",
+            "run",
+            "compare",
+            "sweep",
+            "calibrate"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "saved model name (save/get/delete; run/compare/sweep may use it instead of an inline model)",
+          "title": "Name"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "model JSON: horizon_hours, warmup_hours, replications, seed, arrivals {type: poisson|schedule|empirical, rate|rates|values}, job_types [{name, mix, service_scale}], stations [{name, servers, service {dist: fixed|exponential|uniform|triangular|lognormal|empirical}, shifts, buffer, on_full: lose|block}], costs {server_hour, waiting_hour, lost_job, holding_unit_hour, order, stockout_event}, inventory {station, initial, reorder_point, order_quantity, per_job, lead_time}. Times in hours. An empirical distribution may be {dist:'empirical', dataset, column, unit}.",
+          "title": "Model"
+        },
+        "variants": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "compare: [{name, overrides: {path: value}}], paths like stations.Packing.servers or arrivals.rate",
+          "title": "Variants"
+        },
+        "param": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sweep: override path to vary",
+          "title": "Param"
+        },
+        "values": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sweep: values for param (max 40)",
+          "title": "Values"
+        },
+        "replications": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replications"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "horizon_hours": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run: override the model horizon",
+          "title": "Horizon Hours"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate: dataset name",
+          "title": "Dataset"
+        },
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate: column",
+          "title": "Column"
+        },
+        "kind": {
+          "default": "service",
+          "description": "calibrate: column holds service durations, inter-arrival durations or arrival timestamps",
+          "enum": [
+            "service",
+            "interarrival",
+            "timestamps"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "unit": {
+          "default": "hours",
+          "description": "calibrate: unit of duration columns (hours, minutes, seconds, days)",
+          "title": "Unit",
+          "type": "string"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run/compare/sweep: also save the results as a dataset",
+          "title": "Save As"
+        }
+      },
+      "title": "ScenarioArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_log",
     "description": "Search the analysis log (every operation, with its N-000123 id, input and result).\nSinónimos: historial, registro de análisis, qué se ha hecho.",
     "annotations": {

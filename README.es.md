@@ -235,7 +235,7 @@ una transformación antes de aplicarla cuando el efecto no sea obviamente seguro
 nombre de un conjunto de datos (`data_list` primero), y que cite el id del registro de análisis
 (`N-000123`) al informar de un resultado. Cálculo aporta otras 20 herramientas nativas,
 documentadas en [su referencia](fusion/laplace-docs/MCP.md), con las tres colisiones prefijadas
-como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 45 (23 Datos, 20 Cálculo y 2 controles).
+como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 46 (24 Datos, 20 Cálculo y 2 controles).
 
 ## Pruebas
 
@@ -282,3 +282,7 @@ Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), 
 ## Conciliar dos conjuntos
 
 Compara dos conjuntos fila a fila por uno o varios pares de columnas clave (por ejemplo, una exportación del CRM frente al ERP). Nightingale sugiere pares de clave y de valor por parecido de nombres y solapamiento de valores, y clasifica cada fila como emparejada, solo izquierda, solo derecha, ambigua (clave duplicada) o sin clave, y cada celda comparada como igual, igual dentro de la tolerancia, distinta, cero frente a vacío, vacío frente a ausente o presente en un solo lado. Opciones de normalización: recortar espacios, ignorar mayúsculas, comparación numérica, vacío como ausente y tolerancia numérica. Cada recuento lleva ejemplos y una explicación; el resultado fila a fila se puede guardar como conjunto nuevo o descargar en CSV. Página **Conciliar**, API `/api/reconcile/*` (`suggest`, `run`, `export.csv`), herramienta `data_reconcile`. Cada ejecución queda en el registro de análisis.
+
+## Laboratorio de escenarios
+
+Describe una operación como un modelo (llegadas por tasa de Poisson, calendario horario o tiempos entre llegadas medidos; estaciones con servidores, turnos, colas limitadas y distribuciones de tiempo de servicio; costes; y, opcionalmente, un artículo de stock con punto de pedido y plazo de reposición) y simúlalo con un motor de eventos discretos con semilla. Cada ejecución usa varias réplicas y da media e intervalo del 95 % de rendimiento, plazo (media, mediana, p90), espera, utilización y cola por estación, trabajo en curso, trabajos perdidos, roturas de stock y coste, además de una comprobación de la ley de Little y, para una sola estación M/M/c, el tiempo de espera de Erlang-C junto al simulado. Las variantes con nombre se comparan con números aleatorios comunes y cada diferencia se marca como distinguible o no; un barrido varía un parámetro sobre una lista de valores. La calibración lee duraciones o marcas de tiempo de una columna, informa del tamaño de muestra y avisa si es pequeño. El resultado son escenarios bajo supuestos declarados, no una predicción. Los modelos se guardan por nombre y los resultados pueden guardarse como conjuntos. Página **Escenarios**, API `/api/scenarios/*`, herramienta `data_scenario`. Cada ejecución queda en el registro de análisis.

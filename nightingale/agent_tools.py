@@ -703,6 +703,60 @@ def _run_reconcile(s: Services, a: ReconcileArgs) -> dict:
                                   a.sample, a.save_as, source="agent")
 
 
+class ScenarioArgs(BaseModel):
+    action: Literal["save", "list", "get", "delete", "run", "compare", "sweep", "calibrate"] = Field(
+        "list", description="save/list/get/delete = stored models by name; run = simulate; compare = named variants "
+        "against the base with common random numbers; sweep = one parameter over a list of values; calibrate = "
+        "fit a distribution from a dataset column.")
+    name: Optional[str] = Field(None, description="saved model name (save/get/delete; run/compare/sweep may use it "
+                                "instead of an inline model)")
+    model: Optional[dict[str, Any]] = Field(None, description="model JSON: horizon_hours, warmup_hours, replications, "
+                                            "seed, arrivals {type: poisson|schedule|empirical, rate|rates|values}, "
+                                            "job_types [{name, mix, service_scale}], stations [{name, servers, "
+                                            "service {dist: fixed|exponential|uniform|triangular|lognormal|empirical}, "
+                                            "shifts, buffer, on_full: lose|block}], costs {server_hour, waiting_hour, "
+                                            "lost_job, holding_unit_hour, order, stockout_event}, inventory {station, "
+                                            "initial, reorder_point, order_quantity, per_job, lead_time}. Times in "
+                                            "hours. An empirical distribution may be {dist:'empirical', dataset, "
+                                            "column, unit}.")
+    variants: Optional[list[dict[str, Any]]] = Field(None, description="compare: [{name, overrides: {path: value}}], "
+                                                     "paths like stations.Packing.servers or arrivals.rate")
+    param: Optional[str] = Field(None, description="sweep: override path to vary")
+    values: Optional[list[Any]] = Field(None, description="sweep: values for param (max 40)")
+    replications: Optional[int] = Field(None, ge=1, le=200)
+    seed: Optional[int] = None
+    horizon_hours: Optional[float] = Field(None, gt=0, description="run: override the model horizon")
+    dataset: Optional[str] = Field(None, description="calibrate: dataset name")
+    column: Optional[str] = Field(None, description="calibrate: column")
+    kind: Literal["service", "interarrival", "timestamps"] = Field("service", description="calibrate: column holds "
+                                                                  "service durations, inter-arrival durations or "
+                                                                  "arrival timestamps")
+    unit: str = Field("hours", description="calibrate: unit of duration columns (hours, minutes, seconds, days)")
+    save_as: Optional[str] = Field(None, description="run/compare/sweep: also save the results as a dataset")
+
+
+def _run_scenario(s: Services, a: ScenarioArgs) -> dict:
+    from . import scenarios as sc
+    need = lambda v, what: v if v else (_ for _ in ()).throw(ValueError(f"{what} is required for {a.action}"))  # noqa: E731
+    if a.action == "list":
+        return sc.list_models(s)
+    if a.action == "get":
+        return sc.get_model(s, need(a.name, "name"))
+    if a.action == "save":
+        return sc.save_model(s, need(a.name, "name"), need(a.model, "model"), source="agent")
+    if a.action == "delete":
+        return sc.delete_model(s, need(a.name, "name"), source="agent")
+    if a.action == "run":
+        return sc.run_scenario(s, a.name, a.model, a.replications, a.seed, a.horizon_hours, a.save_as, source="agent")
+    if a.action == "compare":
+        return sc.compare_scenarios(s, a.name, a.model, need(a.variants, "variants"), a.replications, a.seed,
+                                    a.save_as, source="agent")
+    if a.action == "sweep":
+        return sc.sweep_scenario(s, a.name, a.model, need(a.param, "param"), need(a.values, "values"),
+                                 a.replications, a.seed, a.save_as, source="agent")
+    return sc.calibrate_scenario(s, need(a.dataset, "dataset"), need(a.column, "column"), a.kind, a.unit, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -815,6 +869,17 @@ TOOLS: list[Tool] = [
          "Sinónimos: conciliar tablas, cuadrar dos excel, comparar clientes de dos sistemas, filas que faltan, "
          "duplicados entre tablas, correspondencia de columnas, reconcile, match records.",
          ReconcileArgs, _ann(False, False, False), _run_reconcile, capped=False),
+    Tool("data_scenario", "Scenario lab: model demand, capacity, service times, stock and cost of an operation, "
+         "simulate it (discrete events, seeded, replications with 95% intervals) and compare variants.\n"
+         "Gives scenarios under stated assumptions, not predictions. Results include throughput, lead time "
+         "(mean/p50/p90), waiting, utilisation and queue per station, WIP, lost jobs, stockouts and total cost, a "
+         "Little's-law check and, for a single M/M/c station, the Erlang-C waiting time. compare runs named "
+         "overrides with common random numbers and says which differences are distinguishable; sweep varies one "
+         "parameter; calibrate fits arrivals or service times from a dataset column and reports the sample size and "
+         "warns when it is small. Models are saved by name.\n"
+         "Sinónimos: simulación, escenarios, qué pasaría si, colas, capacidad, cuello de botella, plantilla, turnos, "
+         "inventario, punto de pedido, rotura de stock, simulación de eventos discretos, Erlang, what-if.",
+         ScenarioArgs, _ann(False, False, False), _run_scenario, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
