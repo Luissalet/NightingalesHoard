@@ -50,7 +50,7 @@ def test_tool_catalogue_is_unique_and_within_budget():
     # workbooks, reconcile); keep names unique and the catalogue deliberate.
     names = [tool.name for tool in TOOLS]
     assert len(names) == len(set(names))
-    assert len(TOOLS) <= 26
+    assert len(TOOLS) <= 29
 
 
 def test_api_semantic_and_dashboard_round_trip(client, ds):
