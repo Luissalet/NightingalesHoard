@@ -75,6 +75,10 @@ export const api = {
   workbookTrace: (id, cell) => get(`/api/sheets/${id}/trace`, { cell }),
   workbookDelete: (id) => del(`/api/sheets/${id}`),
 
+  reconcileSuggest: (left, right) => post("/api/reconcile/suggest", { left, right }),
+  reconcileRun: (body) => post("/api/reconcile/run", body),
+  reconcileExport: (body) => download("api/reconcile/export.csv", body),
+
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
   qualityDefine: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/quality`, body),

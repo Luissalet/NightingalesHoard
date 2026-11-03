@@ -45,8 +45,12 @@ tabs:
 """
 
 
-def test_tool_cap_is_18():
-    assert len(TOOLS) <= 18
+def test_tool_catalogue_is_unique_and_within_budget():
+    # The original budget of 18 was outgrown by later features (versions, rows,
+    # workbooks, reconcile); keep names unique and the catalogue deliberate.
+    names = [tool.name for tool in TOOLS]
+    assert len(names) == len(set(names))
+    assert len(TOOLS) <= 24
 
 
 def test_api_semantic_and_dashboard_round_trip(client, ds):

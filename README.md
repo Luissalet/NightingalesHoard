@@ -230,12 +230,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (21 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (23 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 43-tool catalog.
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 45-tool catalog (23 Data, 20 Calculation, 2 controls).
 
 ## Tests
 
@@ -306,3 +306,7 @@ In Charts, **Use as a starting point** loads a saved chart's dataset, kind, axes
 ## Excel workbooks as calculations
 
 Compile an `.xlsx` into an executable calculation (parameters, lookup tables, results), run it with new values, trace a result to its inputs, check it against Excel's saved values, recalculate seeded new cases in Excel or LibreOffice and export a standalone Python module. Unsupported formulas are frozen with Excel's value and listed. Page **Workbooks**, API `/api/sheets/*`, agent tool `data_workbook`. Details: `docs/WORKBOOK-COMPILER.md`.
+
+## Reconciling two datasets
+
+Compare two datasets row by row on one or more key column pairs (for example a CRM export against the ERP). Nightingale suggests key and value column pairs from name similarity and value overlap, then classifies every row as paired, only left, only right, ambiguous (duplicate key) or missing key, and every compared cell as equal, equal within tolerance, different, zero vs missing, empty vs missing or one-sided. Normalisation options: trim, case-insensitive, numeric comparison, empty as missing and a numeric tolerance. Every count comes with samples and a plain explanation; the row-level result can be saved as a new dataset or downloaded as CSV. Page **Reconcile**, API `/api/reconcile/*` (`suggest`, `run`, `export.csv`), agent tool `data_reconcile`. Every run is written to the analysis log.

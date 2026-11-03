@@ -1912,6 +1912,134 @@
     "module": "data"
   },
   {
+    "name": "data_reconcile",
+    "description": "Reconcile two datasets that should describe the same things, row by row and cell by cell.\nsuggest profiles both and proposes column correspondences and key candidates with evidence (shared values, name similarity, uniqueness); nothing is applied. run pairs rows only on the keys you choose: every row ends paired, only on one side, ambiguous (key repeated) or with a missing key, and every compared cell is equal, within tolerance, different, zero versus missing, empty versus missing, value on one side only or missing on both. Nothing is dropped or multiplied; save_as keeps every row with its bucket as a new dataset.\nSinónimos: conciliar tablas, cuadrar dos excel, comparar clientes de dos sistemas, filas que faltan, duplicados entre tablas, correspondencia de columnas, reconcile, match records.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "$defs": {
+        "ReconcilePair": {
+          "properties": {
+            "left": {
+              "title": "Left",
+              "type": "string"
+            },
+            "right": {
+              "title": "Right",
+              "type": "string"
+            }
+          },
+          "required": [
+            "left",
+            "right"
+          ],
+          "title": "ReconcilePair",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "action": {
+          "default": "suggest",
+          "description": "suggest = profile both datasets and propose column correspondences and key candidates with their evidence (nothing applied); run = reconcile on the keys you choose.",
+          "enum": [
+            "suggest",
+            "run"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "left": {
+          "description": "left dataset name",
+          "title": "Left",
+          "type": "string"
+        },
+        "right": {
+          "description": "right dataset name",
+          "title": "Right",
+          "type": "string"
+        },
+        "keys": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReconcilePair"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run: key column pairs; keys are never guessed",
+          "title": "Keys"
+        },
+        "compare": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReconcilePair"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run: column pairs to compare cell by cell (default: same-named non-key columns)",
+          "title": "Compare"
+        },
+        "options": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run: trim, case_insensitive, numeric, empty_as_missing (key normalisation, all off by default) and tolerance (numbers)",
+          "title": "Options"
+        },
+        "sample": {
+          "default": 10,
+          "description": "run: example rows per bucket",
+          "maximum": 200,
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "run: save every row with its bucket as a new dataset",
+          "title": "Save As"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "title": "ReconcileArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_log",
     "description": "Search the analysis log (every operation, with its N-000123 id, input and result).\nSinónimos: historial, registro de análisis, qué se ha hecho.",
     "annotations": {
