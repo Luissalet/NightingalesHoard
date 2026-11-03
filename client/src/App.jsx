@@ -15,6 +15,7 @@ import LogPage from "./pages/LogPage.jsx";
 import WorkbooksPage from "./pages/WorkbooksPage.jsx";
 import ReconcilePage from "./pages/ReconcilePage.jsx";
 import ScenariosPage from "./pages/ScenariosPage.jsx";
+import FabQuotePage from "./pages/FabQuotePage.jsx";
 import ProcessPage from "./pages/ProcessPage.jsx";
 import ExperimentsPage from "./pages/ExperimentsPage.jsx";
 import MigratePage from "./pages/MigratePage.jsx";
@@ -31,6 +32,7 @@ const PAGES = [
   { path: "workbooks", labelKey: "nav_workbooks", icon: "M4 4h16v16H4zM4 9h16M4 14h16M9 4v16M14 4v16", component: WorkbooksPage },
   { path: "reconcile", labelKey: "nav_reconcile", icon: "M4 7h11m0 0l-3-3m3 3l-3 3M20 17H9m0 0l3-3m-3 3l3 3", component: ReconcilePage },
   { path: "scenarios", labelKey: "nav_scenarios", icon: "M3 20h18M5 20V10m5 10V4m5 16v-7m5 7V8", component: ScenariosPage },
+  { path: "fabquote", labelKey: "nav_fabquote", icon: "M12 2v4m0 12v4M4.9 4.9l2.8 2.8m8.6 8.6l2.8 2.8M2 12h4m12 0h4M4.9 19.1l2.8-2.8m8.6-8.6l2.8-2.8M9 9h6v6H9z", component: FabQuotePage },
   { path: "process", labelKey: "nav_process", icon: "M4 5h6v5H4zM14 5h6v5h-6zM9 14h6v5H9zM7 10v2h10v-2M12 12v2", component: ProcessPage },
   { path: "experiments", labelKey: "nav_experiments", icon: "M9 3v6.5L4.5 18a1.8 1.8 0 001.6 2.6h11.8a1.8 1.8 0 001.6-2.6L15 9.5V3M9 3h6M7 15l3-2 2 3 3-4", component: ExperimentsPage },
   { path: "migrate", labelKey: "nav_migrate", icon: "M3 5c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM3 5v6c0 1.1 3.6 2 8 2m-8 0v6c0 1.1 3.6 2 8 2M21 13l-4 4m4 0l-4-4", component: MigratePage },

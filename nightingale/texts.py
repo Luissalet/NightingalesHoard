@@ -1954,3 +1954,148 @@ register({
         "en": "dataset is required (or a recipe that names it)",
         "es": "hace falta el conjunto de datos (o una receta que lo indique)"},
 })
+
+
+# ======================================================================= fabrication quotes (fq.*)
+register({
+    "fq.caveat": {
+        "en": "A quote by scenario under the stated parameters: every figure follows from the listed formulas, units and "
+              "sources. Assumed values are placeholders to be replaced; nothing here is a measured cost until actuals are recorded.",
+        "es": "Presupuesto por escenarios bajo los parámetros indicados: cada cifra sale de las fórmulas, unidades y "
+              "fuentes enumeradas. Los valores supuestos son provisionales y deben sustituirse; nada de esto es un coste "
+              "medido hasta que se registren los reales."},
+    "fq.name": {
+        "en": "the quote name must start with a letter or digit and use only letters, digits, spaces, _ . - (max 60)",
+        "es": "el nombre del presupuesto debe empezar por letra o dígito y usar solo letras, dígitos, espacios, _ . - (máx. 60)"},
+    "fq.unknown_process": {
+        "en": "unknown process {process!r}; choose one of {valid}",
+        "es": "proceso desconocido {process!r}; elige uno de {valid}"},
+    "fq.unknown_quote": {
+        "en": "unknown quote {name!r}; saved: {saved}", "es": "presupuesto desconocido {name!r}; guardados: {saved}"},
+    "fq.exists": {
+        "en": "a quote named {name!r} already exists (use replace to overwrite it)",
+        "es": "ya existe un presupuesto llamado {name!r} (usa replace para sobrescribirlo)"},
+    "fq.bad_spec": {"en": "the quote definition must be an object", "es": "la definición del presupuesto debe ser un objeto"},
+    "fq.bad_currency": {"en": "unsupported currency {currency!r} (EUR or USD)", "es": "moneda no admitida {currency!r} (EUR o USD)"},
+    "fq.bad_policy": {
+        "en": "volume_only must be one of {valid}, not {value!r}",
+        "es": "volume_only debe ser uno de {valid}, no {value!r}"},
+    "fq.bad_param_name": {
+        "en": "invalid name {name!r}: use a letter or _ first, then letters, digits or _",
+        "es": "nombre no válido {name!r}: empieza por letra o _ y sigue con letras, dígitos o _"},
+    "fq.bad_param": {"en": "parameter {name}: {why}", "es": "parámetro {name}: {why}"},
+    "fq.not_a_number": {"en": "the value must be a finite number or empty", "es": "el valor debe ser un número finito o estar vacío"},
+    "fq.bad_source": {
+        "en": "unknown source {source!r}; use one of {valid}", "es": "fuente desconocida {source!r}; usa una de {valid}"},
+    "fq.unknown_param": {
+        "en": "unknown parameter {name!r}; known: {known}", "es": "parámetro desconocido {name!r}; conocidos: {known}"},
+    "fq.unit_mismatch": {
+        "en": "{name}: the unit {unit!r} cannot be converted to {expected!r}",
+        "es": "{name}: la unidad {unit!r} no se puede convertir a {expected!r}"},
+    "fq.dup_id": {"en": "the name {name!r} is used twice", "es": "el nombre {name!r} está repetido"},
+    "fq.bad_category": {
+        "en": "unknown category {category!r}; use one of {valid}", "es": "categoría desconocida {category!r}; usa una de {valid}"},
+    "fq.no_formula": {"en": "{name} has no formula", "es": "{name} no tiene fórmula"},
+    "fq.formula_syntax": {
+        "en": "formula {formula!r} is not valid: {detail}", "es": "la fórmula {formula!r} no es válida: {detail}"},
+    "fq.formula_forbidden": {
+        "en": "formula element not allowed: {what} (only numbers, names, + - * / **, min, max, abs, ceil, floor, round, sqrt, "
+              "and a comparison inside «a if b < c else d»)",
+        "es": "elemento de fórmula no permitido: {what} (solo números, nombres, + - * / **, min, max, abs, ceil, floor, "
+              "round, sqrt y una comparación dentro de «a if b < c else d»)"},
+    "fq.unknown_name": {"en": "unknown name {name!r} in a formula", "es": "nombre desconocido {name!r} en una fórmula"},
+    "fq.unknown_name_in_formula": {
+        "en": "{item}: the formula uses {name!r}, which is not a parameter, derived quantity or item",
+        "es": "{item}: la fórmula usa {name!r}, que no es un parámetro, una magnitud derivada ni una partida"},
+    "fq.cycle": {"en": "the formulas depend on each other in a loop: {path}", "es": "las fórmulas dependen unas de otras en bucle: {path}"},
+    "fq.div_zero": {"en": "division by zero in a formula", "es": "división por cero en una fórmula"},
+    "fq.need_dimensionless": {
+        "en": "{what} needs a dimensionless value", "es": "{what} necesita un valor sin unidades"},
+    "fq.eval_error": {
+        "en": "cannot evaluate {formula!r}: {detail}", "es": "no se puede evaluar {formula!r}: {detail}"},
+    "fq.blocked_missing": {
+        "en": "blocked: missing {missing}. Nothing is estimated for a measurement that was not given.",
+        "es": "bloqueada: falta {missing}. No se estima ninguna medida que no se haya dado."},
+    "fq.blocked_concrete_volume": {
+        "en": "blocked: concrete print time is not derived from the solid volume. It needs the toolpath length, the print speed "
+              "and the layer count or height (missing: {missing}).",
+        "es": "bloqueada: el tiempo de impresión de hormigón no se deduce del volumen sólido. Necesita la longitud de "
+              "trayectoria, la velocidad de impresión y el número o la altura de capa (falta: {missing})."},
+    "fq.blocked_coarse_policy": {
+        "en": "blocked by option: {id} could only be estimated coarsely from volume and the quote is set to block coarse estimates",
+        "es": "bloqueada por opción: {id} solo se podía estimar de forma gruesa a partir del volumen y el presupuesto está "
+              "configurado para bloquear estimaciones gruesas"},
+    "fq.warn_coarse_time": {
+        "en": "coarse estimate: the print time comes from the volume alone with an assumed throughput. Give a slicer time, or "
+              "layer height, speed and part height, for a real figure.",
+        "es": "estimación gruesa: el tiempo de impresión sale solo del volumen con un rendimiento supuesto. Aporta el "
+              "tiempo del segmentador, o altura de capa, velocidad y altura de la pieza, para una cifra real."},
+    "fq.warn_coarse_fill": {
+        "en": "coarse estimate: the printed volume uses an assumed fill fraction because the surface area is missing",
+        "es": "estimación gruesa: el volumen impreso usa una fracción de relleno supuesta porque falta la superficie"},
+    "fq.warn_incomplete": {
+        "en": "the total is partial: these items are blocked: {items}", "es": "el total es parcial: estas partidas están bloqueadas: {items}"},
+    "fq.warn_assumed": {
+        "en": "{n} parameters in use are assumed, not measured or quoted: {names}",
+        "es": "{n} parámetros en uso son supuestos, no medidos ni de tarifa: {names}"},
+    "fq.concrete_rule": {
+        "en": "concrete printing needs a «print_time_h» quantity whose every formula uses toolpath_length_m and "
+              "print_speed_mm_s and is not a coarse estimate: print time is never derived from the volume",
+        "es": "la impresión de hormigón necesita una magnitud «print_time_h» cuyas fórmulas usen todas "
+              "toolpath_length_m y print_speed_mm_s y no sean una estimación gruesa: el tiempo nunca se deduce del volumen"},
+    "fq.nothing_to_set": {"en": "no parameters given", "es": "no se ha dado ningún parámetro"},
+    "fq.scenario_name": {
+        "en": "scenario names use letters, digits, spaces, _ . - (max 40) and cannot be «Base»",
+        "es": "los nombres de escenario usan letras, dígitos, espacios, _ . - (máx. 40) y no pueden ser «Base»"},
+    "fq.scenario_empty": {"en": "a scenario needs at least one parameter override", "es": "un escenario necesita al menos un parámetro modificado"},
+    "fq.scenario_unknown": {
+        "en": "unknown scenario {scenario!r}; saved: {known}", "es": "escenario desconocido {scenario!r}; guardados: {known}"},
+    "fq.scenario_none": {"en": "no scenarios saved yet; save one first", "es": "aún no hay escenarios guardados; guarda uno primero"},
+    "fq.bad_pct": {"en": "pct must be between 0 and 100 (exclusive)", "es": "pct debe estar entre 0 y 100 (sin incluirlos)"},
+    "fq.sens_missing": {"en": "the parameter has no value", "es": "el parámetro no tiene valor"},
+    "fq.sens_no_params": {"en": "no parameter to vary", "es": "no hay ningún parámetro que variar"},
+    "fq.sens_method": {
+        "en": "One at a time: each parameter set to -{pct}% and +{pct}% of its value while the rest stay as they are; only the "
+              "items that depend on it are recomputed.",
+        "es": "De uno en uno: cada parámetro al -{pct} % y al +{pct} % de su valor mientras el resto se mantiene; solo se "
+              "recalculan las partidas que dependen de él."},
+    "fq.actual_unknown_item": {
+        "en": "unknown item {item!r}; known: {known}", "es": "partida desconocida {item!r}; conocidas: {known}"},
+    "fq.actual_unknown": {"en": "no actual record with id {id}", "es": "no hay ningún real con id {id}"},
+    "fq.actual_value": {"en": "the actual value must be a finite number", "es": "el valor real debe ser un número finito"},
+    "fq.actual_unit": {
+        "en": "{item}: the unit {unit!r} cannot be converted to {expected!r}",
+        "es": "{item}: la unidad {unit!r} no se puede convertir a {expected!r}"},
+    "fq.actuals_subset": {
+        "en": "Only items that have recorded actuals are compared, so the totals are not diluted by items still open.",
+        "es": "Solo se comparan las partidas con reales registrados, para que los totales no se diluyan con partidas aún abiertas."},
+    "fq.calibration_note": {
+        "en": "Actuals are facts kept next to the quote for calibration. The ratio actual/quote suggests which assumption "
+              "to revisit; no parameter is changed automatically and nothing is written to the books.",
+        "es": "Los reales son hechos guardados junto al presupuesto para calibrar. La razón real/presupuesto indica qué "
+              "supuesto revisar; ningún parámetro se cambia solo y no se escribe nada en la contabilidad."},
+    "fq.export_format": {"en": "unknown export format {fmt!r}; use json, csv or markdown", "es": "formato de exportación desconocido {fmt!r}; usa json, csv o markdown"},
+    "fq.md_params": {"en": "Parameters", "es": "Parámetros"},
+    "fq.md_items": {"en": "Line items and derived quantities", "es": "Partidas y magnitudes derivadas"},
+    "fq.md_total": {"en": "Total", "es": "Total"},
+    "fq.md_partial": {"en": "partial: some items are blocked", "es": "parcial: hay partidas bloqueadas"},
+    "fq.md_warnings": {"en": "Warnings", "es": "Avisos"},
+    "fq.vulcan_model_id": {"en": "a Vulcan model id is required", "es": "hace falta el identificador del modelo de Vulcan"},
+    "fq.vulcan_http": {"en": "Vulcan answered {code} for {url}", "es": "Vulcan respondió {code} en {url}"},
+    "fq.vulcan_unreachable": {
+        "en": "Vulcan is not reachable at {url} ({detail}). Give the measurements explicitly instead.",
+        "es": "Vulcan no responde en {url} ({detail}). Da las medidas de forma explícita."},
+    "fq.vulcan_bad_payload": {"en": "Vulcan returned something that is not a model description ({url})", "es": "Vulcan devolvió algo que no es la descripción de un modelo ({url})"},
+    "fq.vulcan_field_missing": {
+        "en": "Vulcan gave no {field}: it stays missing and blocks the items that need it",
+        "es": "Vulcan no dio {field}: queda sin valor y bloquea las partidas que lo necesitan"},
+    "fq.vulcan_units_unknown": {
+        "en": "Vulcan's units guess is {value!r}: the bounding box was not used because its unit is not known",
+        "es": "la unidad estimada por Vulcan es {value!r}: no se usa la caja envolvente porque se desconoce su unidad"},
+    "fq.vulcan_not_watertight": {
+        "en": "the mesh is not watertight: its volume may be wrong, check it before relying on material figures",
+        "es": "la malla no es estanca: su volumen puede ser erróneo, compruébalo antes de fiarte de las cifras de material"},
+    "fq.vulcan_no_inspection": {
+        "en": "the destination report of Vulcan could not be read ({detail})",
+        "es": "no se pudo leer el informe de destino de Vulcan ({detail})"},
+})

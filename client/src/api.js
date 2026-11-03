@@ -9,7 +9,7 @@ let apiLang = null;
 export function setApiLang(lang) {
   apiLang = lang === "es" || lang === "en" ? lang : null;
 }
-const LOCALISED = /^\/?api\/(process|twin|scenarios|experiment|effect|migrate|reconcile|sheets)\//;
+const LOCALISED = /^\/?api\/(process|twin|scenarios|experiment|effect|migrate|reconcile|sheets|fabquote)\//;
 function withLang(url, path) {
   if (LOCALISED.test(path) && !url.searchParams.has("lang")) url.searchParams.set("lang", apiLang || detectLang());
   return url;
@@ -130,6 +130,19 @@ export const api = {
   migrateRehearse: (body) => post("/api/migrate/rehearse", body),
   migrateDdl: (body) => download("api/migrate/ddl.sql", body),
   migrateFile: (name) => downloadGet(`api/migrate/file/${encodeURIComponent(name)}`),
+
+  fabquoteQuotes: () => get("/api/fabquote/quotes"),
+  fabquoteGet: (name) => get(`/api/fabquote/quotes/${encodeURIComponent(name)}`),
+  fabquoteCreate: (body) => post("/api/fabquote/quotes", body),
+  fabquoteDelete: (name) => del(`/api/fabquote/quotes/${encodeURIComponent(name)}`),
+  fabquoteSetParams: (name, parameters) => put(`/api/fabquote/quotes/${encodeURIComponent(name)}/parameters`, { parameters }),
+  fabquoteScenarioSave: (name, scenario, overrides) => put(`/api/fabquote/quotes/${encodeURIComponent(name)}/scenarios/${encodeURIComponent(scenario)}`, { overrides }),
+  fabquoteScenarioDelete: (name, scenario) => del(`/api/fabquote/quotes/${encodeURIComponent(name)}/scenarios/${encodeURIComponent(scenario)}`),
+  fabquoteCompare: (name) => get(`/api/fabquote/quotes/${encodeURIComponent(name)}/compare`),
+  fabquoteSensitivity: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/sensitivity`, body),
+  fabquoteActual: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/actuals`, body),
+  fabquoteActuals: (name) => get(`/api/fabquote/quotes/${encodeURIComponent(name)}/actuals`),
+  fabquoteExport: (name, format) => downloadGet(`api/fabquote/quotes/${encodeURIComponent(name)}/export?format=${format}&download=true`),
 
   processSuggest: (dataset) => post("/api/process/suggest", { dataset }),
   processDiscover: (body) => post("/api/process/discover", body),

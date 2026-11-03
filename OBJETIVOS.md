@@ -9,3 +9,7 @@ Ampliar funciones y tipos de fórmula cuando haya un encargo y una referencia in
 ## Registro de eventos
 
 Entregado el corte vertical de perfil, calibración con periodo reservado y receta. Pendiente para ampliar: llegadas con estacionalidad horaria en la calibración, emparejamiento de ciclo de vida por recurso cuando hay instancias solapadas de la misma actividad, y edición de la propuesta de modelo antes de simularla (hoy se revisa y se guarda en Escenarios para editarla allí).
+
+## Presupuestos de fabricación por escenarios
+
+Entregado el corte vertical (`nightingale/fabquote.py`, `data_fabquote`, página Presupuestos de fabricación): parámetros con unidades y fuentes, partidas por categoría, plantillas FDM, CNC/láser y hormigón, escenarios, sensibilidad, reales frente a presupuesto y exportación. Pendiente para ampliar: calibración automática de tarifas y rendimientos a partir de varios trabajos reales (hoy solo se compara y se sugiere la razón real/presupuesto), lectura de la trayectoria desde un archivo de segmentador o de trayectorias, partidas de superficies superiores e inferiores en FDM, y lectura del informe de inspección de Vulcan como avisos estructurados.
