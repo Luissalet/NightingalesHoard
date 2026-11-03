@@ -230,12 +230,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (23 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (24 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 45-tool catalog (23 Data, 20 Calculation, 2 controls).
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 46-tool catalog (24 Data, 20 Calculation, 2 controls).
 
 ## Tests
 
@@ -310,3 +310,7 @@ Compile an `.xlsx` into an executable calculation (parameters, lookup tables, re
 ## Reconciling two datasets
 
 Compare two datasets row by row on one or more key column pairs (for example a CRM export against the ERP). Nightingale suggests key and value column pairs from name similarity and value overlap, then classifies every row as paired, only left, only right, ambiguous (duplicate key) or missing key, and every compared cell as equal, equal within tolerance, different, zero vs missing, empty vs missing or one-sided. Normalisation options: trim, case-insensitive, numeric comparison, empty as missing and a numeric tolerance. Every count comes with samples and a plain explanation; the row-level result can be saved as a new dataset or downloaded as CSV. Page **Reconcile**, API `/api/reconcile/*` (`suggest`, `run`, `export.csv`), agent tool `data_reconcile`. Every run is written to the analysis log.
+
+## Scenario lab
+
+Describe an operation as a model (arrivals by Poisson rate, hourly schedule or measured inter-arrival times; stations with servers, shifts, buffers and service-time distributions; costs; an optional stock item with reorder point and lead time) and simulate it with a seeded discrete-event engine. Each run uses several replications and reports mean and 95% interval for throughput, lead time (mean, median, p90), waiting, utilisation and queue per station, WIP, lost jobs, stockouts and cost, plus a Little's-law check and, for a single M/M/c station, the Erlang-C waiting time next to the simulated one. Named variants are compared with common random numbers and each difference is marked distinguishable or not; a sweep varies one parameter over a list of values. Calibration reads durations or timestamps from a dataset column, reports the sample size and warns when it is small. The output is a set of scenarios under stated assumptions, not a prediction. Models are saved by name; results can be saved as datasets. Page **Scenarios**, API `/api/scenarios/*`, agent tool `data_scenario`. Every run is written to the analysis log.
