@@ -2473,7 +2473,7 @@
   },
   {
     "name": "data_process",
-    "description": "Process mining: discover a process from an event log, check conformance, rehearse changes.\nFrom case id, activity and timestamp (optional start, resource, cost): directly-follows graph with frequencies and waiting times, variants with shares, rework loops, throughput times, bottlenecks and resource workload. conform checks every case against a reference (ordered steps with optional/parallel markers, or allowed transitions) and lists skipped, inserted, repeated and reordered steps with counts and example cases. rehearse builds a simulation model of the process, validates the baseline against the observed throughput time (and says when it is not representative), then compares changes (add a resource, remove a step, change a routing share, shorten a duration) with common random numbers and 95% intervals. Durations are in hours. Logged.\nSinónimos: minería de procesos, descubrimiento de procesos, registro de eventos, cuello de botella, variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining.",
+    "description": "Process mining: discover a process from an event log, check conformance, rehearse changes.\nFrom case id, activity and timestamp (optional start, resource, cost): directly-follows graph with frequencies and waiting times, variants with shares, rework loops, throughput times, bottlenecks and resource workload. conform checks every case against a reference (ordered steps with optional/parallel markers, or allowed transitions) and lists skipped, inserted, repeated and reordered steps with counts and example cases. rehearse builds a simulation model of the process, validates the baseline against the observed throughput time (and says when it is not representative), then compares changes (add a resource, remove a step, change a routing share, shorten a duration) with common random numbers and 95% intervals. profile checks the event log itself (start/complete lifecycle or start column, zone, duplicates, ties, invalid timestamps, open cases, missing steps) and separates service from waiting where it can; calibrate fits a model with the provenance of every parameter on the cases before a temporal split and checks it on the held-out cases (it can fail and says so); export returns the profile and recipe with a dataset reference. The dataset is never modified. Durations are in hours, instants in UTC. Logged.\nSinónimos: minería de procesos, descubrimiento de procesos, registro de eventos, cuello de botella, variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining, perfil del registro de eventos, inicio y fin, espera y servicio, calibración con periodo reservado, receta.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -2484,20 +2484,31 @@
       "properties": {
         "action": {
           "default": "discover",
-          "description": "suggest = propose the column mapping; discover = process map, variants, rework, throughput times, bottlenecks, resources; conform = check cases against a reference process; rehearse = simulate the discovered process and compare changes with the baseline.",
+          "description": "suggest = propose the column mapping; discover = process map, variants, rework, throughput times, bottlenecks, resources; conform = check cases against a reference process; rehearse = simulate the discovered process and compare changes with the baseline; profile = checked event log (duplicates, ties, invalid timestamps, zones, open cases, missing steps) with variants, graph coverage, times with n and percentiles, service vs waiting, concurrency, bottlenecks and deviations; calibrate = fit a scenario model on the cases before a temporal split, check it against the held-out cases (pass/fail) and compare variants with the same seeds; export = the profile and recipe as JSON with a reference to the dataset (no rows).",
           "enum": [
             "suggest",
             "discover",
             "conform",
-            "rehearse"
+            "rehearse",
+            "profile",
+            "calibrate",
+            "export"
           ],
           "title": "Action",
           "type": "string"
         },
         "dataset": {
-          "description": "event-log dataset: one row per event",
-          "title": "Dataset",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "event-log dataset: one row per event (or per start/complete event with a lifecycle column); optional when a recipe names it",
+          "title": "Dataset"
         },
         "mapping": {
           "anyOf": [
@@ -2519,8 +2530,79 @@
             }
           ],
           "default": null,
-          "description": "columns: {case, activity, timestamp (end of the step), start?, resource?, cost?}. Required except for suggest; a start column enables waiting vs working time and capacity.",
+          "description": "columns: {case, activity, timestamp (end of the step, or of the event), start?, lifecycle? (start/complete values; not together with start), resource?, cost?}. Required except for suggest; start times enable waiting vs working time and capacity.",
           "title": "Mapping"
+        },
+        "log_options": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "profile/calibrate/export: {timezone (IANA name or +01:00, for timestamps without an offset; default UTC), timestamp_format? (strptime), end_activities? [..] (cases not ending in one are open), expected? [ordered steps] (missing steps; its last step also closes a case), lifecycle_values? {start: [..], complete: [..]}}",
+          "title": "Log Options"
+        },
+        "holdout": {
+          "default": 0.3,
+          "description": "calibrate/export: share of the latest cases (by start) held out to check the model",
+          "maximum": 0.8,
+          "minimum": 0.05,
+          "title": "Holdout",
+          "type": "number"
+        },
+        "split_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate/export: split instant instead of holdout (ISO)",
+          "title": "Split At"
+        },
+        "tolerances": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate: relative tolerances {cycle_time_mean_hours, cycle_time_p50_hours, cycle_time_p90_hours, cases_per_hour, bottleneck_wait_mean_hours}",
+          "title": "Tolerances"
+        },
+        "with_calibration": {
+          "default": false,
+          "description": "export: include the holdout calibration",
+          "title": "With Calibration",
+          "type": "boolean"
+        },
+        "recipe": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "profile/calibrate: an exported recipe to re-run (mapping, options and settings; warns if the data changed)",
+          "title": "Recipe"
         },
         "threshold": {
           "default": 0.5,
@@ -2586,7 +2668,7 @@
         },
         "replications": {
           "default": 20,
-          "description": "rehearse: simulation replications",
+          "description": "rehearse/calibrate: simulation replications",
           "maximum": 100,
           "minimum": 1,
           "title": "Replications",
@@ -2594,7 +2676,7 @@
         },
         "seed": {
           "default": 1,
-          "description": "rehearse: random seed (shared by baseline and variants)",
+          "description": "rehearse/calibrate: random seed (shared by baseline and variants)",
           "title": "Seed",
           "type": "integer"
         },
@@ -2616,7 +2698,7 @@
             }
           ],
           "default": null,
-          "description": "rehearse: also store the discovered model in the scenario lab",
+          "description": "rehearse/calibrate: also store the model in the scenario lab",
           "title": "Model Name"
         },
         "save_as": {
@@ -2633,9 +2715,6 @@
           "title": "Save As"
         }
       },
-      "required": [
-        "dataset"
-      ],
       "title": "ProcessArgs",
       "type": "object"
     },

@@ -1695,3 +1695,262 @@ register({
     "wb.no_compiled": {
         "en": "no compiled workbook {wid!r}", "es": "no hay ningún libro compilado {wid!r}"},
 })
+
+# ======================================================================= event log, profile and calibration (el.*)
+register({
+    "el.bad_zone": {
+        "en": "timezone {zone!r} is not a known zone name (e.g. Europe/Madrid, UTC) or a fixed offset (+01:00)",
+        "es": "la zona horaria {zone!r} no es un nombre de zona conocido (p. ej. Europe/Madrid, UTC) ni un desfase "
+              "fijo (+01:00)"},
+    "el.bad_list": {
+        "en": "log_options.{key} must be a list of activity names",
+        "es": "log_options.{key} debe ser una lista de nombres de actividad"},
+    "el.bad_lifecycle_values": {
+        "en": "log_options.lifecycle_values must be {{start: [...], complete: [...]}}",
+        "es": "log_options.lifecycle_values debe ser {{start: [...], complete: [...]}}"},
+    "el.start_and_lifecycle": {
+        "en": "mapping: use either a start column (one row per step with start and end) or a lifecycle column (one "
+              "row per start/complete event), not both",
+        "es": "mapping: usa o bien una columna de inicio (una fila por paso con inicio y fin) o bien una columna de "
+              "ciclo de vida (una fila por evento start/complete), no las dos"},
+    "el.drop_lifecycle": {"en": "unknown lifecycle value", "es": "valor de ciclo de vida desconocido"},
+    "el.ordering": {
+        "en": "Raw events are ordered by timestamp, then lifecycle (start before complete), then source row; the "
+              "steps of a case by completion time, then source row. Equal completion times are ties: their order "
+              "is not inferred and the edges that depend on it are counted.",
+        "es": "Los eventos se ordenan por marca de tiempo, después por ciclo de vida (inicio antes que fin) y después "
+              "por fila de origen; los pasos de un caso, por momento de finalización y después por fila de origen. "
+              "Los momentos de finalización iguales son empates: su orden no se deduce y se cuentan las aristas que "
+              "dependen de él."},
+    "el.zone_note": {
+        "en": "Times without an offset were read as local time in {zone}; times with an offset keep it. Everything "
+              "is shown in UTC.",
+        "es": "Las horas sin desfase se han leído como hora local de {zone}; las que llevan desfase lo conservan. "
+              "Todo se muestra en UTC."},
+    "el.zone_note_ingest": {
+        "en": "The timestamp column was stored with time zone at import: values with an offset are exact instants, "
+              "values without one were read in the computer's zone at import (not the declared zone), and the "
+              "written offsets are no longer in the data, so zone changes cannot be listed. To keep them, import the "
+              "file again with the column as text (import option text_columns).",
+        "es": "La columna de tiempo se guardó con zona horaria al importar: los valores con desfase son instantes "
+              "exactos, los que no lo tenían se leyeron en la zona del equipo al importar (no en la zona declarada) "
+              "y los desfases escritos ya no están en los datos, así que no pueden listarse los cambios de zona. Para "
+              "conservarlos, vuelve a importar el archivo con la columna como texto (opción de importación "
+              "text_columns)."},
+    "el.no_closed": {
+        "en": "no closed case to profile ({n} open); check the declared end activities",
+        "es": "no hay ningún caso cerrado que perfilar ({n} abiertos); revisa las actividades finales declaradas"},
+    "el.coverage_note": {
+        "en": "Coverage: share of the observed transitions (and of the cases, end to end) that the kept edges "
+              "explain.",
+        "es": "Cobertura: proporción de las transiciones observadas (y de los casos completos) que explican las "
+              "aristas conservadas."},
+    "el.need_start": {
+        "en": "{act}: {n} instances have no start time, so its waiting and its work cannot be separated; record a "
+              "start event (or start column) for this step.",
+        "es": "{act}: {n} ejecuciones no tienen hora de inicio, así que su espera y su trabajo no pueden separarse; "
+              "registra un evento de inicio (o una columna de inicio) para este paso."},
+    "el.need_start_all": {
+        "en": "Missing data: start times. With only completion times, the time between two steps is elapsed time "
+              "(waiting plus work, not separable) and capacity cannot be estimated.",
+        "es": "Falta un dato: las horas de inicio. Con solo horas de finalización, el tiempo entre dos pasos es tiempo "
+              "transcurrido (espera más trabajo, no separables) y la capacidad no puede estimarse."},
+    "el.need_end": {
+        "en": "Missing data: which activities close a case. Until they are declared no case can be called open; "
+              "candidate (most frequent last activity, not applied): {act}.",
+        "es": "Falta un dato: qué actividades cierran un caso. Mientras no se declaren, ningún caso puede "
+              "considerarse abierto; candidata (última actividad más frecuente, no aplicada): {act}."},
+    "el.need_capacity": {
+        "en": "{act}: capacity is not identifiable without start times; record starts (and the resource) to "
+              "estimate it.",
+        "es": "{act}: la capacidad no es identificable sin horas de inicio; registra los inicios (y el recurso) para "
+              "estimarla."},
+    "el.explain_wait": {
+        "en": "Work accumulates before {act}: {share:.0f}% of all waiting, median {median:.2f} h, p90 {p90:.2f} h "
+              "(n = {n}); on average {avg:.2f} cases are waiting for it.",
+        "es": "El trabajo se acumula antes de {act}: {share:.0f} % de toda la espera, mediana {median:.2f} h, "
+              "p90 {p90:.2f} h (n = {n}); de media hay {avg:.2f} casos esperándolo."},
+    "el.explain_elapsed": {
+        "en": "Most elapsed time builds up before {act}: {share:.0f}% of it, median {median:.2f} h, p90 {p90:.2f} h "
+              "(n = {n}). Without start times this mixes waiting and work: it is not proven to be waiting.",
+        "es": "La mayor parte del tiempo transcurrido se acumula antes de {act}: {share:.0f} %, mediana "
+              "{median:.2f} h, p90 {p90:.2f} h (n = {n}). Sin horas de inicio esto mezcla espera y trabajo: no está "
+              "demostrado que sea espera."},
+    "el.explain_concurrency": {
+        "en": "{n} pairs of steps overlap in time inside a case (e.g. {a} and {b} in {cases} cases): they are "
+              "concurrent there, so their order in the graph is only the order of completion.",
+        "es": "{n} pares de pasos se solapan en el tiempo dentro de un caso (p. ej. {a} y {b} en {cases} casos): ahí "
+              "son concurrentes, así que su orden en el grafo es solo el orden de finalización."},
+    "el.times_sep": {
+        "en": "Service time = end − start of each step; waiting = start − the latest completion before it in the "
+              "case. Steps that start while another is running are counted as started in parallel, not as waiting.",
+        "es": "Tiempo de servicio = fin − inicio de cada paso; espera = inicio − la última finalización anterior del "
+              "caso. Los pasos que empiezan mientras otro está en curso se cuentan como iniciados en paralelo, no "
+              "como espera."},
+    "el.times_elapsed": {
+        "en": "Only elapsed times are available for some steps: the time since the previous completion includes "
+              "waiting and work and cannot be split.",
+        "es": "Para algunos pasos solo hay tiempos transcurridos: el tiempo desde la finalización anterior incluye "
+              "espera y trabajo y no puede dividirse."},
+    "el.warn_duplicates": {
+        "en": "{n} exact duplicate events were removed (listed with the row they repeat).",
+        "es": "Se han quitado {n} eventos duplicados exactos (se listan con la fila que repiten)."},
+    "el.warn_ties": {
+        "en": "{n} groups of steps finish at the same moment in a case: their order is not known and the graph "
+              "edges between them depend on the source-row order.",
+        "es": "{n} grupos de pasos terminan en el mismo momento dentro de un caso: su orden no se conoce y las "
+              "aristas del grafo entre ellos dependen del orden de las filas de origen."},
+    "el.warn_no_start_events": {
+        "en": "{n} completions have no matching start event: their service time is unknown.",
+        "es": "{n} finalizaciones no tienen evento de inicio correspondiente: su tiempo de servicio es desconocido."},
+    "el.warn_no_complete_events": {
+        "en": "{n} start events have no completion: those steps are in progress or the completion is missing.",
+        "es": "{n} eventos de inicio no tienen finalización: esos pasos están en curso o falta la finalización."},
+    "el.warn_zone_changes": {
+        "en": "{n} cases change UTC offset between their events (daylight saving or another zone): instants were "
+              "normalised to UTC with their own offsets.",
+        "es": "{n} casos cambian de desfase UTC entre sus eventos (horario de verano u otra zona): los instantes se "
+              "han normalizado a UTC con su propio desfase."},
+    "el.warn_open": {
+        "en": "{n} open (censored) cases are counted but left out of the time statistics and of model fitting.",
+        "es": "{n} casos abiertos (censurados) se cuentan, pero quedan fuera de las estadísticas de tiempo y del "
+              "ajuste del modelo."},
+    "el.caveat": {
+        "en": "Observed, descriptive results. A directly-follows count A → B does not prove that A causes B, and the "
+              "graph is not a complete concurrency model.",
+        "es": "Resultados observados y descriptivos. Un recuento de sucesión directa A → B no demuestra que A cause "
+              "B, y el grafo no es un modelo completo de concurrencia."},
+    "el.caveat_sim": {
+        "en": "Simulated scenarios under the stated assumptions (first-order routing, independent durations, the "
+              "fit period's arrivals), not safe predictions; a failed holdout check means the model should not be "
+              "trusted for decisions.",
+        "es": "Escenarios simulados bajo los supuestos indicados (enrutamiento de primer orden, duraciones "
+              "independientes, llegadas del periodo de ajuste), no predicciones seguras; si falla el contraste con "
+              "el periodo reservado, el modelo no es fiable para decidir."},
+    "el.why_skipped": {
+        "en": "An expected step does not appear in these closed cases.",
+        "es": "Un paso esperado no aparece en estos casos cerrados."},
+    "el.why_inserted": {
+        "en": "A step that is not in the expected sequence appears.",
+        "es": "Aparece un paso que no está en la secuencia esperada."},
+    "el.why_repeated": {
+        "en": "An expected step happens more than once (rework).",
+        "es": "Un paso esperado ocurre más de una vez (retrabajo)."},
+    "el.why_reordered": {
+        "en": "Two expected steps complete in the opposite order.",
+        "es": "Dos pasos esperados terminan en el orden contrario."},
+    "el.why_invalid": {
+        "en": "The time cannot be read (or does not exist in the declared zone): the row is left out.",
+        "es": "La hora no puede leerse (o no existe en la zona declarada): la fila queda fuera."},
+    "el.why_missing_ids": {
+        "en": "The row has no case or no activity: it is left out.",
+        "es": "La fila no tiene caso o actividad: queda fuera."},
+    "el.why_lifecycle": {
+        "en": "The lifecycle value is neither a start nor a completion: the row is left out.",
+        "es": "El valor de ciclo de vida no es ni inicio ni finalización: la fila queda fuera."},
+    "el.why_duplicate": {
+        "en": "Same case, activity, time, lifecycle, resource and cost as an earlier row: removed once.",
+        "es": "Mismo caso, actividad, hora, ciclo de vida, recurso y coste que una fila anterior: se quita."},
+    "el.why_tie": {
+        "en": "Steps that finish at the same moment: their real order is unknown.",
+        "es": "Pasos que terminan en el mismo momento: su orden real se desconoce."},
+    "el.why_no_start": {
+        "en": "A completion without a start: its service time is unknown.",
+        "es": "Una finalización sin inicio: su tiempo de servicio es desconocido."},
+    "el.why_no_complete": {
+        "en": "A start without a completion: the step is in progress or its end was not recorded.",
+        "es": "Un inicio sin finalización: el paso está en curso o su fin no se registró."},
+    "el.why_start_after_end": {
+        "en": "The start is later than the end: the duration was set to zero and the row is listed.",
+        "es": "El inicio es posterior al fin: la duración se ha puesto a cero y la fila se lista."},
+    "el.why_zone": {
+        "en": "The case's events carry different UTC offsets; they were normalised to UTC.",
+        "es": "Los eventos del caso llevan desfases UTC distintos; se han normalizado a UTC."},
+    "el.why_open": {
+        "en": "The case has not reached an end activity: it is censored and left out of times and fitting.",
+        "es": "El caso no ha llegado a una actividad final: está censurado y queda fuera de tiempos y ajuste."},
+    "el.src_case_starts": {"en": "case start times", "es": "momentos de inicio de los casos"},
+    "el.src_instances": {"en": "{n} instances of {act}", "es": "{n} ejecuciones de {act}"},
+    "el.est_service": {
+        "en": "empirical distribution of end − start per instance",
+        "es": "distribución empírica de fin − inicio por ejecución"},
+    "el.est_elapsed": {
+        "en": "empirical distribution of the time since the previous completion (waiting plus work; start not "
+              "recorded)",
+        "es": "distribución empírica del tiempo desde la finalización anterior (espera más trabajo; sin inicio "
+              "registrado)"},
+    "el.est_routing": {
+        "en": "observed share of each next step (first-order)",
+        "es": "proporción observada de cada paso siguiente (primer orden)"},
+    "el.bad_split": {
+        "en": "split_at {value!r} is not a readable date and time",
+        "es": "split_at {value!r} no es una fecha y hora legible"},
+    "el.holdout_range": {
+        "en": "holdout must be between 0.05 and 0.8 (share of the latest cases kept aside)",
+        "es": "holdout debe estar entre 0,05 y 0,8 (proporción de los casos más recientes que se reservan)"},
+    "el.few_fit": {
+        "en": "only {n} closed cases before the split; at least {min} are needed to fit the model",
+        "es": "solo hay {n} casos cerrados antes del corte; se necesitan al menos {min} para ajustar el modelo"},
+    "el.few_holdout": {
+        "en": "only {n} closed cases after the split; at least {min} are needed to check the model",
+        "es": "solo hay {n} casos cerrados después del corte; se necesitan al menos {min} para contrastar el "
+              "modelo"},
+    "el.bad_tolerance": {
+        "en": "unknown tolerance {key!r}; known: {keys}", "es": "tolerancia desconocida {key!r}; conocidas: {keys}"},
+    "el.bad_tolerance_value": {
+        "en": "tolerance {key!r} must be a number between 0 and 5 (relative difference)",
+        "es": "la tolerancia {key!r} debe ser un número entre 0 y 5 (diferencia relativa)"},
+    "el.not_evaluable": {
+        "en": "not evaluable (no observed or simulated value)",
+        "es": "no evaluable (sin valor observado o simulado)"},
+    "el.wait_not_identifiable": {
+        "en": "waiting before {act} is not identifiable without start times: not part of the verdict",
+        "es": "la espera antes de {act} no es identificable sin horas de inicio: no cuenta para el veredicto"},
+    "el.calib_pass": {
+        "en": "The model fitted on the first part reproduces the {test} held-out cases on all {n} checked metrics "
+              "within tolerance.",
+        "es": "El modelo ajustado con la primera parte reproduce los {test} casos reservados en las {n} métricas "
+              "contrastadas dentro de la tolerancia."},
+    "el.calib_fail": {
+        "en": "Calibration FAILED: the model fitted on the first part does not reproduce the {test} held-out cases "
+              "on {metrics}. Do not use its scenarios for decisions until the cause is found.",
+        "es": "La calibración HA FALLADO: el modelo ajustado con la primera parte no reproduce los {test} casos "
+              "reservados en {metrics}. No uses sus escenarios para decidir hasta encontrar la causa."},
+    "el.warn_small_holdout": {
+        "en": "Only {n} held-out cases: the observed percentiles are uncertain.",
+        "es": "Solo hay {n} casos reservados: los percentiles observados son inciertos."},
+    "el.alt_uncalibrated": {
+        "en": "The baseline failed the holdout check: this comparison is indicative only.",
+        "es": "La línea base no ha superado el contraste con el periodo reservado: esta comparación es solo "
+              "orientativa."},
+    "el.split_rule": {
+        "en": "Closed cases are ordered by start time; those that start before the split fit the model and the "
+              "rest are held out.",
+        "es": "Los casos cerrados se ordenan por momento de inicio; los que empiezan antes del corte ajustan el modelo "
+              "y el resto se reservan."},
+    "el.calib_method": {
+        "en": "The model is fitted only on the cases before the split (durations, routing shares, capacity, "
+              "arrivals), simulated with the scenario engine and compared with the held-out cases. Alternatives use "
+              "the same seed and replications as the baseline (common random numbers) and show 95% intervals of the "
+              "difference.",
+        "es": "El modelo se ajusta solo con los casos anteriores al corte (duraciones, proporciones de ruta, "
+              "capacidad, llegadas), se simula con el motor de escenarios y se compara con los casos reservados. Las "
+              "alternativas usan la misma semilla y réplicas que la línea base (números aleatorios comunes) y "
+              "muestran intervalos del 95 % de la diferencia."},
+    "el.dataset_changed": {
+        "en": "The data in {name!r} differ from the recipe's reference: results may not match the exported ones.",
+        "es": "Los datos de {name!r} no coinciden con la referencia de la receta: los resultados pueden no coincidir "
+              "con los exportados."},
+    "el.recipe_note": {
+        "en": "Recipe: mapping, options and settings with a reference to the data (name, version, fingerprint); "
+              "no rows are copied.",
+        "es": "Receta: correspondencia de columnas, opciones y ajustes con una referencia a los datos (nombre, "
+              "versión, huella); no se copia ninguna fila."},
+    "el.recipe_json": {"en": "recipe is not valid JSON: {exc}", "es": "la receta no es JSON válido: {exc}"},
+    "el.recipe_kind": {
+        "en": "this is not a process recipe exported by this app",
+        "es": "esto no es una receta de proceso exportada por esta aplicación"},
+    "el.need_dataset": {
+        "en": "dataset is required (or a recipe that names it)",
+        "es": "hace falta el conjunto de datos (o una receta que lo indique)"},
+})
