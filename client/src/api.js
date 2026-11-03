@@ -118,6 +118,16 @@ export const api = {
   processDiscover: (body) => post("/api/process/discover", body),
   processConform: (body) => post("/api/process/conform", body),
   processRehearse: (body) => post("/api/process/rehearse", body),
+  twinFit: (body) => post("/api/twin/fit", body),
+  twinList: () => get("/api/twin/models"),
+  twinGet: (name) => get(`/api/twin/models/${encodeURIComponent(name)}`),
+  twinDelete: (name) => del(`/api/twin/models/${encodeURIComponent(name)}`),
+  twinSimulate: (body) => post("/api/twin/simulate", body),
+  expDesign: (body) => post("/api/experiment/design", body),
+  expAnalyze: (body) => post("/api/experiment/analyze", body),
+  expNext: (body) => post("/api/experiment/next", body),
+  expChoose: (body) => post("/api/experiment/choose-test", body),
+  effectEstimate: (body) => post("/api/effect/estimate", body),
 
   query: (sql, limit) => post("/api/query", { sql, limit }),
 

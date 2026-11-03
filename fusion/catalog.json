@@ -2642,6 +2642,703 @@
     "module": "data"
   },
   {
+    "name": "data_twin",
+    "description": "Learn a dynamic twin from a time series and simulate what-ifs with prediction intervals.\nfit: interpretable linear ARX (lag chosen on a selection block) or first-order-plus-dead-time model; the last part of the record is held out and scored (one-step and free-run NRMSE, residual autocorrelation, interval coverage); parameters, steady-state gains and poles carry bootstrap uncertainty. simulate: an input profile on a saved twin gives the response with an interval and a baseline; it refuses to extrapolate far outside the input range seen in training and flags mild excursions. Twins are saved by name.\nSinónimos: gemelo digital, modelo dinámico, identificación de sistemas, respuesta a escalón, ARX, qué pasa si cambio, simular proceso, predicción con intervalo, system identification, digital twin.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "default": "list",
+          "description": "fit = learn a dynamic model from a time series (saved when name is given); simulate = what-if with an input profile on a saved twin; list/get/delete = stored twins.",
+          "enum": [
+            "fit",
+            "simulate",
+            "list",
+            "get",
+            "delete"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "twin name (fit saves under it; simulate/get/delete need it)",
+          "title": "Name"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fit: dataset name",
+          "title": "Dataset"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fit: time column (numeric or date); rows must be regularly spaced",
+          "title": "Time"
+        },
+        "outputs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fit: output (measured response) columns",
+          "title": "Outputs"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fit: input (control) columns",
+          "title": "Inputs"
+        },
+        "model": {
+          "default": "arx",
+          "description": "fit: arx = multi-output linear ARX with lag chosen on a selection block; fopdt = first order plus dead time (one input, one output); auto = pick the better on the held-out block",
+          "enum": [
+            "arx",
+            "fopdt",
+            "auto"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "max_lag": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fit: largest lag order tried (default 8)",
+          "title": "Max Lag"
+        },
+        "validation_fraction": {
+          "default": 0.25,
+          "description": "fit: share of the record held out at the end (0.1 to 0.5)",
+          "title": "Validation Fraction",
+          "type": "number"
+        },
+        "input_lag_start": {
+          "default": 1,
+          "description": "fit: first input lag in samples (0 allows an instantaneous effect)",
+          "title": "Input Lag Start",
+          "type": "integer"
+        },
+        "n_boot": {
+          "default": 200,
+          "description": "fit: bootstrap refits for parameter uncertainty",
+          "maximum": 500,
+          "minimum": 20,
+          "title": "N Boot",
+          "type": "integer"
+        },
+        "seed": {
+          "default": 0,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "simulate: per input a number (held), a list of values per step, {step:{at,from,to}} or {ramp:{from,to}}; inputs not listed hold their last value",
+          "title": "Profile"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "maximum": 5000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "simulate: number of steps ahead",
+          "title": "Steps"
+        },
+        "initial": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "simulate: {outputs:{name:value}, inputs:{name:value}} to start from a steady state instead of the end of the record",
+          "title": "Initial"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 1,
+              "exclusiveMinimum": 0.5,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "simulate: interval level (default 0.95)",
+          "title": "Level"
+        },
+        "allow_extrapolation": {
+          "default": false,
+          "description": "simulate: run even when an input lies far outside the training range",
+          "title": "Allow Extrapolation",
+          "type": "boolean"
+        },
+        "max_extrapolation": {
+          "default": 0.25,
+          "description": "simulate: refuse beyond this excess, as a fraction of the training range",
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Max Extrapolation",
+          "type": "number"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "simulate: also save the simulated series as a dataset",
+          "title": "Save As"
+        }
+      },
+      "title": "TwinArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "data_experiment",
+    "description": "Design experiments, analyse the results and decide what to measure next.\ndesign: 2-level full or fractional factorial (resolution, generators, aliases), central composite or seeded Latin hypercube, with bounds and forbidden combinations. analyze: main effects, interactions and a response surface with confidence intervals (Lenth when saturated), curvature and lack-of-fit checks. next: the run(s) with the largest prediction variance or best expected improvement, with the reason. choose_test: among hypotheses with predicted outcomes per test, the best information gain per cost.\nSinónimos: diseño de experimentos, DOE, factorial fraccionado, superficie de respuesta, hipercubo latino, próximo experimento, qué medir ahora, ganancia de información, optimización experimental.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "default": "design",
+          "description": "design = plan runs; analyze = effects and response surface from results; next = the run(s) to measure next; choose_test = cheapest informative test among discrete hypotheses.",
+          "enum": [
+            "design",
+            "analyze",
+            "next",
+            "choose_test"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "factors": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design/analyze/next: [{name, low, high, integer?}]; for analyze/next low/high may be omitted (taken from the data)",
+          "title": "Factors"
+        },
+        "kind": {
+          "default": "fractional",
+          "description": "design: 2-level full or fractional factorial, central composite, or Latin hypercube",
+          "enum": [
+            "full",
+            "fractional",
+            "ccd",
+            "lhs"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "fraction": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design: fractional p in 2^(k-p) (default: largest meeting min_resolution)",
+          "title": "Fraction"
+        },
+        "min_resolution": {
+          "default": 4,
+          "description": "design: minimum resolution for an automatic fraction (3 to 5)",
+          "title": "Min Resolution",
+          "type": "integer"
+        },
+        "max_runs": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design: prefer designs with at most this many runs",
+          "title": "Max Runs"
+        },
+        "center_points": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design: centre replicates (default 3 factorial, 4 ccd)",
+          "title": "Center Points"
+        },
+        "variant": {
+          "default": "face",
+          "description": "design ccd: axial placement",
+          "enum": [
+            "face",
+            "inscribed",
+            "circumscribed"
+          ],
+          "title": "Variant",
+          "type": "string"
+        },
+        "runs": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design lhs: number of runs",
+          "title": "Runs"
+        },
+        "seed": {
+          "default": 0,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "randomize": {
+          "default": true,
+          "title": "Randomize",
+          "type": "boolean"
+        },
+        "forbidden": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "forbidden combinations: expression strings like 'A + B > 15 and C < 2' or boxes {factor:[low,high]}",
+          "title": "Forbidden"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "design: also save the plan as a dataset",
+          "title": "Save As"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "analyze/next: dataset with factor columns and the response",
+          "title": "Dataset"
+        },
+        "response": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "analyze/next: response column",
+          "title": "Response"
+        },
+        "model": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "main",
+            "interactions",
+            "quadratic"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "level": {
+          "default": 0.95,
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0.5,
+          "title": "Level",
+          "type": "number"
+        },
+        "objective": {
+          "default": "explore",
+          "description": "next: explore = largest prediction variance; maximize/minimize = expected improvement",
+          "enum": [
+            "explore",
+            "maximize",
+            "minimize"
+          ],
+          "title": "Objective",
+          "type": "string"
+        },
+        "n": {
+          "default": 1,
+          "description": "next: how many runs to recommend",
+          "maximum": 20,
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "candidates": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "next: restrict to these settings (default: sampled feasible points)",
+          "title": "Candidates"
+        },
+        "hypotheses": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "choose_test: names or [{name, prior}]",
+          "title": "Hypotheses"
+        },
+        "tests": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "choose_test: [{name, cost, outcomes:{hypothesis: label or {label: probability}}}]",
+          "title": "Tests"
+        },
+        "threshold": {
+          "default": 0.95,
+          "description": "choose_test: stop planning when one hypothesis reaches this posterior",
+          "exclusiveMinimum": 0.5,
+          "maximum": 1,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "title": "ExperimentArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "data_effect",
+    "description": "Estimate the effect of a change from data: difference-in-differences, interrupted time series, adjustment.\nGives the effect with a confidence interval, the assumptions the design needs with their status (parallel pre-trends, placebo dates, pre-trend linearity, balance and overlap, robustness to an unmeasured confounder) and explicit warnings when a testable assumption fails. Never claims causation: untestable assumptions are named.\nSinónimos: efecto de una intervención, diferencias en diferencias, serie temporal interrumpida, antes y después, grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "method": {
+          "description": "did = difference-in-differences with a control group; its = interrupted time series (level and slope change); adjust = regression adjustment for listed confounders.",
+          "enum": [
+            "did",
+            "its",
+            "adjust"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "outcome column",
+          "title": "Outcome",
+          "type": "string"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did/its: time column (numeric or date)",
+          "title": "Time"
+        },
+        "intervention": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did/its: the time the change happened (number or date, e.g. 2026-03-01)",
+          "title": "Intervention"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did: group column",
+          "title": "Group"
+        },
+        "treated_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did/adjust: the value marking the treated group (default 1/true)",
+          "title": "Treated Value"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did: unit id column for cluster-robust errors",
+          "title": "Unit"
+        },
+        "confounders": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did/adjust: covariate columns to adjust for (text columns become dummies)",
+          "title": "Confounders"
+        },
+        "treatment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "adjust: treatment column (binary or numeric dose)",
+          "title": "Treatment"
+        },
+        "placebo_time": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "did: fake change time inside the pre-period (default: its middle)",
+          "title": "Placebo Time"
+        },
+        "placebo_outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "adjust: an outcome the change cannot affect, to test for hidden bias",
+          "title": "Placebo Outcome"
+        },
+        "season_period": {
+          "anyOf": [
+            {
+              "maximum": 366,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its: seasonal period in steps (adds seasonal dummies)",
+          "title": "Season Period"
+        },
+        "level": {
+          "default": 0.95,
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0.5,
+          "title": "Level",
+          "type": "number"
+        }
+      },
+      "required": [
+        "method",
+        "dataset",
+        "outcome"
+      ],
+      "title": "EffectArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_log",
     "description": "Search the analysis log (every operation, with its N-000123 id, input and result).\nSinónimos: historial, registro de análisis, qué se ha hecho.",
     "annotations": {
