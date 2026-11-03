@@ -2584,6 +2584,20 @@
           "description": "calibrate: relative tolerances {cycle_time_mean_hours, cycle_time_p50_hours, cycle_time_p90_hours, cases_per_hour, bottleneck_wait_mean_hours}",
           "title": "Tolerances"
         },
+        "model_edits": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate/export: edits of the fitted model, validated: {arrival_rate: per hour, stations: {activity: {service: {dist: fixed|exponential|uniform|triangular|lognormal, ...params in hours}, servers: int>=1}}, routing: {start: {activity: share}, next: {activity: {activity|END: share}}}}. Edited parameters are marked as edited by the user with their original value; validation and alternatives are re-run with the edited model (same seeds) and the diff against the fitted model is returned",
+          "title": "Model Edits"
+        },
         "with_calibration": {
           "default": false,
           "description": "export: include the holdout calibration",

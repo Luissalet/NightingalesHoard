@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Chip } from "./ui.jsx";
 import { formatNumber } from "../format.js";
 
@@ -37,7 +37,7 @@ function Check({ label, block, render, testid }) {
 export function ProfilePanel({ prof, lang, t, onExport, busy }) {
   const L = prof.log;
   const ex = L.excluded;
-  const row = (r) => `row ${r.row}${r.case ? ` · ${r.case}` : ""}${r.activity ? ` · ${r.activity}` : ""}${r.value !== undefined ? ` · ${JSON.stringify(r.value)}` : ""}${r.reason ? ` (${r.reason})` : ""}`;
+  const row = (r) => `${t("el_row")} ${r.row}${r.case ? ` · ${r.case}` : ""}${r.activity ? ` · ${r.activity}` : ""}${r.value !== undefined ? ` · ${JSON.stringify(r.value)}` : ""}${r.reason ? ` (${r.reason})` : ""}`;
   return (
     <div className="flex flex-col gap-4" data-testid="pr-profile">
       <div className="panel flex flex-col gap-2">
@@ -59,19 +59,27 @@ export function ProfilePanel({ prof, lang, t, onExport, busy }) {
       <div className="panel flex flex-col gap-1" data-testid="pr-checks">
         <h2 className="font-semibold mb-1">{t("el_checks")}</h2>
         <p className="help mb-1">{L.ordering}</p>
-        <Check testid="pr-check-duplicates" label={t("el_c_duplicates")} block={L.duplicates} render={(r) => `row ${r.row} = row ${r.duplicate_of} · ${r.case} · ${r.activity} · ${r.at}`} />
-        <Check testid="pr-check-ties" label={t("el_c_ties")} block={L.ties} render={(r) => `${r.case} · ${r.at} · ${r.activities.join(" = ")} (rows ${r.rows.join(", ")})`} />
+        <Check testid="pr-check-duplicates" label={t("el_c_duplicates")} block={L.duplicates} render={(r) => `${t("el_row")} ${r.row} = ${t("el_row")} ${r.duplicate_of} · ${r.case} · ${r.activity} · ${r.at}`} />
+        <Check testid="pr-check-ties" label={t("el_c_ties")} block={L.ties} render={(r) => `${r.case} · ${r.at} · ${r.activities.join(" = ")} (${t("el_rows_ref")} ${r.rows.join(", ")})`} />
         <Check testid="pr-check-invalid" label={t("el_c_invalid")} block={ex.invalid_timestamp} render={row} />
         <Check label={t("el_c_invalid_start")} block={ex.invalid_start} render={row} />
         <Check label={t("el_c_missing_ids")} block={ex.missing_case_or_activity} render={row} />
         <Check label={t("el_c_lifecycle")} block={ex.unknown_lifecycle} render={row} />
-        <Check label={t("el_c_no_start")} block={L.complete_without_start} render={(r) => `row ${r.row} · ${r.case} · ${r.activity} · ${r.at}`} />
-        <Check label={t("el_c_no_complete")} block={L.start_without_complete} render={(r) => `row ${r.row} · ${r.case} · ${r.activity} · ${r.started}`} />
-        <Check label={t("el_c_start_after_end")} block={L.start_after_end} render={(r) => `row ${r.row} · ${r.case} · ${r.activity}`} />
+        <Check label={t("el_c_no_start")} block={L.complete_without_start} render={(r) => `${t("el_row")} ${r.row} · ${r.case} · ${r.activity} · ${r.at}`} />
+        <Check label={t("el_c_no_complete")} block={L.start_without_complete} render={(r) => `${t("el_row")} ${r.row} · ${r.case} · ${r.activity} · ${r.started}`} />
+        <Check label={t("el_c_start_after_end")} block={L.start_after_end} render={(r) => `${t("el_row")} ${r.row} · ${r.case} · ${r.activity}`} />
         <Check testid="pr-check-open" label={t("el_c_open")} block={L.open_cases} render={(r) => `${r.case} · ${r.last_activity} · ${r.last_at}${r.in_progress ? " · " + t("el_in_progress") : ""}`} />
         <Check testid="pr-check-zones" label={t("el_c_zones")} block={L.timezone.zone_changes} render={(r) => `${r.case}: ${r.offsets.join(" → ")}`} />
-        <Check label={t("el_c_ambiguous")} block={L.timezone.ambiguous_local_times} render={(r) => `row ${r.row} · ${r.case} · ${r.value}`} />
+        <Check label={t("el_c_ambiguous")} block={L.timezone.ambiguous_local_times} render={(r) => `${t("el_row")} ${r.row} · ${r.case} · ${r.value}`} />
         <p className="help mt-1">{t("el_zone")}: <span className="mono">{L.timezone.declared}</span> → UTC · {Object.entries(L.timezone.offsets).map(([k, v]) => `${k}: ${v}`).join(", ")}. {L.timezone.note}</p>
+        {L.pairing && (
+          <details className="text-[13px]" data-testid="pr-pairing">
+            <summary className="cursor-pointer"><Chip tone={L.pairing.rule === "fifo" ? "warn" : "ok"}>{L.pairing.rule === "fifo" ? "FIFO" : "resource → FIFO"}</Chip> {t("el_pairing_title")}</summary>
+            <p className="help mt-1">{L.pairing.description}</p>
+            <table className="pr-t w-full text-[13px] mt-1"><thead><tr><th className="text-left">{t("pr_activity")}</th><th className="text-right">{t("el_pairing_pairs")}</th><th className="text-right">{t("el_pairing_overlap")}</th><th className="text-right">{t("el_pairing_by_resource")}</th><th className="text-right">{t("el_pairing_by_fifo")}</th><th className="text-right">{t("el_pairing_differs")}</th><th className="text-left">{t("el_pairing_rule")}</th></tr></thead>
+              <tbody>{L.pairing.activities.map((a) => <tr key={a.activity}><td>{a.activity}</td><td className="text-right">{a.pairs}</td><td className="text-right">{a.overlapping}</td><td className="text-right">{a.by_resource}</td><td className="text-right">{a.by_fifo}</td><td className="text-right">{a.differs_from_fifo}</td><td className="mono">{a.rule_used}</td></tr>)}</tbody></table>
+          </details>
+        )}
         {L.missing_steps.length > 0 && <p className="text-[13px]">{t("el_missing_steps")}: {L.missing_steps.map((m) => `${m.activity} (${m.cases})`).join(", ")}</p>}
       </div>
 
@@ -129,8 +137,75 @@ const fmtVal = (v, lang) => {
   return Object.entries(v).map(([k, x]) => `${k} ${pct(x, lang)}`).join(", ");
 };
 
-export function CalibrationPanel({ cal, lang, t }) {
+const DIST_FIELDS = { fixed: ["value"], exponential: ["mean"], uniform: ["min", "max"], triangular: ["min", "mode", "max"], lognormal: ["mean", "sigma"] };
+const num = (x) => (x === "" || x === undefined || x === null ? null : Number(x));
+
+/** The edits object the server expects (same shape as the API's model_edits) from the raw draft the inputs hold. */
+export function editsFromDraft(draft) {
+  const out = {};
+  for (const [key, d] of Object.entries(draft)) {
+    const [kind, name] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
+    if (key === "arrivals") { if (num(d) !== null) out.arrival_rate = num(d); continue; }
+    if (kind === "servers") { if (num(d) !== null) { out.stations = out.stations || {}; out.stations[name] = { ...(out.stations[name] || {}), servers: num(d) }; } continue; }
+    if (kind === "service") {
+      if (d && d.dist) {
+        const spec = { dist: d.dist };
+        for (const f of DIST_FIELDS[d.dist] || []) spec[f] = num(d[f]) ?? d[f] ?? "";
+        out.stations = out.stations || {}; out.stations[name] = { ...(out.stations[name] || {}), service: spec };
+      }
+      continue;
+    }
+    if (kind === "routing") {
+      const shares = Object.fromEntries(Object.entries(d || {}).filter(([, x]) => num(x) !== null).map(([k, x]) => [k, num(x)]));
+      if (Object.keys(shares).length) { out.routing = out.routing || {}; if (name === "start") out.routing.start = shares; else { out.routing.next = out.routing.next || {}; out.routing.next[name] = shares; } }
+    }
+  }
+  return out;
+}
+
+function ParamEditor({ p, draft, setDraft, t }) {
+  const key = p.parameter;
+  const set = (v) => setDraft({ ...draft, [key]: v });
+  const d = draft[key];
+  const aria = `${t("el_edit")} ${key}`;
+  if (key === "arrivals") {
+    return <input className="field num" style={{ width: 90 }} type="number" min="0" step="any" placeholder={t("el_edit_rate")} aria-label={aria} value={d ?? ""} onChange={(e) => set(e.target.value)} data-testid={`pr-edit-${key}`} />;
+  }
+  if (key.startsWith("servers:")) {
+    return <input className="field num" style={{ width: 90 }} type="number" min="1" step="1" placeholder={t("el_edit_servers")} aria-label={aria} value={d ?? ""} onChange={(e) => set(e.target.value)} data-testid={`pr-edit-${key}`} />;
+  }
+  if (key.startsWith("service:")) {
+    const cur = d || {};
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        <select className="field" aria-label={aria} value={cur.dist || ""} onChange={(e) => (e.target.value ? set({ dist: e.target.value }) : set(undefined))} data-testid={`pr-edit-${key}`}>
+          <option value="">{t("el_edit_keep")}</option>
+          {Object.keys(DIST_FIELDS).map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        {(DIST_FIELDS[cur.dist] || []).map((f) => (
+          <label key={f} className="help">{f}<input className="field num" style={{ width: 70 }} type="number" step="any" placeholder={t("el_edit_hours")} value={cur[f] ?? ""} onChange={(e) => set({ ...cur, [f]: e.target.value })} data-testid={`pr-edit-${key}-${f}`} /></label>
+        ))}
+      </span>
+    );
+  }
+  if (key.startsWith("routing:") && p.value && typeof p.value === "object") {
+    const cur = d || {};
+    return (
+      <span className="flex flex-wrap items-center gap-1">
+        {Object.keys(p.value).map((target) => (
+          <label key={target} className="help">{target}<input className="field num" style={{ width: 64 }} type="number" min="0" step="any" placeholder={t("el_edit_share")} value={cur[target] ?? ""} onChange={(e) => set({ ...cur, [target]: e.target.value })} data-testid={`pr-edit-${key}-${target}`} /></label>
+        ))}
+      </span>
+    );
+  }
+  return null;
+}
+
+export function CalibrationPanel({ cal, lang, t, busy, onRerun }) {
   const v = cal.validation;
+  const [draft, setDraft] = useState({});
+  const edits = editsFromDraft(draft);
+  const nEdits = Object.keys(draft).filter((k) => draft[k] !== undefined && draft[k] !== "").length;
   return (
     <div className="flex flex-col gap-4" data-testid="pr-cal-result">
       <div className="panel flex flex-col gap-2" data-testid="pr-cal-verdict">
@@ -148,16 +223,40 @@ export function CalibrationPanel({ cal, lang, t }) {
         {cal.warnings.map((w, i) => <p key={i} className="help">{w}</p>)}
       </div>
 
+      {cal.edit_diff && (
+        <div className="panel overflow-x-auto" data-testid="pr-edit-diff">
+          <h2 className="font-semibold mb-1"><Chip tone="warn">{t("el_edited")}</Chip> {t("el_diff_title")}</h2>
+          <p className="text-[13px] mb-1">{cal.edit_diff.verdict}</p>
+          <p className="help mb-2">{cal.edit_diff.note}</p>
+          <table className="pr-t w-full text-[13px]">
+            <thead><tr><th className="text-left">{t("pr_metric")}</th><th className="text-right">{t("el_holdout_obs")}</th><th className="text-right">{t("el_diff_fitted")}</th><th className="text-right">{t("el_diff_edited")}</th><th className="text-right">{t("el_diff_delta")}</th><th className="text-left">{t("el_tolerance")}</th></tr></thead>
+            <tbody>{cal.edit_diff.rows.map((r) => (
+              <tr key={r.metric}><td>{t("el_v_" + r.metric)}</td><td className="text-right"><N v={r.holdout_observed} lang={lang} /></td><td className="text-right"><N v={r.fitted_simulated} lang={lang} /> {r.fitted_ok === null ? "" : r.fitted_ok ? "✓" : "✗"}</td><td className="text-right"><N v={r.edited_simulated} lang={lang} /> {r.edited_ok === null ? "" : r.edited_ok ? "✓" : "✗"}</td><td className="text-right"><N v={r.delta} lang={lang} /></td><td className="help">{pct(r.edited_relative_difference, lang)}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+
       <div className="panel overflow-x-auto" data-testid="pr-cal-params">
         <h2 className="font-semibold mb-1">{t("el_proposal")}</h2>
         <p className="help mb-2">{t("el_proposal_help")}</p>
         <table className="pr-t w-full text-[13px]">
-          <thead><tr><th className="text-left">{t("el_parameter")}</th><th className="text-left">{t("el_value")}</th><th className="text-right">n</th><th className="text-left">{t("el_estimator")}</th><th className="text-left">{t("el_identifiable")}</th></tr></thead>
+          <thead><tr><th className="text-left">{t("el_parameter")}</th><th className="text-left">{t("el_value")}</th><th className="text-right">n</th><th className="text-left">{t("el_estimator")}</th><th className="text-left">{t("el_identifiable")}</th>{onRerun && <th className="text-left">{t("el_edit")}</th>}</tr></thead>
           <tbody>{cal.parameters.map((p) => (
-            <tr key={p.parameter}><td className="mono">{p.parameter}</td><td>{p.parameter.startsWith("servers:") && !p.identifiable ? "∞" : fmtVal(p.value, lang)}</td><td className="text-right">{p.n ?? "—"}</td><td className="help">{p.estimator}</td>
-              <td>{p.identifiable ? <Chip tone="ok">✓</Chip> : <span><Chip tone="warn">✗</Chip> <span className="help">{p.missing_data}</span></span>}</td></tr>
+            <tr key={p.parameter} data-edited={p.edited ? "true" : undefined}><td className="mono">{p.parameter}</td>
+              <td>{p.edited ? <><Chip tone="warn">{t("el_edited")}</Chip> {fmtVal(p.value, lang)} <span className="help">({t("el_original")}: {p.original_value && p.original_value.dist ? fmtVal(p.original_value, lang) : p.parameter.startsWith("servers:") && !p.fitted?.identifiable ? "∞" : fmtVal(p.original_value, lang)})</span></>
+                : (p.parameter.startsWith("servers:") && !p.identifiable ? "∞" : fmtVal(p.value, lang))}</td><td className="text-right">{(p.edited ? p.fitted.n : p.n) ?? "—"}</td><td className="help">{p.edited ? <>{p.estimator} · {t("el_original")}: {p.fitted.estimator}</> : p.estimator}</td>
+              <td>{(p.edited ? p.fitted.identifiable : p.identifiable) ? <Chip tone="ok">✓</Chip> : <span><Chip tone="warn">✗</Chip> <span className="help">{p.edited ? p.fitted.missing_data : p.missing_data}</span></span>}</td>
+              {onRerun && <td><ParamEditor p={p.edited ? { ...p, value: p.original_value } : p} draft={draft} setDraft={setDraft} t={t} /></td>}</tr>
           ))}</tbody>
         </table>
+        {onRerun && (
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button className="btn btn-primary btn-sm" disabled={!!busy || !nEdits} onClick={() => onRerun(edits)} data-testid="pr-rerun-edits">{busy === "calibrate" ? t("pr_working") : `${t("el_edit_rerun")} (${nEdits})`}</button>
+            <button className="btn btn-sm" disabled={!!busy || (!nEdits && cal.model_source !== "edited")} onClick={() => { setDraft({}); onRerun(null); }} data-testid="pr-reset-edits">{t("el_edit_reset")}</button>
+            <span className="help">{t("el_edit_help")}</span>
+          </div>
+        )}
         {cal.scenario_model && <p className="mt-2 text-[13px]">{t("pr_model_saved")}: <a className="mono" href="#/scenarios">{cal.scenario_model}</a></p>}
       </div>
 

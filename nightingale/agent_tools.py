@@ -821,6 +821,12 @@ class ProcessArgs(BaseModel):
     tolerances: Optional[dict[str, float]] = Field(
         None, description="calibrate: relative tolerances {cycle_time_mean_hours, cycle_time_p50_hours, "
         "cycle_time_p90_hours, cases_per_hour, bottleneck_wait_mean_hours}")
+    model_edits: Optional[dict[str, Any]] = Field(
+        None, description="calibrate/export: edits of the fitted model, validated: {arrival_rate: per hour, "
+        "stations: {activity: {service: {dist: fixed|exponential|uniform|triangular|lognormal, ...params in hours}, "
+        "servers: int>=1}}, routing: {start: {activity: share}, next: {activity: {activity|END: share}}}}. Edited "
+        "parameters are marked as edited by the user with their original value; validation and alternatives are "
+        "re-run with the edited model (same seeds) and the diff against the fitted model is returned")
     with_calibration: bool = Field(False, description="export: include the holdout calibration")
     recipe: Optional[dict[str, Any]] = Field(None, description="profile/calibrate: an exported recipe to re-run "
                                              "(mapping, options and settings; warns if the data changed)")
@@ -851,10 +857,12 @@ def _run_process(s: Services, a: ProcessArgs) -> dict:
                                   a.recipe, source="agent")
     if a.action == "calibrate":
         return el.calibrate_process(s, a.dataset, a.mapping, a.log_options, a.holdout, a.split_at, a.replications,
-                                    a.seed, a.tolerances, a.variants, a.model_name, a.recipe, source="agent")
+                                    a.seed, a.tolerances, a.variants, a.model_name, a.recipe, source="agent",
+                                    model_edits=a.model_edits)
     if a.action == "export":
         return el.export_process(s, a.dataset, a.mapping, a.log_options, a.with_calibration, a.holdout, a.split_at,
-                                 a.replications, a.seed, a.tolerances, a.variants, source="agent")
+                                 a.replications, a.seed, a.tolerances, a.variants, source="agent",
+                                 model_edits=a.model_edits)
     if not a.dataset:
         raise ValueError(f"dataset is required for {a.action}")
     if a.action == "suggest":

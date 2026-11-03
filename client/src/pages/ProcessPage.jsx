@@ -135,6 +135,7 @@ export default function ProcessPage() {
   const [seed, setSeed] = useState(1);
   const [calModel, setCalModel] = useState("");
   const [cal, setCal] = useState(null);
+  const [lastEdits, setLastEdits] = useState(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
@@ -182,11 +183,15 @@ export default function ProcessPage() {
     const vs = variants.filter((v) => v.changes.length).map((v) => ({ name: v.name, changes: v.changes.map(changeBody) }));
     setReh(await act(() => api.processRehearse({ dataset, mapping: cleanMap(), variants: vs, replications: Number(reps), save_as: rehSave || null, model_name: modelName || null }), rehSave ? t("pr_saved") : null));
   });
-  const doCalibrate = guard("calibrate", async () => {
-    setCal(await act(() => api.processCalibrate({ ...logBody(), holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: vsBody(), model_name: calModel || null }), calModel ? t("pr_model_saved") : null));
-  });
+  const runCalibrate = (edits) => guard("calibrate", async () => {
+    const body = { ...logBody(), holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: vsBody(), model_name: calModel || null };
+    if (edits && Object.keys(edits).length) body.model_edits = edits;
+    setCal(await act(() => api.processCalibrate(body), calModel ? t("pr_model_saved") : null));
+    setLastEdits(edits && Object.keys(edits).length ? edits : null);
+  })();
+  const doCalibrate = () => runCalibrate(null);
   const doExport = (withCal) => guard("export", async () => {
-    const r = await api.processExport({ ...logBody(), with_calibration: withCal, holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: withCal ? vsBody() : [] });
+    const r = await api.processExport({ ...logBody(), with_calibration: withCal, holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: withCal ? vsBody() : [], ...(withCal && lastEdits ? { model_edits: lastEdits } : {}) });
     downloadJson(r.recipe, r.filename);
   })();
   const setChange = (vi, ci, patch) => setVariants(variants.map((v, i) => (i !== vi ? v : { ...v, changes: v.changes.map((c, j) => (j !== ci ? c : { ...c, ...patch })) })));
@@ -316,7 +321,7 @@ export default function ProcessPage() {
                   {cal && <button className="btn btn-sm" onClick={() => doExport(true)} disabled={!!busy} data-testid="pr-export-cal">{t("el_export_cal")}</button>}
                 </div>
               </div>
-              {cal && <CalibrationPanel cal={cal} lang={lang} t={t} />}
+              {cal && <CalibrationPanel cal={cal} lang={lang} t={t} busy={busy} onRerun={runCalibrate} />}
             </div>
           )}
 
