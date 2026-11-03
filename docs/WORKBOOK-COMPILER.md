@@ -19,7 +19,7 @@ Three views on the same compiled engine (no second set of formulas). Page **Work
 
 Limits: units are not checked inside lookups, text functions or ranges that mix units (those stay unknown); percent and plain ratios are both dimensionless; the effects of changing one parameter at a time do not capture interactions between parameters.
 
-Corrections2006:38workbook tests pass, including independent recalculation by installed Excel for both date systems and changed literal-text/date inputs, standalone export and interleaved/concurrent model evaluations. Real stdio MCP and the Workbooks screen were checked with invented inputs. This is a candidate awaiting cross-review and integration; it does not extend the supported formula subset.
+Corrections2006:38workbook tests pass, including independent recalculation by installed Excel for both date systems and changed literal-text/date inputs, standalone export and interleaved/concurrent model evaluations. Real stdio MCP and the Workbooks screen were checked with invented inputs. Corrections 2006 submission 2 are reviewed and installed; it does not extend the supported formula subset.
 
 ## Deliver a calculator to a client
 
@@ -29,4 +29,4 @@ Numeric inputs, text, booleans, validation lists and date/time fields retain the
 
 API: `GET /api/sheets/{id}/export.app.py`. MCP: `data_workbook` with `action="export"`, `workbook_id` and `format="app"`. Omit `format`, or use `"python"`, for the existing calculation module. Exports saved by MCP and downloaded through HTTP contain the same UTF-8 bytes, including on Windows.
 
-Example: a machining quotation with quantities, unit price, material, VAT, urgency and order date produces a total and a working-day delivery date. The invented fixture gives 617.83 EUR and 2026-11-10 for 24 steel units, without urgency. The exported form and native MCP agree. Ten export tests cover both epochs, mixed types, frozen values and errors, JavaScript input conversion, native API/tool export and an actual server started with `python -I -S`. Feature 2011 is a candidate awaiting review and integration, dependent on corrections 2006.
+Example: a machining quotation with quantities, unit price, material, VAT, urgency and order date produces a total and a working-day delivery date. The invented fixture gives 617.83 EUR and 2026-11-10 for 24 steel units, without urgency. The exported form and native MCP agree. Ten export tests cover both epochs, mixed types, frozen values and errors, JavaScript input conversion, native API/tool export and an actual server started with `python -I -S`. Feature 2011 submission 2 is reviewed and installed (merge c6781c2), preserving corrections 2006 and the current data modules.
