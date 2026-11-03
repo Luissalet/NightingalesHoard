@@ -302,3 +302,7 @@ pipeline APIs and `data_transform` MCP capability; the 43-tool catalog is unchan
 ## Reuse a chart's settings
 
 In Charts, **Use as a starting point** loads a saved chart's dataset, kind, axes, aggregation, color, row filter and title into the editable builder. It identifies the original chart and focuses the title. Loading the form saves nothing; **Save chart** creates another chart ID and preserves the original. Fields remain after saving or an error, including later edits made while saving. List refreshes do not reapply the starting settings. This uses the existing chart get/create API and `data_chart` MCP actions; all43 tools remain unchanged. It uses current dataset rows and does not duplicate data, historical pixels, dashboards or analysis history.
+
+## Excel workbooks as calculations
+
+Compile an `.xlsx` into an executable calculation (parameters, lookup tables, results), run it with new values, trace a result to its inputs, check it against Excel's saved values, recalculate seeded new cases in Excel or LibreOffice and export a standalone Python module. Unsupported formulas are frozen with Excel's value and listed. Page **Workbooks**, API `/api/sheets/*`, agent tool `data_workbook`. Details: `docs/WORKBOOK-COMPILER.md`.

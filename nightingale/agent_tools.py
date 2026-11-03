@@ -600,6 +600,61 @@ def _run_ask(s: Services, a: AskArgs):
     return s.ask(a.question, a.datasets, source="agent")
 
 
+class WorkbookArgs(BaseModel):
+    action: Literal["compile", "list", "get", "evaluate", "check", "verify", "trace", "export", "delete"] = Field(
+        "list", description="compile a .xlsx/.xlsm (path); list/get compiled workbooks; evaluate with new parameter "
+        "values (inputs); check = recompute and compare every formula with the value Excel saved; verify = new seeded "
+        "cases recalculated by Excel (COM) or LibreOffice and compared result by result; trace a result back to its "
+        "parameters (cell); export a standalone Python module; delete.")
+    path: Optional[str] = Field(None, description="compile: workbook path (absolute, or relative to the data folder)")
+    name: Optional[str] = Field(None, description="compile: display name")
+    workbook_id: Optional[str] = Field(None, description="id returned by compile/list")
+    inputs: Optional[dict[str, Any]] = Field(None, description="evaluate: {cell address like 'Hoja!B3', label or defined name: value}. "
+                                             "Errors as {\"error\": \"#N/A\"}; dates as Excel serial numbers.")
+    as_of: Optional[str] = Field(None, description="evaluate: ISO date-time used by TODAY()/NOW()")
+    cell: Optional[str] = Field(None, description="trace: cell address or label")
+    engine: Optional[Literal["excel", "libreoffice"]] = Field(None, description="verify: reference engine (default: Excel if installed)")
+    cases: Optional[list[dict[str, Any]]] = Field(None, description="verify: explicit cases ({address: value}); default seeded random cases")
+    n: int = Field(12, ge=1, le=200, description="verify: number of generated cases")
+    seed: int = Field(7, description="verify: seed of the generated cases")
+
+
+def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
+    from .sheets.store import WorkbookStore
+    st = WorkbookStore(s.config.data_dir)
+
+    def need() -> str:
+        if not a.workbook_id:
+            raise ValueError("workbook_id is required")
+        return a.workbook_id
+
+    if a.action == "compile":
+        if not a.path:
+            raise ValueError("path is required to compile")
+        path = st.user_path(s.config.data_dir, a.path)
+        r = st.compile(path, a.name, original=str(path))
+        r.pop("cached_check", None)
+        return r
+    if a.action == "list":
+        from .sheets.reference import engines
+        return {"workbooks": st.list(), "engines": engines()}
+    if a.action == "get":
+        return st.get(need())
+    if a.action == "evaluate":
+        return st.evaluate(need(), a.inputs, a.as_of)
+    if a.action == "check":
+        return st.check(need())
+    if a.action == "verify":
+        return st.verify(need(), engine=a.engine, cases=a.cases, n=a.n, seed=a.seed)
+    if a.action == "trace":
+        if not a.cell:
+            raise ValueError("cell is required to trace")
+        return st.trace(need(), a.cell)
+    if a.action == "export":
+        return st.export(need())
+    return st.delete(need())
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -694,6 +749,15 @@ TOOLS: list[Tool] = [
          "mode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Optional workbook_updates adds other dataset/version pairs from the same original workbook to this one copy; every sheet is validated before publishing. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\n"
          "Sinónimos: exportar datos, descargar csv, guardar excel.",
          ExportArgs, _ann(False, False, False), _run_export),
+    Tool("data_workbook", "Compile an Excel workbook into an executable calculation; run it with new values, verify it and export it.\n"
+         "Reads formulas and cached values (.xlsx/.xlsm; macros are never run), separates parameters, lookup tables and "
+         "results with their labels, and executes the supported formula subset with Excel's semantics. Anything outside it "
+         "is frozen with Excel's saved value and listed with the reason; results that depend on it are flagged uses_frozen. "
+         "check compares every formula with Excel's saved value; verify recalculates new seeded cases in Excel (or LibreOffice) "
+         "and compares each result; export writes a standalone Python module (standard library only).\n"
+         "Sinónimos: compilar excel, convertir hoja de cálculo en aplicación, hoja de cotización, ejecutar fórmulas, "
+         "recalcular excel, motor de cálculo del excel, comparar con excel, exportar cálculo a python, trazar fórmula.",
+         WorkbookArgs, _ann(False, True, False), _run_workbook, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
