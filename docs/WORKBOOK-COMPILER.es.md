@@ -26,7 +26,7 @@ Funciones soportadas: aritmética y comparación con las reglas de tipos de Exce
 - Fuzz con fórmulas aleatorias anidadas (blancos, textos, booleanos, errores, búsquedas aproximadas sobre datos desordenados) recalculadas por **Excel**: 3.073 de 3.093 fórmulas iguales (99,35 %). Lo que difiere son combinaciones raras de códigos de error y booleanos en funciones de redondeo. `tests/sheets_fuzz.py`, `tests/run_fuzz_excel.py`.
 - Búsqueda aproximada: algoritmo ajustado con 400 observaciones de Excel sobre datos desordenados y mixtos (`tests/match_probe.py`): descendente 200/200, ascendente 198/200.
 - `tests/test_sheets.py`: semántica, modelo, congelación, ciclos, exportación ejecutada en un proceso aparte, verificación contra el motor instalado, API y herramienta.
-- Correcciones2006:38pruebas positivas, con recálculo independiente porExcel instalado de ambos sistemas de fechas y cambios de fechas/texto literal; cálculo concurrente y exportación autónoma. MCPstdio y navegador comprobados con un libro inventado. Candidato pendiente de revisión e integración.
+- Correcciones2006:38pruebas positivas, con recálculo independiente porExcel instalado de ambos sistemas de fechas y cambios de fechas/texto literal; cálculo concurrente y exportación autónoma. MCPstdio y navegador comprobados con un libro inventado. Corrección 2006 revisión 2 aprobada e integrada.
 
 ## Explicar el cálculo
 
@@ -52,4 +52,4 @@ Conserva números, textos, booleanos, opciones de las listas de validación y fe
 
 API: `GET /api/sheets/{id}/export.app.py`. MCP: `data_workbook` con `action="export"`, `workbook_id` y `format="app"`. Omitir `format`, o usar `"python"`, mantiene la exportación del módulo de cálculo. El archivo guardado por MCP coincide en bytes UTF-8 con la descarga HTTP, también en Windows.
 
-Caso inventado probado: presupuesto de mecanizado con unidades, precio, material, IVA, urgencia y fecha del pedido. Para 24 unidades de acero sin urgencia, entrega 617,83 € y fecha prevista 2026-11-10; la aplicación exportada y el cálculo nativo coinciden. Diez pruebas del exportador cubren ambos sistemas de fechas, tipos, congelados, errores, conversión de entradas JavaScript, API/herramienta y servidor real con `python -I -S`. La capacidad 2011 está pendiente de revisión e integración y depende de la corrección 2006.
+Caso inventado probado: presupuesto de mecanizado con unidades, precio, material, IVA, urgencia y fecha del pedido. Para 24 unidades de acero sin urgencia, entrega 617,83 € y fecha prevista 2026-11-10; la aplicación exportada y el cálculo nativo coinciden. Diez pruebas del exportador cubren ambos sistemas de fechas, tipos, congelados, errores, conversión de entradas JavaScript, API/herramienta y servidor real con `python -I -S`. La capacidad 2011 revisión 2 está aprobada e integrada en c6781c2, conservando la corrección 2006 y los módulos de datos actuales.

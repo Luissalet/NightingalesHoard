@@ -1,6 +1,6 @@
 # Nightingale — libros Excel ejecutables
 
-Este apartado describe el compilador de libros; README y docs conservan el resto de capacidades del Hoard. Programa Hangar, ecosystem1937; corrección nightingale2006 sobre la base1949 integrada9e9f2d3. Candidato pendiente de revisión e integración.
+Este apartado describe el compilador de libros; README y docs conservan el resto de capacidades del Hoard. Programa Hangar, ecosystem1937; corrección nightingale2006 sobre la base1949 integrada9e9f2d3. Corrección 2006 revisión 2 aprobada e integrada en 3e322c0, preservando los módulos de datos actuales.
 
 Herramienta nativa `data_workbook`: compilar, listar, leer, calcular con parámetros nuevos, contrastar valores guardados, verificar casos nuevos conExcel/LibreOffice, trazar resultados y exportar un móduloPython autónomo. En el host normal se activa explícitamente el módulo `data`; descubrir MCP no arranca aplicaciones ni motores.
 
@@ -10,4 +10,4 @@ El sistema de fechas1900/1904 pertenece al libro, no al proceso global. Se conse
 
 Revisión2: el selector web usa el sistema del libro para mostrar y editar fechas; los resúmenes antiguos se actualizan en la vista de lectura desde el original retenido, conservando sus bytes guardados.
 
-Capacidad 2011, candidata pendiente de revisión e integración: `data_workbook` permite `action="export", format="app"` para entregar una calculadora web local en un solo archivo `.py`. Incluye motor, formulario, resultados, fuentes y licencias; el destinatario necesita Python 3, sin paquetes, Nightingale ni Excel. Se inicia con `python archivo_app.py --port 8080`. El formato por defecto sigue siendo `python`. No amplía las fórmulas compatibles: errores y resultados congelados siguen declarados. API de descarga `/api/sheets/{id}/export.app.py`; enlace en Libros Excel. Diez pruebas nuevas y MCP/HTTP reales verifican tipos, fechas y ejecución autónoma; ejemplo inventado de presupuesto de mecanizado contrastado con el cálculo nativo. Depende de 2006 revisión 2.
+Capacidad 2011, revisión 2 aprobada e integrada en c6781c2: `data_workbook` permite `action="export", format="app"` para entregar una calculadora web local en un solo archivo `.py`. Incluye motor, formulario, resultados, fuentes y licencias; el destinatario necesita Python 3, sin paquetes, Nightingale ni Excel. Se inicia con `python archivo_app.py --port 8080`. El formato por defecto sigue siendo `python`. No amplía las fórmulas compatibles: errores y resultados congelados siguen declarados. API de descarga `/api/sheets/{id}/export.app.py`; enlace en Libros Excel. Diez pruebas nuevas y MCP/HTTP reales verifican tipos, fechas y ejecución autónoma; ejemplo inventado de presupuesto de mecanizado contrastado con el cálculo nativo. Depende de 2006 revisión 2.
