@@ -122,6 +122,29 @@ def test_empty_reference_verification_is_inconclusive_without_recalculation(tmp_
     assert result["status"] == "inconclusive" and result["compared"] == 0
 
 
+def test_legacy_summary_is_refreshed_without_rewriting_saved_metadata(tmp_path):
+    from nightingale.sheets.store import WorkbookStore
+    from openpyxl.utils.datetime import MAC_EPOCH, to_excel
+    wb = openpyxl.Workbook()
+    wb.epoch = MAC_EPOCH
+    wb.active["A1"] = dt.datetime(2026, 11, 3)
+    wb.active["B1"] = "=A1+1"
+    path = tmp_path / "legacy.xlsx"
+    wb.save(path)
+    store = WorkbookStore(tmp_path / "data")
+    wid = store.compile(path)["id"]
+    meta_path = store.root / wid / "meta.json"
+    old = json.loads(meta_path.read_text(encoding="utf-8"))
+    del old["summary"]["date_system"]
+    old["summary"]["parameters"][0]["value"] += 1462
+    meta_path.write_text(json.dumps(old), encoding="utf-8")
+    before = meta_path.read_bytes()
+    current = store.get(wid)
+    assert current["summary"]["date_system"] == "1904"
+    assert current["summary"]["parameters"][0]["value"] == to_excel(dt.datetime(2026, 11, 3), MAC_EPOCH)
+    assert meta_path.read_bytes() == before
+
+
 # --- parser ---------------------------------------------------------------
 
 @pytest.mark.parametrize("text,expected", [

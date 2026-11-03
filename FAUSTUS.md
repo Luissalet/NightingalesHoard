@@ -6,4 +6,6 @@ Herramienta nativa `data_workbook`: compilar, listar, leer, calcular con paráme
 
 El sistema de fechas1900/1904 pertenece al libro, no al proceso global. Se conserva al cargar constantes/fechas, plegar fórmulas constantes, calcular, mostrar fechas, preparar recálculos y exportarPython. Los cálculos concurrentes no cambian el sistema de otro libro. El texto literal que empieza porigual no se ejecuta como fórmula. Verificar cero casos o cero resultados comparables es inconcluso, sin arrancarExcel ni afirmar acuerdo.
 
-37pruebas del compilador positivas, incluyendoExcel real para ambos sistemas, cambios de parámetros, exportación y concurrencia. MCPstdio y navegador reales con datos inventados; sin modelos ni datos deLuis. PyYAML se declara como dependencia ya usada por el arranque normal. No amplía el subconjunto de fórmulas: lo no soportado se conserva congelado y se declara.
+38pruebas del compilador positivas, incluyendoExcel real para ambos sistemas, cambios de parámetros, exportación y concurrencia. MCPstdio y navegador reales con datos inventados; sin modelos ni datos deLuis. PyYAML se declara como dependencia ya usada por el arranque normal. No amplía el subconjunto de fórmulas: lo no soportado se conserva congelado y se declara.
+
+Revisión2: el selector web usa el sistema del libro para mostrar y editar fechas; los resúmenes antiguos se actualizan en la vista de lectura desde el original retenido, conservando sus bytes guardados.
