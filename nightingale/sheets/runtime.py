@@ -10,6 +10,8 @@ Values: ``float`` numbers, ``str`` text, ``bool``, ``None`` for an empty cell,
 from __future__ import annotations
 
 import datetime as _dt
+from contextlib import contextmanager as _contextmanager
+from contextvars import ContextVar as _ContextVar
 import math
 import re
 
@@ -57,20 +59,35 @@ class Area:
 
 
 EPOCH = _dt.datetime(1899, 12, 30)
+_DATE_SYSTEM = _ContextVar("workbook_date_system", default="1900")
 
 
-def to_serial(value):
+def _epoch(date_system=None):
+    return {"1900": EPOCH, "1904": _dt.datetime(1904, 1, 1)}[date_system or _DATE_SYSTEM.get()]
+
+
+@_contextmanager
+def date_context(date_system):
+    """Per-calculation epoch, isolated between concurrent workbook evaluations."""
+    token = _DATE_SYSTEM.set(date_system)
+    try:
+        yield
+    finally:
+        _DATE_SYSTEM.reset(token)
+
+
+def to_serial(value, date_system=None):
     if isinstance(value, _dt.datetime):
-        return (value - EPOCH).total_seconds() / 86400.0
+        return (value - _epoch(date_system)).total_seconds() / 86400.0
     if isinstance(value, _dt.date):
-        return float((value - EPOCH.date()).days)
+        return float((value - _epoch(date_system).date()).days)
     if isinstance(value, _dt.time):
         return (value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 1e6) / 86400.0
     return value
 
 
-def from_serial(n):
-    return EPOCH + _dt.timedelta(days=float(n))
+def from_serial(n, date_system=None):
+    return _epoch(date_system) + _dt.timedelta(days=float(n))
 
 
 # --- coercion -------------------------------------------------------------
@@ -892,7 +909,7 @@ def ISNA(v): return isinstance(v, XlError) and v.code == "#N/A"
 def NA_(): raise NA
 
 
-# dates (1900 system; serial numbers)
+# dates (the current workbook's 1900 or 1904 serial system)
 
 def DATE(y, m, d):
     y, m, d = int(num(y)), int(num(m)), int(num(d))
@@ -901,7 +918,7 @@ def DATE(y, m, d):
     y += (m - 1) // 12
     m = (m - 1) % 12 + 1
     base = _dt.date(y, m, 1)
-    return float((base - EPOCH.date()).days + d - 1)
+    return to_serial(base + _dt.timedelta(days=d - 1))
 
 
 def _date(v):
@@ -923,7 +940,7 @@ def EDATE(v, months):
     y, m = d.year + m // 12, m % 12 + 1
     import calendar
     day = min(d.day, calendar.monthrange(y, m)[1])
-    return float((_dt.date(y, m, day) - EPOCH.date()).days)
+    return to_serial(_dt.date(y, m, day))
 
 
 def EOMONTH(v, months):
@@ -932,7 +949,7 @@ def EOMONTH(v, months):
     k = int(num(months))
     m = d.month - 1 + k
     y, m = d.year + m // 12, m % 12 + 1
-    return float((_dt.date(y, m, calendar.monthrange(y, m)[1]) - EPOCH.date()).days)
+    return to_serial(_dt.date(y, m, calendar.monthrange(y, m)[1]))
 
 
 def DAYS(end, start): return float(math.floor(num(end)) - math.floor(num(start)))

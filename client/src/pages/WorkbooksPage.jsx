@@ -6,8 +6,9 @@ import WorkbookExplain from "./WorkbookExplain.jsx";
 import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 const EPOCH = Date.UTC(1899, 11, 30);
-const serialToISO = (n) => new Date(EPOCH + Math.round(n * 86400000)).toISOString().slice(0, 10);
-const isoToSerial = (s) => (Date.parse(s + "T00:00:00Z") - EPOCH) / 86400000;
+const dateEpoch = (dateSystem) => dateSystem === "1904" ? Date.UTC(1904, 0, 1) : EPOCH;
+const serialToISO = (n, dateSystem) => new Date(dateEpoch(dateSystem) + Math.round(n * 86400000)).toISOString().slice(0, 10);
+const isoToSerial = (s, dateSystem) => (Date.parse(s + "T00:00:00Z") - dateEpoch(dateSystem)) / 86400000;
 
 function show(item) {
   if (item.display) return item.display;
@@ -18,7 +19,7 @@ function show(item) {
   return v ?? "";
 }
 
-function ParamInput({ p, value, onChange }) {
+function ParamInput({ p, value, onChange, dateSystem }) {
   const id = `wb-${p.cell}`;
   if (p.options) {
     return (
@@ -34,7 +35,7 @@ function ParamInput({ p, value, onChange }) {
     return <input id={id} type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
   }
   if (p.display && typeof p.value === "number") {
-    return <input id={id} type="date" className="field" value={serialToISO(value)} onChange={(e) => onChange(isoToSerial(e.target.value))} />;
+    return <input id={id} type="date" className="field" value={value == null ? "" : serialToISO(value, dateSystem)} onChange={(e) => onChange(e.target.value ? isoToSerial(e.target.value, dateSystem) : null)} />;
   }
   if (typeof p.value === "number") {
     return <input id={id} type="number" step="any" className="field num" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} />;
@@ -147,7 +148,7 @@ export default function WorkbooksPage({ param }) {
             {params.map((p) => (
               <div key={p.cell}>
                 <label className="label" htmlFor={`wb-${p.cell}`}>{p.label || p.cell} <span className="help mono">{p.cell}</span></label>
-                <ParamInput p={p} value={values[p.cell]} onChange={(v) => setValues({ ...values, [p.cell]: v })} />
+                <ParamInput p={p} value={values[p.cell]} dateSystem={s.date_system} onChange={(v) => setValues({ ...values, [p.cell]: v })} />
               </div>
             ))}
             <div className="flex flex-wrap gap-2">

@@ -109,7 +109,12 @@ class WorkbookStore:
         return {**meta, "cached_check": check}
 
     def get(self, wid: str) -> dict:
-        return self._meta(wid)
+        meta = self._meta(wid)
+        if "date_system" not in meta["summary"]:
+            # Old summaries used a process-wide epoch. Refresh the read view
+            # from the retained source without rewriting historical metadata.
+            meta["summary"] = self.compiled(wid).model.summary()
+        return meta
 
     def delete(self, wid: str) -> dict:
         d = self._dir(wid)
