@@ -261,7 +261,7 @@
     },
     "evidence": {
       "sha256": {
-        "nightingale/sheets/web_app.py": "430de143db3087e9c6127ac3b993752dd86a4f460dbf76cd7f66cb8ccc593a13",
+        "nightingale/sheets/web_app.py": "51fa46882aca8419751d175841c7eec4e0170422d3fecfe38178341ad41f0fcd",
         ".impeccable/review/calculator2011.html": "77ce61d390173ac2a19e302fec0d809f6cdc0b5c5f09c3eefa089fd6fc05d9ed",
         ".impeccable/review/desktop.png": "c91e2cc22384cdbb03af80f99e4b05ca90e0cbe85ddbdbdaf0d2d4738196c398",
         ".impeccable/review/mobile.png": "091ad177e868a35589ca6b29297f22d398bf932981d320e276cebcf1f5457e95"
@@ -282,7 +282,14 @@
         "Resultados vaciados al recalcular y error anunciado con role=alert.",
         "Borde de campo #8b7379: contraste aproximado 4,16:1 contra fondo y 3,86:1 contra campo."
       ],
-      "shippingRasters": []
+      "shippingRasters": [],
+      "sourceRevalidation": {
+        "change": "_date_kind reconoce formatos de hora hh y ss sin exigir componentes de fecha.",
+        "cssUnchanged": true,
+        "javascriptUnchanged": true,
+        "scope": "Revalidación documental de la fuente actual; no constituye aprobación de la revisión backend.",
+        "uiVerdictScope": "ship sigue limitado a las correcciones UI comunicadas en el encargo original."
+      }
     }
   },
   "components": [
