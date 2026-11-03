@@ -686,6 +686,43 @@ def _run_reconcile(s: Services, a: ReconcileArgs) -> dict:
                                   a.sample, a.save_as, source="agent")
 
 
+class MigrateArgs(BaseModel):
+    action: Literal["suggest", "save", "list", "get", "delete", "rehearse", "ddl"] = Field(
+        "list", description="suggest = draft a target table from a dataset (a labelled suggestion, not applied); "
+        "save/get/delete/list = persisted specs by name; rehearse = dress-rehearsal load into a fresh SQLite file with a full "
+        "report; ddl = the target schema as SQL.")
+    name: Optional[str] = Field(None, description="spec / migration name (letters, digits, _ and -)")
+    spec: Optional[dict[str, Any]] = Field(None, description="inline spec: {name, tables:[{name, source|source_sql, columns:"
+                                           "[{name,type,required,expr,kind,source_column}], primary_key, unique, foreign_keys:"
+                                           "[{columns,ref_table,ref_columns}]}], checks:{totals:[{table,source_expr,target_column,"
+                                           "tolerance}], queries:[{name,source_sql,target_sql}]}}")
+    dataset: Optional[str] = Field(None, description="suggest: dataset to draft from")
+    table: Optional[str] = Field(None, description="suggest: target table name")
+    save_rejected: Optional[str] = Field(None, description="rehearse: save every rejected row with its reason as this dataset")
+    sample: int = Field(10, ge=0, le=200, description="rehearse: examples per reason")
+
+
+def _run_migrate(s: Services, a: MigrateArgs) -> dict:
+    from . import migrate as mg
+    if a.action == "suggest":
+        if not a.dataset:
+            raise ValueError("suggest needs a dataset")
+        return mg.suggest_spec(s, a.dataset, a.table, a.name, source="agent")
+    if a.action == "list":
+        return mg.list_specs(s)
+    if a.action == "get":
+        return mg.get_spec(s, a.name or "")
+    if a.action == "delete":
+        return mg.delete_spec(s, a.name or "", source="agent")
+    if a.action == "save":
+        if not a.name or not a.spec:
+            raise ValueError("save needs name and spec")
+        return mg.save_spec(s, a.name, a.spec, source="agent")
+    if a.action == "ddl":
+        return mg.ddl(s, a.spec, a.name)
+    return mg.rehearse_spec(s, a.spec, a.name, a.save_rejected, a.sample, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -798,6 +835,16 @@ TOOLS: list[Tool] = [
          "Sinónimos: conciliar tablas, cuadrar dos excel, comparar clientes de dos sistemas, filas que faltan, "
          "duplicados entre tablas, correspondencia de columnas, reconcile, match records.",
          ReconcileArgs, _ann(False, False, False), _run_reconcile, capped=False),
+    Tool("data_migrate", "Rehearse a data migration before the real one: load datasets into a target schema in a fresh SQLite file.\n"
+         "The spec names target tables, typed columns (expression over source columns, representation or correction), primary, "
+         "unique and foreign keys, total checks and functional query checks. rehearse loads parents first and reports per table "
+         "source = loaded + rejected, every rejected row with its reason (cast failure with column and value, missing required, "
+         "duplicate key, foreign key not found), a second upsert load proving idempotency, per-column changes, a round-trip test "
+         "for representation columns, and the checks evaluated on both sides. Sources are never modified; mappings are never "
+         "invented (suggest only drafts, labelled). Also save/list/get/delete specs and export the DDL.\n"
+         "Sinónimos: ensayo de migración, simulacro de migración, migrar datos, cargar en SQLite, filas rechazadas, claves "
+         "foráneas, idempotencia, cuadre de totales, migration dry run.",
+         MigrateArgs, _ann(False, False, False), _run_migrate, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
