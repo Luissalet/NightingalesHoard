@@ -114,6 +114,17 @@ export const api = {
   migrateDdl: (body) => download("api/migrate/ddl.sql", body),
   migrateFile: (name) => downloadGet(`api/migrate/file/${encodeURIComponent(name)}`),
 
+  twinFit: (body) => post("/api/twin/fit", body),
+  twinList: () => get("/api/twin/models"),
+  twinGet: (name) => get(`/api/twin/models/${encodeURIComponent(name)}`),
+  twinDelete: (name) => del(`/api/twin/models/${encodeURIComponent(name)}`),
+  twinSimulate: (body) => post("/api/twin/simulate", body),
+  expDesign: (body) => post("/api/experiment/design", body),
+  expAnalyze: (body) => post("/api/experiment/analyze", body),
+  expNext: (body) => post("/api/experiment/next", body),
+  expChoose: (body) => post("/api/experiment/choose-test", body),
+  effectEstimate: (body) => post("/api/effect/estimate", body),
+
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
   qualityDefine: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/quality`, body),
