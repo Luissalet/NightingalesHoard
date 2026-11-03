@@ -793,6 +793,51 @@ def _run_migrate(s: Services, a: MigrateArgs) -> dict:
     return mg.rehearse_spec(s, a.spec, a.name, a.save_rejected, a.sample, source="agent")
 
 
+class ProcessArgs(BaseModel):
+    action: Literal["suggest", "discover", "conform", "rehearse"] = Field(
+        "discover", description="suggest = propose the column mapping; discover = process map, variants, rework, "
+        "throughput times, bottlenecks, resources; conform = check cases against a reference process; rehearse = "
+        "simulate the discovered process and compare changes with the baseline.")
+    dataset: str = Field(..., description="event-log dataset: one row per event")
+    mapping: Optional[dict[str, Optional[str]]] = Field(
+        None, description="columns: {case, activity, timestamp (end of the step), start?, resource?, cost?}. "
+        "Required except for suggest; a start column enables waiting vs working time and capacity.")
+    threshold: float = Field(0.5, ge=0, le=1, description="discover: heuristic-miner dependency threshold for kept edges")
+    min_count: int = Field(1, ge=1, description="discover: minimum count of an edge to keep it")
+    max_variants: int = Field(20, ge=1, le=500, description="discover: variants to list")
+    reference: Optional[dict[str, Any]] = Field(
+        None, description="conform: {steps: [\"A\", {activity: \"B\", optional: true}, {parallel: [\"C\", \"D\"]}]} "
+        "or {transitions: [[from, to], ...], start?: [...], end?: [...]}")
+    max_examples: int = Field(5, ge=1, le=50, description="conform: example case ids per deviation")
+    variants: Optional[list[dict[str, Any]]] = Field(
+        None, description="rehearse: [{name, changes: [{type: add_resource, activity, count} | {type: remove_step, "
+        "activity} | {type: set_routing, from, to, share} | {type: scale_duration, activity, factor}]}]; empty = "
+        "validate the baseline only")
+    replications: int = Field(20, ge=1, le=100, description="rehearse: simulation replications")
+    seed: int = Field(1, description="rehearse: random seed (shared by baseline and variants)")
+    tolerance: float = Field(0.15, gt=0, lt=1, description="rehearse: relative tolerance of the baseline validation")
+    model_name: Optional[str] = Field(None, description="rehearse: also store the discovered model in the scenario lab")
+    save_as: Optional[str] = Field(None, description="discover: prefix for the edges/variants/cases datasets; "
+                                   "conform/rehearse: dataset name for the result")
+
+
+def _run_process(s: Services, a: ProcessArgs) -> dict:
+    from . import process_mining as pm
+    if a.action == "suggest":
+        return pm.suggest_mapping(s, a.dataset)
+    if not a.mapping:
+        raise ValueError(f"mapping is required for {a.action} (run action='suggest' to get one)")
+    if a.action == "discover":
+        return pm.discover_process(s, a.dataset, a.mapping, a.threshold, a.min_count, a.max_variants, a.save_as,
+                                   source="agent")
+    if a.action == "conform":
+        if not a.reference:
+            raise ValueError("reference is required for conform")
+        return pm.conform_process(s, a.dataset, a.mapping, a.reference, a.max_examples, a.save_as, source="agent")
+    return pm.rehearse_process(s, a.dataset, a.mapping, a.variants, a.replications, a.seed, a.tolerance, a.save_as,
+                               a.model_name, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -926,6 +971,18 @@ TOOLS: list[Tool] = [
          "Sinónimos: ensayo de migración, simulacro de migración, migrar datos, cargar en SQLite, filas rechazadas, claves "
          "foráneas, idempotencia, cuadre de totales, migration dry run.",
          MigrateArgs, _ann(False, False, False), _run_migrate, capped=False),
+    Tool("data_process", "Process mining: discover a process from an event log, check conformance, rehearse changes.\n"
+         "From case id, activity and timestamp (optional start, resource, cost): directly-follows graph with "
+         "frequencies and waiting times, variants with shares, rework loops, throughput times, bottlenecks and "
+         "resource workload. conform checks every case against a reference (ordered steps with optional/parallel "
+         "markers, or allowed transitions) and lists skipped, inserted, repeated and reordered steps with counts and "
+         "example cases. rehearse builds a simulation model of the process, validates the baseline against the "
+         "observed throughput time (and says when it is not representative), then compares changes (add a resource, "
+         "remove a step, change a routing share, shorten a duration) with common random numbers and 95% intervals. "
+         "Durations are in hours. Logged.\n"
+         "Sinónimos: minería de procesos, descubrimiento de procesos, registro de eventos, cuello de botella, "
+         "variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining.",
+         ProcessArgs, _ann(False, False, False), _run_process, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
