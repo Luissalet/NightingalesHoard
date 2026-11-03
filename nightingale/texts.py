@@ -2097,6 +2097,10 @@ register({
     "fq.actual_unit": {
         "en": "{item}: the unit {unit!r} cannot be converted to {expected!r}",
         "es": "{item}: la unidad {unit!r} no se puede convertir a {expected!r}"},
+    "fq.note_vulcan_model": {"en": "Vulcan model {mid}", "es": "Modelo {mid} de Vulcan"},
+    "fq.note_vulcan_bbox": {"en": "Vulcan bbox_{axis} ({units})", "es": "Caja envolvente de Vulcan, eje {axis} ({units})"},
+    "fq.note_blank_envelope": {"en": "envelope of the part (bbox_x * bbox_y): not its true area",
+                               "es": "envolvente de la pieza (bbox_x × bbox_y): no es su área real"},
     "fq.actuals_subset": {
         "en": "Only items that have recorded actuals are compared, so the totals are not diluted by items still open.",
         "es": "Solo se comparan las partidas con reales registrados, para que los totales no se diluyan con partidas aún abiertas."},

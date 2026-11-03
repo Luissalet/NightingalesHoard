@@ -755,7 +755,7 @@ def fetch_vulcan(model_id: Any, base_url: Optional[str] = None, target: str = "f
 
     for key, name, unit in (("volume_cm3", "volume_cm3", "cm**3"), ("surface_cm2", "surface_cm2", "cm**2")):
         v = num(key)
-        meas[name] = {"value": v, "unit": unit, "source": "measured", "note": f"Vulcan model {mid}"}
+        meas[name] = {"value": v, "unit": unit, "source": "measured", "note": tx("fq.note_vulcan_model", mid=mid)}
         if v is None:
             warnings.append(tx("fq.vulcan_field_missing", field=key))
     ug = model.get("units_guess")
@@ -770,12 +770,12 @@ def fetch_vulcan(model_id: Any, base_url: Optional[str] = None, target: str = "f
             warnings.append(tx("fq.vulcan_field_missing", field=f"bbox_{axis}"))
     if not unit_ok and any(num(f"bbox_{a}") is not None for a in "xyz"):
         warnings.append(tx("fq.vulcan_units_unknown", value=ug))
-    meas["part_height_mm"] = {"value": bbox.get("z"), "unit": "mm", "source": "measured", "note": f"Vulcan bbox_z ({ug})"}
-    meas["bbox_x_mm"] = {"value": bbox.get("x"), "unit": "mm", "source": "measured", "note": f"Vulcan bbox_x ({ug})"}
-    meas["bbox_y_mm"] = {"value": bbox.get("y"), "unit": "mm", "source": "measured", "note": f"Vulcan bbox_y ({ug})"}
+    meas["part_height_mm"] = {"value": bbox.get("z"), "unit": "mm", "source": "measured", "note": tx("fq.note_vulcan_bbox", axis="z", units=ug)}
+    meas["bbox_x_mm"] = {"value": bbox.get("x"), "unit": "mm", "source": "measured", "note": tx("fq.note_vulcan_bbox", axis="x", units=ug)}
+    meas["bbox_y_mm"] = {"value": bbox.get("y"), "unit": "mm", "source": "measured", "note": tx("fq.note_vulcan_bbox", axis="y", units=ug)}
     if "x" in bbox and "y" in bbox:
         meas["blank_area_cm2"] = {"value": bbox["x"] * bbox["y"] / 100.0, "unit": "cm**2", "source": "measured",
-                                  "note": "envelope of the part (bbox_x * bbox_y): not its true area"}
+                                  "note": tx("fq.note_blank_envelope")}
     if model.get("watertight") is False:
         warnings.append(tx("fq.vulcan_not_watertight"))
     prov["geometry"] = {k: model.get(k) for k in ("triangles", "bodies", "watertight", "units_guess") if k in model}
