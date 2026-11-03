@@ -79,6 +79,16 @@ export const api = {
   reconcileRun: (body) => post("/api/reconcile/run", body),
   reconcileExport: (body) => download("api/reconcile/export.csv", body),
 
+  scenarioTemplate: () => get("/api/scenarios/template"),
+  scenarioModels: () => get("/api/scenarios/models"),
+  scenarioGet: (name) => get(`/api/scenarios/models/${encodeURIComponent(name)}`),
+  scenarioSave: (name, model) => post("/api/scenarios/models", { name, model }),
+  scenarioDelete: (name) => del(`/api/scenarios/models/${encodeURIComponent(name)}`),
+  scenarioRun: (body) => post("/api/scenarios/run", body),
+  scenarioCompare: (body) => post("/api/scenarios/compare", body),
+  scenarioSweep: (body) => post("/api/scenarios/sweep", body),
+  scenarioCalibrate: (body) => post("/api/scenarios/calibrate", body),
+
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
   qualityDefine: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/quality`, body),
