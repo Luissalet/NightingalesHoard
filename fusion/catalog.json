@@ -2020,6 +2020,16 @@
           "default": null,
           "description": "units: {input cell or label: unit, e.g. 'EUR/h', 'h', 'm', '%'}; null removes. Omit to only report. Currency symbols €/$ are read from number formats.",
           "title": "Units"
+        },
+        "format": {
+          "default": "python",
+          "description": "export: python is the existing calculation module; app is one self-contained Python web calculator with forms, fonts and results, standard library only",
+          "enum": [
+            "python",
+            "app"
+          ],
+          "title": "Format",
+          "type": "string"
         }
       },
       "title": "WorkbookArgs",

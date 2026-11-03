@@ -141,7 +141,7 @@ export default function WorkbooksPage({ param }) {
       )}
 
       {meta && (
-        <div className="grid gap-6" style={{ gridTemplateColumns: "minmax(280px, 1fr) minmax(320px, 2fr)" }}>
+        <div className="grid gap-6 min-[960px]:grid-cols-[minmax(280px,1fr)_minmax(320px,2fr)]">
           <div className="panel flex flex-col gap-3" data-testid="wb-params">
             <h2 className="font-semibold">{t("wb_parameters_title")}</h2>
             {params.length === 0 && <p className="help">{t("wb_no_params")}</p>}
@@ -162,8 +162,10 @@ export default function WorkbooksPage({ param }) {
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-semibold mr-auto">{t("wb_results_title")}</h2>
                 <a className="btn btn-sm" href={`api/sheets/${selected}/export.py`} download>{t("wb_export")}</a>
+                <a className="btn btn-sm" href={`api/sheets/${selected}/export.app.py`} download>{t("wb_export_app")}</a>
                 <button className="btn btn-sm" onClick={remove}>{t("wb_delete")}</button>
               </div>
+              <p className="help">{t("wb_export_app_help")}</p>
               <table className="w-full text-[13px]">
                 <thead><tr><th className="text-left">{t("wb_result")}</th><th className="text-left">{t("wb_cell")}</th><th className="text-right">{t("wb_value")}</th><th /></tr></thead>
                 <tbody>

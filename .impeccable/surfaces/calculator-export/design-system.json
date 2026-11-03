@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-03T14:03:08.993696+00:00",
+  "title": "Design System: Nightingale · calculadora exportada",
+  "extensions": {
+    "scope": {
+      "target": "nightingale/sheets/web_app.py",
+      "mode": "Operate",
+      "inherits": "../../../DESIGN.md",
+      "surfaceBrief": "../nightingale-sheets-web-app-py.md",
+      "globalWorldChanged": false
+    },
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Fondo oscuro teñido",
+        "tonalRamp": [
+          "oklch(15% 0.01360 1.70)",
+          "oklch(26% 0.01360 1.70)",
+          "oklch(38% 0.01360 1.70)",
+          "oklch(49% 0.01360 1.70)",
+          "oklch(61% 0.01360 1.70)",
+          "oklch(72% 0.01360 1.70)",
+          "oklch(84% 0.01360 1.70)",
+          "oklch(95% 0.01360 1.70)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Superficie de campo",
+        "tonalRamp": [
+          "oklch(15% 0.01462 3.38)",
+          "oklch(26% 0.01462 3.38)",
+          "oklch(38% 0.01462 3.38)",
+          "oklch(49% 0.01462 3.38)",
+          "oklch(61% 0.01462 3.38)",
+          "oklch(72% 0.01462 3.38)",
+          "oklch(84% 0.01462 3.38)",
+          "oklch(95% 0.01462 3.38)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Separador tonal",
+        "tonalRamp": [
+          "oklch(15% 0.02057 3.82)",
+          "oklch(26% 0.02057 3.82)",
+          "oklch(38% 0.02057 3.82)",
+          "oklch(49% 0.02057 3.82)",
+          "oklch(61% 0.02057 3.82)",
+          "oklch(72% 0.02057 3.82)",
+          "oklch(84% 0.02057 3.82)",
+          "oklch(95% 0.02057 3.82)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "control-line": {
+        "role": "neutral",
+        "displayName": "Contorno de campo",
+        "tonalRamp": [
+          "oklch(15% 0.03120 1.34)",
+          "oklch(26% 0.03120 1.34)",
+          "oklch(38% 0.03120 1.34)",
+          "oklch(49% 0.03120 1.34)",
+          "oklch(61% 0.03120 1.34)",
+          "oklch(72% 0.03120 1.34)",
+          "oklch(84% 0.03120 1.34)",
+          "oklch(95% 0.03120 1.34)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Texto principal",
+        "tonalRamp": [
+          "oklch(15% 0.01261 358.78)",
+          "oklch(26% 0.01261 358.78)",
+          "oklch(38% 0.01261 358.78)",
+          "oklch(49% 0.01261 358.78)",
+          "oklch(61% 0.01261 358.78)",
+          "oklch(72% 0.01261 358.78)",
+          "oklch(84% 0.01261 358.78)",
+          "oklch(95% 0.01261 358.78)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Texto secundario",
+        "tonalRamp": [
+          "oklch(15% 0.01170 3.59)",
+          "oklch(26% 0.01170 3.59)",
+          "oklch(38% 0.01170 3.59)",
+          "oklch(49% 0.01170 3.59)",
+          "oklch(61% 0.01170 3.59)",
+          "oklch(72% 0.01170 3.59)",
+          "oklch(84% 0.01170 3.59)",
+          "oklch(95% 0.01170 3.59)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Rosa de Nightingale",
+        "tonalRamp": [
+          "oklch(15% 0.11356 6.90)",
+          "oklch(26% 0.11356 6.90)",
+          "oklch(38% 0.11356 6.90)",
+          "oklch(49% 0.11356 6.90)",
+          "oklch(61% 0.11356 6.90)",
+          "oklch(72% 0.11356 6.90)",
+          "oklch(84% 0.11356 6.90)",
+          "oklch(95% 0.11356 6.90)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Rosa de hover",
+        "tonalRamp": [
+          "oklch(15% 0.08230 5.57)",
+          "oklch(26% 0.08230 5.57)",
+          "oklch(38% 0.08230 5.57)",
+          "oklch(49% 0.08230 5.57)",
+          "oklch(61% 0.08230 5.57)",
+          "oklch(72% 0.08230 5.57)",
+          "oklch(84% 0.08230 5.57)",
+          "oklch(95% 0.08230 5.57)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Tinta sobre rosa",
+        "tonalRamp": [
+          "oklch(15% 0.01368 1.76)",
+          "oklch(26% 0.01368 1.76)",
+          "oklch(38% 0.01368 1.76)",
+          "oklch(49% 0.01368 1.76)",
+          "oklch(61% 0.01368 1.76)",
+          "oklch(72% 0.01368 1.76)",
+          "oklch(84% 0.01368 1.76)",
+          "oklch(95% 0.01368 1.76)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "secondary-hover": {
+        "role": "neutral",
+        "displayName": "Superficie de hover",
+        "tonalRamp": [
+          "oklch(15% 0.01546 4.66)",
+          "oklch(26% 0.01546 4.66)",
+          "oklch(38% 0.01546 4.66)",
+          "oklch(49% 0.01546 4.66)",
+          "oklch(61% 0.01546 4.66)",
+          "oklch(72% 0.01546 4.66)",
+          "oklch(84% 0.01546 4.66)",
+          "oklch(95% 0.01546 4.66)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "selection": {
+        "role": "primary",
+        "displayName": "Selección de texto",
+        "tonalRamp": [
+          "oklch(15% 0.11356 6.90)",
+          "oklch(26% 0.11356 6.90)",
+          "oklch(38% 0.11356 6.90)",
+          "oklch(49% 0.11356 6.90)",
+          "oklch(61% 0.11356 6.90)",
+          "oklch(72% 0.11356 6.90)",
+          "oklch(84% 0.11356 6.90)",
+          "oklch(95% 0.11356 6.90)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      },
+      "danger": {
+        "role": "error",
+        "displayName": "Error",
+        "tonalRamp": [
+          "oklch(15% 0.12258 27.14)",
+          "oklch(26% 0.12258 27.14)",
+          "oklch(38% 0.12258 27.14)",
+          "oklch(49% 0.12258 27.14)",
+          "oklch(61% 0.12258 27.14)",
+          "oklch(72% 0.12258 27.14)",
+          "oklch(84% 0.12258 27.14)",
+          "oklch(95% 0.12258 27.14)"
+        ],
+        "rampPurpose": "Exploración del panel; la interfaz usa sólo los valores normativos del frontmatter."
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Título del libro",
+        "purpose": "Encabezado Cinzel en escritorio."
+      },
+      "headline-mobile": {
+        "displayName": "Título móvil",
+        "purpose": "Encabezado a anchuras de 720px o menos."
+      },
+      "result": {
+        "displayName": "Valor calculado",
+        "purpose": "Columna de valores con cifras tabulares."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-background",
+        "value": "background .15s ease-out",
+        "purpose": "Respuesta del fondo al puntero."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "@media(prefers-reduced-motion:reduce){button{transition:none}}",
+        "purpose": "Elimina la transición cuando el usuario reduce movimiento."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "single-column",
+        "value": "720px",
+        "condition": "max-width:720px"
+      }
+    ],
+    "focus": {
+      "outline": "3px solid var(--accent)",
+      "outlineOffset": "3px"
+    },
+    "layout": {
+      "maxWidth": "1140px",
+      "desktopColumns": "minmax(260px,380px) minmax(0,1fr)",
+      "desktopPadding": "48px 32px 32px",
+      "desktopResultsPaddingLeft": "40px",
+      "mobilePadding": "28px 22px",
+      "mobileResultsPadding": "28px 0 0",
+      "minimumControlHeight": "44px"
+    },
+    "fontEmbedding": {
+      "families": [
+        {
+          "family": "Cinzel",
+          "format": "truetype",
+          "source": "fusion/web/fonts/Cinzel.ttf",
+          "licence": "fusion/web/fonts/OFL-Cinzel.txt"
+        },
+        {
+          "family": "Source Sans 3",
+          "format": "woff2",
+          "source": "fusion/web/fonts/SourceSans3.woff2",
+          "licence": "fusion/web/fonts/OFL-SourceSans3.txt"
+        }
+      ],
+      "delivery": "data URL en el HTML integrado en el Python exportado",
+      "weights": "100 900",
+      "display": "swap",
+      "licencesRoute": "/licenses"
+    },
+    "evidence": {
+      "sha256": {
+        "nightingale/sheets/web_app.py": "51fa46882aca8419751d175841c7eec4e0170422d3fecfe38178341ad41f0fcd",
+        ".impeccable/review/calculator2011.html": "77ce61d390173ac2a19e302fec0d809f6cdc0b5c5f09c3eefa089fd6fc05d9ed",
+        ".impeccable/review/desktop.png": "c91e2cc22384cdbb03af80f99e4b05ca90e0cbe85ddbdbdaf0d2d4738196c398",
+        ".impeccable/review/mobile.png": "091ad177e868a35589ca6b29297f22d398bf932981d320e276cebcf1f5457e95"
+      },
+      "renderMatchesSource": {
+        "css": true,
+        "javascript": true
+      },
+      "visualInspection": [
+        "desktop.png: dos columnas, tabla derecha, fuentes y tema heredados.",
+        "mobile.png: una columna, acciones tras campos, tabla debajo."
+      ],
+      "finishVerdict": "ship",
+      "finishVerdictSource": "Revisión final fresca comunicada en el encargo del agente principal; no es una revisión independiente de este documentador.",
+      "fixes": [
+        "Respuestas tardías descartadas por contador de peticiones.",
+        "Restablecer deshabilitado mientras calcula.",
+        "Resultados vaciados al recalcular y error anunciado con role=alert.",
+        "Borde de campo #8b7379: contraste aproximado 4,16:1 contra fondo y 3,86:1 contra campo."
+      ],
+      "shippingRasters": [],
+      "sourceRevalidation": {
+        "change": "_date_kind reconoce formatos de hora hh y ss sin exigir componentes de fecha.",
+        "cssUnchanged": true,
+        "javascriptUnchanged": true,
+        "scope": "Revalidación documental de la fuente actual; no constituye aprobación de la revisión backend.",
+        "uiVerdictScope": "ship sigue limitado a las correcciones UI comunicadas en el encargo original."
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Calcular",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción de cálculo; muestra Calculando… y se deshabilita junto a Restablecer durante la petición.",
+      "html": "<button class=\"ds-calculate\" type=\"button\">Calcular</button>",
+      "css": ".ds-calculate{font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;min-height:44px;padding:9px 18px;border:1px solid var(--line,#433538);border-radius:6px;cursor:pointer;transition:background .15s ease-out;background:var(--accent,#de8396);border-color:var(--accent,#de8396);color:#1b1315;font-weight:600;}.ds-calculate:hover{background:#e7a3b1}.ds-calculate:focus-visible{outline:3px solid var(--accent,#de8396);outline-offset:3px}.ds-calculate:disabled{opacity:.6;cursor:wait}@media(prefers-reduced-motion:reduce){.ds-calculate{transition:none}}"
+    },
+    {
+      "name": "Restablecer",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Recupera los valores originales y vuelve a calcular; queda deshabilitado durante la petición.",
+      "html": "<button class=\"ds-reset\" type=\"reset\">Restablecer</button>",
+      "css": ".ds-reset{font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;min-height:44px;padding:9px 18px;border:1px solid var(--line,#433538);border-radius:6px;cursor:pointer;transition:background .15s ease-out;background:transparent;color:var(--text,#ece1e4);}.ds-reset:hover{background:#2f2527}.ds-reset:focus-visible{outline:3px solid var(--accent,#de8396);outline-offset:3px}.ds-reset:disabled{opacity:.6;cursor:wait}@media(prefers-reduced-motion:reduce){.ds-reset{transition:none}}"
+    },
+    {
+      "name": "Campo de parámetro",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Etiqueta visible y contorno de control; el formulario real adapta el tipo al dato del libro.",
+      "html": "<label class=\"ds-field-label\" for=\"ds-units\">Unidades</label><input class=\"ds-field\" id=\"ds-units\" type=\"number\" value=\"24\" step=\"any\">",
+      "css": ".ds-field-label{display:block;margin:0 0 6px;font-weight:600;color:var(--text,#ece1e4);font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;}.ds-field{font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;width:100%;min-height:44px;background:var(--surface,#241b1d);color:var(--text,#ece1e4);border:1px solid var(--control-line,#8b7379);border-radius:6px;padding:8px 12px;caret-color:var(--accent,#de8396)}.ds-field::placeholder{color:var(--muted,#beb4b6)}.ds-field:focus-visible{outline:3px solid var(--accent,#de8396);outline-offset:3px}"
+    },
+    {
+      "name": "Parámetro booleano",
+      "kind": "input",
+      "refersTo": "checkbox",
+      "description": "Casilla nativa de 20px dentro de una etiqueta de altura mínima 44px.",
+      "html": "<label class=\"ds-check\"><input class=\"ds-checkbox\" type=\"checkbox\">Urgente</label>",
+      "css": ".ds-check{display:flex;align-items:center;min-height:44px;margin:0 0 6px;color:var(--text,#ece1e4);font-weight:600;font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;}.ds-checkbox{width:20px;height:20px;accent-color:var(--accent,#de8396);margin:0 12px 0 0}.ds-checkbox:focus-visible{outline:3px solid var(--accent,#de8396);outline-offset:3px}"
+    },
+    {
+      "name": "Tabla de resultados",
+      "kind": "custom",
+      "refersTo": "result-table",
+      "description": "Resultados con cifras tabulares, valor a la derecha y procedencia escrita cuando utiliza valores guardados.",
+      "html": "<table class=\"ds-results\"><thead><tr><th scope=\"col\">Resultado</th><th scope=\"col\">Valor</th></tr></thead><tbody><tr><td>Total (€)<span class=\"ds-saved\">Usa valores guardados</span></td><td>617,83</td></tr></tbody></table><p class=\"ds-status\" role=\"status\" aria-live=\"polite\">Resultados actualizados.</p>",
+      "css": ".ds-results{font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;color:var(--text,#ece1e4)}.ds-results th,.ds-results td{padding:14px 0;border-bottom:1px solid var(--line,#433538);text-align:left;overflow-wrap:anywhere}.ds-results th{font-size:14px;color:var(--muted,#beb4b6);font-weight:400}.ds-results th:last-child,.ds-results td:last-child{text-align:right;padding-left:20px}.ds-results td:last-child{font-size:19px;white-space:normal}.ds-results td:first-child{width:60%}.ds-saved{display:block;font-size:13px;color:var(--muted,#beb4b6)}.ds-status{font-family:'Source Sans 3',sans-serif;font-size:16px;line-height:1.55;font-size:15px;color:var(--muted,#beb4b6);min-height:24px;margin:20px 0 0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La familia Hoard existente",
+    "overview": "Esta documentación describe únicamente el HTML que genera `nightingale/sheets/web_app.py`. Prolonga el mundo visual definido en el `DESIGN.md` raíz: fondo oscuro teñido, rosa propio de Nightingale, títulos Cinzel y texto Source Sans 3. Los tokens de esta cabecera corresponden al exportador; no sustituyen los del panel Funciones ni modifican otras vistas.\n\nLa superficie opera como una calculadora local: nombre del libro, parámetros editables y resultados en tabla. El modo Operate y la composición pertenecen al [contrato de superficie](../nightingale-sheets-web-app-py.md). El archivo Python exportado incluye cálculo, HTML, fuentes y licencias; no necesita descargar recursos. La identidad se expresa mediante tipografía y color, sin añadir logotipo ni imágenes.",
+    "keyCharacteristics": [
+      "Campos nativos con etiquetas visibles y tipos conservados.",
+      "Parámetros y resultados separados por una línea y una jerarquía clara.",
+      "Resultados tabulares, estados escritos y errores anunciados.",
+      "Fuentes integradas y comportamiento adaptable a escritorio y móvil."
+    ],
+    "rules": [
+      {
+        "name": "Control Boundary",
+        "body": "Los campos usan `control-line`; los separadores de contenido usan `line`.",
+        "section": "colors"
+      },
+      {
+        "name": "Current Result",
+        "body": "Sólo la petición vigente puede publicar resultados, errores y estado; al recalcular no se conservan cifras anteriores como si siguieran actualizadas.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** conservar las familias integradas, sus licencias y los controles nativos.",
+      "**Do** mantener el borde específico de campo, el foco visible y los estados escritos.",
+      "**Do** conservar la disposición de parámetros seguida de resultados en móvil.",
+      "**Do** vaciar resultados anteriores al recalcular y descartar respuestas tardías."
+    ],
+    "donts": [
+      "**Don't** aplicar estos tokens a todo Nightingale ni sustituir su `DESIGN.md` raíz.",
+      "**Don't** añadir un logotipo, raster o dependencia de red a esta calculadora autónoma.",
+      "**Don't** comunicar error o procedencia de valores guardados sólo mediante color."
+    ]
+  }
+}

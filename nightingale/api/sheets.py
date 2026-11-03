@@ -176,3 +176,11 @@ def units_get(request: Request, wid: str):
 def units_put(request: Request, wid: str, body: UnitsBody):
     from ..sheets import explain_ops
     return explain_ops.units(services(request), store(request), wid, body.units)
+
+
+@router.get("/{wid}/export.app.py")
+@api_errors
+def export_app(request: Request, wid: str):
+    filename, code = store(request).export_code(wid, format="app")
+    return Response(code, media_type="text/x-python; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})

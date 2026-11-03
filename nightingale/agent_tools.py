@@ -631,6 +631,7 @@ class WorkbookArgs(BaseModel):
     note: Optional[str] = Field(None, description="scenarios save: free text")
     units: Optional[dict[str, Optional[str]]] = Field(None, description="units: {input cell or label: unit, e.g. 'EUR/h', 'h', 'm', '%'}; "
                                                       "null removes. Omit to only report. Currency symbols €/$ are read from number formats.")
+    format: Literal["python", "app"] = Field("python", description="export: python is the existing calculation module; app is one self-contained Python web calculator with forms, fonts and results, standard library only")
 
 
 def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
@@ -665,7 +666,7 @@ def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
             raise ValueError("cell is required to trace")
         return st.trace(need(), a.cell)
     if a.action == "export":
-        return st.export(need())
+        return st.export(need(), format=a.format)
     if a.action in ("sensitivity", "scenarios", "units"):
         from .sheets import explain_ops
         return explain_ops.run(s, st, need(), a, source="agent")
