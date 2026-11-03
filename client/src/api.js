@@ -114,6 +114,11 @@ export const api = {
   migrateDdl: (body) => download("api/migrate/ddl.sql", body),
   migrateFile: (name) => downloadGet(`api/migrate/file/${encodeURIComponent(name)}`),
 
+  processSuggest: (dataset) => post("/api/process/suggest", { dataset }),
+  processDiscover: (body) => post("/api/process/discover", body),
+  processConform: (body) => post("/api/process/conform", body),
+  processRehearse: (body) => post("/api/process/rehearse", body),
+
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
   qualityDefine: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/quality`, body),

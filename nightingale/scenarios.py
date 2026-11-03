@@ -7,6 +7,11 @@ give each metric a mean and a 95% interval. The output is a set of scenarios
 under stated assumptions, not a prediction: the model, its seed and, when data
 were used, the calibration sample size are always reported.
 
+Optionally a model carries `routing` (a first-order Markov chain over the stations: start shares and
+next-step shares, with "END" for leaving), which turns the line into a network: each job gets its own route,
+loops (rework) included, and every visit draws its own service time. Without `routing` the stations are the
+plain tandem line described above, unchanged.
+
 All times are hours. Random numbers come from per-purpose streams keyed by
 (seed, replication) and indexed by job, so two variants of a model run with the
 same seed see the same arrivals and the same underlying service draws (common
@@ -313,6 +318,7 @@ def _prepare(model: dict) -> dict:
             raise ScenarioError(f"{where}: on_full must be 'lose' or 'block'")
         st.cost = float(s.get("server_cost_hour", costs.get("server_hour", 0)))
         stations.append(st)
+    routing = _prepare_routing(model.get("routing"), stations)
     # inventory
     inv = model.get("inventory")
     inventory = None
@@ -337,17 +343,75 @@ def _prepare(model: dict) -> dict:
     reps = int(model.get("replications", 20))
     if not 1 <= reps <= MAX_REPLICATIONS:
         raise ScenarioError(f"replications must be between 1 and {MAX_REPLICATIONS}")
-    expected = arrival["rmax"] * horizon * reps * (len(stations) + 2)
+    visits = routing["K"] if routing else 1
+    expected = arrival["rmax"] * horizon * reps * (len(stations) * visits + 2)
     if expected > MAX_JOB_DRAWS:
         raise ScenarioError("model too large for one run (about "
                             f"{int(expected):,} random draws); shorten the horizon or the replications")
     return {
         "horizon": horizon, "warm": warm, "reps": reps, "seed": int(model.get("seed", 1)), "arrival": arrival,
         "cum": cum, "scale": scale, "type_names": names, "stations": stations, "inventory": inventory,
+        "routing": routing,
         "c_wait": float(costs.get("waiting_hour", 0)), "c_lost": float(costs.get("lost_job", 0)),
         "c_hold": float(costs.get("holding_unit_hour", 0)), "c_order": float(costs.get("order", 0)),
         "c_stockout": float(costs.get("stockout_event", 0)),
     }
+
+
+MAX_ROUTE_STEPS = 200
+
+
+def _cumulative(shares: Any, index: dict, where: str, allow_end: bool) -> tuple[list[int], list[float]]:
+    if not isinstance(shares, dict) or not shares:
+        raise ScenarioError(f"{where}: expected an object {{station: share}}")
+    targets, weights = [], []
+    for name, w in shares.items():
+        try:
+            w = float(w)
+        except (TypeError, ValueError):
+            raise ScenarioError(f"{where}: share of {name!r} must be a number") from None
+        if w < 0 or not math.isfinite(w):
+            raise ScenarioError(f"{where}: share of {name!r} must not be negative")
+        if name == "END" and allow_end:
+            targets.append(-1)
+        elif name in index:
+            targets.append(index[name])
+        else:
+            raise ScenarioError(f"{where}: unknown station {name!r}")
+        weights.append(w)
+    total = sum(weights)
+    if total <= 0:
+        raise ScenarioError(f"{where}: shares must sum to more than 0")
+    cum, acc = [], 0.0
+    for w in weights:
+        acc += w / total
+        cum.append(acc)
+    return targets, cum
+
+
+def _prepare_routing(raw: Any, stations: list) -> Optional[dict]:
+    if not raw:
+        return None
+    if not isinstance(raw, dict) or "start" not in raw:
+        raise ScenarioError("routing: expected {\"start\": {station: share}, \"next\": {station: {station|END: share}}}")
+    index = {st.name: st.idx for st in stations}
+    visits = raw.get("max_visits", 4)
+    if not isinstance(visits, int) or isinstance(visits, bool) or not 1 <= visits <= 20:
+        raise ScenarioError("routing: max_visits must be a whole number between 1 and 20")
+    nxt = {}
+    for name, shares in (raw.get("next") or {}).items():
+        if name not in index:
+            raise ScenarioError(f"routing.next: unknown station {name!r}")
+        nxt[index[name]] = _cumulative(shares, index, f"routing.next.{name}", True)
+    return {"start": _cumulative(raw["start"], index, "routing.start", False), "next": nxt, "K": visits}
+
+
+def _pick(spec: tuple[list[int], list[float]], u: float) -> int:
+    targets, cum = spec
+    for t, c in zip(targets, cum):
+        if u <= c:
+            return t
+    return targets[-1]
 
 
 def _streams(seed: int, rep: int) -> Callable[[int], random.Random]:
@@ -415,7 +479,42 @@ def simulate(p: dict, rep: int) -> dict:
         while k < len(cum) - 1 and u > cum[k]:
             k += 1
         jtype.append(k)
-    uniforms = [[r.random() for _ in range(nj)] for r in (rng(10 + i) for i in range(ns))]
+    rtg = p.get("routing")
+    ku = rtg["K"] if rtg else 1
+    routes: list[list[int]] = []
+    truncated = 0
+    if rtg:
+        jr_base = (int(p["seed"]) * 1_000_003 + rep) * 977 + 5 * 7919 + 13
+        for j in range(nj):
+            rr = random.Random(jr_base + j * 104729)
+            cur = _pick(rtg["start"], rr.random())
+            route, seen = [cur], {cur: 1}
+            while len(route) < MAX_ROUTE_STEPS and cur in rtg["next"]:
+                tgt = _pick(rtg["next"][cur], rr.random())
+                if tgt < 0:
+                    break
+                if seen.get(tgt, 0) >= ku:
+                    truncated += 1
+                    break
+                route.append(tgt)
+                seen[tgt] = seen.get(tgt, 0) + 1
+                cur = tgt
+            routes.append(route)
+    pos = [0] * nj
+    uniforms = [[r.random() for _ in range(nj * ku)] for r in (rng(10 + i) for i in range(ns))]
+
+    def visit(job, i):
+        return routes[job][:pos[job] + 1].count(i) - 1 if rtg else 0
+
+    def next_of(job, i):
+        if rtg:
+            k = pos[job] + 1
+            return routes[job][k] if k < len(routes[job]) else None
+        return i + 1 if i < ns - 1 else None
+
+    def advance(job):
+        if rtg:
+            pos[job] += 1
     scale = p["scale"]
     lead_rng = rng(4)
 
@@ -511,7 +610,7 @@ def simulate(p: dict, rep: int) -> dict:
                 wait_sum[i] += now - enter_t[i][job]
                 wait_n[i] += 1
             s.busy += 1
-            push(now + s.sampler(uniforms[i][job]) * scale[jtype[job]], _END, i, job)
+            push(now + s.sampler(uniforms[i][job * ku + visit(job, i)]) * scale[jtype[job]], _END, i, job)
             admit(i, now)
 
     def enter(job, i, now):
@@ -524,6 +623,7 @@ def simulate(p: dict, rep: int) -> dict:
         while s.blocked and can_accept(s, now):
             job, frm = s.blocked.popleft()
             S[frm].busy -= 1
+            advance(job)
             enter(job, i, now)
             start(frm, now)
 
@@ -549,28 +649,31 @@ def simulate(p: dict, rep: int) -> dict:
             job = a
             if job + 1 < nj:
                 push(times[job + 1], _ARR, job + 1)
-            s0 = S[0]
+            first = routes[job][0] if rtg else 0
+            s0 = S[first]
             in_system += 1
             if s0.on_full == "lose" and not can_accept(s0, now):
-                lose(0, now)
+                lose(first, now)
             else:
-                enter(job, 0, now)
+                enter(job, first, now)
         elif kind == _END:
             i, job = a, b
             s = S[i]
-            if i == ns - 1:
+            ni = next_of(job, i)
+            if ni is None:
                 s.busy -= 1
                 finish(job, now)
                 start(i, now)
             else:
-                nxt = S[i + 1]
+                nxt = S[ni]
                 if can_accept(nxt, now):
                     s.busy -= 1
-                    enter(job, i + 1, now)
+                    advance(job)
+                    enter(job, ni, now)
                     start(i, now)
                 elif nxt.on_full == "lose":
                     s.busy -= 1
-                    lose(i + 1, now)
+                    lose(ni, now)
                     start(i, now)
                 else:
                     nxt.blocked.append((job, i))
@@ -600,6 +703,8 @@ def simulate(p: dict, rep: int) -> dict:
         "total_cost": cost,
         "cost_per_hour": cost / span,
     }
+    if rtg:
+        out["truncated_routes"] = float(truncated)
     if inv:
         out["orders"] = float(n_orders)
         out["avg_stock"] = area_stock / span
@@ -625,7 +730,7 @@ def erlang_c(c: int, lam: float, mu: float) -> Optional[dict]:
 
 
 def _analytic(model: dict, p: dict) -> Optional[dict]:
-    if len(p["stations"]) != 1 or p["inventory"] or p["arrival"]["type"] != "poisson":
+    if len(p["stations"]) != 1 or p["inventory"] or p["routing"] or p["arrival"]["type"] != "poisson":
         return None
     s = p["stations"][0]
     raw = model["stations"][0].get("service")
@@ -683,6 +788,10 @@ def run_model(model: dict, replications: Optional[int] = None, seed: Optional[in
         if u is not None and u > 0.95:
             warnings.append(f"Station {s.name!r} is above 95% utilised: queues grow without bound and results "
                             "depend on the horizon.")
+    cut = metrics.get("truncated_routes")
+    if cut and cut["mean"]:
+        warnings.append(f"About {cut['mean']:.1f} job routes per replication were cut at max_visits "
+                        f"({p['routing']['K']}); raise routing.max_visits if rework can repeat more often.")
     if p["reps"] < 5:
         warnings.append("Fewer than 5 replications: the intervals are very wide or missing.")
     stations = [{"name": s.name, "servers": s.servers, "wait_hours": metrics[f"wait:{s.name}"],

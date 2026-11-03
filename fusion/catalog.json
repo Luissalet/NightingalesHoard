@@ -2472,6 +2472,176 @@
     "module": "data"
   },
   {
+    "name": "data_process",
+    "description": "Process mining: discover a process from an event log, check conformance, rehearse changes.\nFrom case id, activity and timestamp (optional start, resource, cost): directly-follows graph with frequencies and waiting times, variants with shares, rework loops, throughput times, bottlenecks and resource workload. conform checks every case against a reference (ordered steps with optional/parallel markers, or allowed transitions) and lists skipped, inserted, repeated and reordered steps with counts and example cases. rehearse builds a simulation model of the process, validates the baseline against the observed throughput time (and says when it is not representative), then compares changes (add a resource, remove a step, change a routing share, shorten a duration) with common random numbers and 95% intervals. Durations are in hours. Logged.\nSinónimos: minería de procesos, descubrimiento de procesos, registro de eventos, cuello de botella, variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "default": "discover",
+          "description": "suggest = propose the column mapping; discover = process map, variants, rework, throughput times, bottlenecks, resources; conform = check cases against a reference process; rehearse = simulate the discovered process and compare changes with the baseline.",
+          "enum": [
+            "suggest",
+            "discover",
+            "conform",
+            "rehearse"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "event-log dataset: one row per event",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "mapping": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "columns: {case, activity, timestamp (end of the step), start?, resource?, cost?}. Required except for suggest; a start column enables waiting vs working time and capacity.",
+          "title": "Mapping"
+        },
+        "threshold": {
+          "default": 0.5,
+          "description": "discover: heuristic-miner dependency threshold for kept edges",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        },
+        "min_count": {
+          "default": 1,
+          "description": "discover: minimum count of an edge to keep it",
+          "minimum": 1,
+          "title": "Min Count",
+          "type": "integer"
+        },
+        "max_variants": {
+          "default": 20,
+          "description": "discover: variants to list",
+          "maximum": 500,
+          "minimum": 1,
+          "title": "Max Variants",
+          "type": "integer"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "conform: {steps: [\"A\", {activity: \"B\", optional: true}, {parallel: [\"C\", \"D\"]}]} or {transitions: [[from, to], ...], start?: [...], end?: [...]}",
+          "title": "Reference"
+        },
+        "max_examples": {
+          "default": 5,
+          "description": "conform: example case ids per deviation",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Examples",
+          "type": "integer"
+        },
+        "variants": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "rehearse: [{name, changes: [{type: add_resource, activity, count} | {type: remove_step, activity} | {type: set_routing, from, to, share} | {type: scale_duration, activity, factor}]}]; empty = validate the baseline only",
+          "title": "Variants"
+        },
+        "replications": {
+          "default": 20,
+          "description": "rehearse: simulation replications",
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Replications",
+          "type": "integer"
+        },
+        "seed": {
+          "default": 1,
+          "description": "rehearse: random seed (shared by baseline and variants)",
+          "title": "Seed",
+          "type": "integer"
+        },
+        "tolerance": {
+          "default": 0.15,
+          "description": "rehearse: relative tolerance of the baseline validation",
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Tolerance",
+          "type": "number"
+        },
+        "model_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "rehearse: also store the discovered model in the scenario lab",
+          "title": "Model Name"
+        },
+        "save_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "discover: prefix for the edges/variants/cases datasets; conform/rehearse: dataset name for the result",
+          "title": "Save As"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "ProcessArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_log",
     "description": "Search the analysis log (every operation, with its N-000123 id, input and result).\nSinónimos: historial, registro de análisis, qué se ha hecho.",
     "annotations": {

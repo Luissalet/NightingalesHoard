@@ -53,4 +53,4 @@ def test_http_agent_full_page_and_static_catalog(client):
     frozen = next(t for t in catalog if t['name']=='data_profile')
     live = next(t for t in tool_catalog() if t['name']=='data_profile')
     assert frozen['inputSchema'] == live['inputSchema']
-    assert len(catalog) == 45
+    assert len(catalog) == 46

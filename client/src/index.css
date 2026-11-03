@@ -214,3 +214,6 @@ aside > div:first-child > img { border-radius: 8px; }
 .vega-embed svg .role-axis-domain line, .vega-embed svg .role-axis-tick line { stroke: var(--hoard-border-hover) !important; }
 aside > div:first-child { gap: 10px; padding-left: 16px; padding-right: 10px; }
 aside > div:first-child .leading-tight > div:first-child { font-size: 14px; white-space: nowrap; letter-spacing: 0; }
+
+.pr-t th, .pr-t td { padding: 2px 8px; }
+.pr-t th:first-child, .pr-t td:first-child { padding-left: 0; }
