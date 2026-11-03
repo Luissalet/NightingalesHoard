@@ -107,3 +107,11 @@ def export_py(request: Request, wid: str):
     filename, code = store(request).export_code(wid)
     return Response(code, media_type="text/x-python; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/{wid}/export.app.py")
+@api_errors
+def export_app(request: Request, wid: str):
+    filename, code = store(request).export_code(wid, format="app")
+    return Response(code, media_type="text/x-python; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
