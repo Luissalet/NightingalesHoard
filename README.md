@@ -230,12 +230,12 @@ All JSON; errors are `{ "error": "..." }`.
 
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (24 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (25 tools, `data_ingest` through `data_ask`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 46-tool catalog (24 Data, 20 Calculation, 2 controls).
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 47-tool catalog (25 Data, 20 Calculation, 2 controls).
 
 ## Tests
 
@@ -314,3 +314,7 @@ Compare two datasets row by row on one or more key column pairs (for example a C
 ## Scenario lab
 
 Describe an operation as a model (arrivals by Poisson rate, hourly schedule or measured inter-arrival times; stations with servers, shifts, buffers and service-time distributions; costs; an optional stock item with reorder point and lead time) and simulate it with a seeded discrete-event engine. Each run uses several replications and reports mean and 95% interval for throughput, lead time (mean, median, p90), waiting, utilisation and queue per station, WIP, lost jobs, stockouts and cost, plus a Little's-law check and, for a single M/M/c station, the Erlang-C waiting time next to the simulated one. Named variants are compared with common random numbers and each difference is marked distinguishable or not; a sweep varies one parameter over a list of values. Calibration reads durations or timestamps from a dataset column, reports the sample size and warns when it is small. The output is a set of scenarios under stated assumptions, not a prediction. Models are saved by name; results can be saved as datasets. Page **Scenarios**, API `/api/scenarios/*`, agent tool `data_scenario`. Every run is written to the analysis log.
+
+## Migration rehearsal
+
+Rehearse a migration before the real one. A spec (JSON, saved by name) lists target tables, each with a source dataset or read-only SQL over datasets, typed columns (`INTEGER`, `REAL`, `TEXT`, `DATE`, `BOOLEAN`) with a required flag, a DuckDB expression over the source columns (default: the same-name column) and a kind (`representation` or `correction`), plus primary, unique and foreign keys and checks. A rehearsal rebuilds one SQLite file per migration name under the data directory and loads the tables parents first. Per table it reports source rows = loaded + rejected, with every rejected row and its reason (value that does not convert, with column and raw value; missing required value; repeated primary or unique key; foreign key without a parent); rejected rows can be saved as a dataset. A second load upserts by primary key into the same file and the report shows counts and a content hash unchanged and no duplicate keys. Representation columns are tested by round trip against the source column and flagged when they change a value; correction columns report how many values they changed. Total checks (source expression against a target column, with tolerance) and functional queries (a source query and a target query whose results must match) are evaluated on both sides. The target DDL and the SQLite file can be downloaded. A suggestion helper drafts a table from a dataset profile and says it is only a draft. Source datasets are never modified. Page **Migrate**, API `/api/migrate/*` (`suggest`, `specs`, `rehearse`, `ddl`, `ddl.sql`, `file/{name}`), agent tool `data_migrate`. Every run is written to the analysis log.

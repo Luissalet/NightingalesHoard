@@ -1,10 +1,11 @@
 from .agent import router as agent_router
 from .dac import router as dac_router
 from .lab import router as lab_router
+from .migrate import router as migrate_router
 from .reconcile import router as reconcile_router
 from .scenarios import router as scenarios_router
 from .sheets import router as sheets_router
 from .status import router as status_router
 from .ui import router as ui_router
 
-ROUTERS = [status_router, agent_router, ui_router, lab_router, dac_router, sheets_router, reconcile_router, scenarios_router]
+ROUTERS = [status_router, agent_router, ui_router, lab_router, dac_router, sheets_router, reconcile_router, migrate_router, scenarios_router]
