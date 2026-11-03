@@ -65,6 +65,7 @@ class CalibrateBody(EventLogBody):
     tolerances: Optional[dict[str, float]] = None
     variants: list[dict[str, Any]] = Field(default_factory=list)
     model_name: Optional[str] = None
+    model_edits: Optional[dict[str, Any]] = None
 
 
 class ExportBody(CalibrateBody):
@@ -110,7 +111,7 @@ def profile(request: Request, body: ProfileBody):
 def calibrate(request: Request, body: CalibrateBody):
     return el.calibrate_process(services(request), body.dataset, body.mapping, body.log_options, body.holdout,
                                 body.split_at, body.replications, body.seed, body.tolerances, body.variants,
-                                body.model_name, body.recipe)
+                                body.model_name, body.recipe, model_edits=body.model_edits)
 
 
 @router.post("/export")
@@ -118,4 +119,4 @@ def calibrate(request: Request, body: CalibrateBody):
 def export(request: Request, body: ExportBody):
     return el.export_process(services(request), body.dataset, body.mapping, body.log_options, body.with_calibration,
                              body.holdout, body.split_at, body.replications, body.seed, body.tolerances,
-                             body.variants)
+                             body.variants, model_edits=body.model_edits)

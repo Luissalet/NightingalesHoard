@@ -445,3 +445,147 @@ def test_mcp_stdio_bridge_profiles_an_event_log(tmp_path):
             proc.wait(10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+# ------------------------------------------------------------------------- editable model, pairing, row wording
+def _p(res):
+    return {x["parameter"]: x for x in res["parameters"]}
+
+
+def test_edited_model_changes_the_validation_deterministically_and_keeps_provenance(shop):
+    kw = dict(holdout=0.3, replications=8, seed=4)
+    fitted = el.calibrate_process(shop, "taller", gen.MAPPING, gen.OPTIONS, **kw)
+    assert fitted["validation"]["passed"] is True and fitted["edits"] == [] and fitted["edit_diff"] is None
+    assert fitted["model_source"] == "fitted"
+    edits = {"stations": {"Impresión": {"servers": 3, "service": {"dist": "exponential", "mean": 0.2}}},
+             "arrival_rate": 1.5,
+             "routing": {"next": {"Recepción": {"Revisión": 3, "Impresión": 1}}}}
+    alt = [{"name": "segunda impresora", "changes": [{"type": "add_resource", "activity": "Impresión"}]}]
+    a = el.calibrate_process(shop, "taller", gen.MAPPING, gen.OPTIONS, variants=alt, model_edits=edits,
+                             model_name="Taller editado", **kw)
+    b = el.calibrate_process(shop, "taller", gen.MAPPING, gen.OPTIONS, model_edits=edits, **kw)
+    assert a["model_source"] == "edited"
+    # an edit that makes the printer far faster and the demand higher cannot reproduce the held-out cycle time
+    assert a["validation"]["passed"] is False and a["edit_diff"]["fitted_passed"] is True
+    assert a["validation"]["verdict"].endswith("not the fitted one.")
+    assert a["edit_diff"]["verdict"].startswith("The edited model fails")
+    # deterministic: same seeds, same edited result; and the fitted side of the diff is the fitted run itself
+    assert a["baseline"]["metrics"] == b["baseline"]["metrics"]
+    assert [r["edited_simulated"] for r in a["edit_diff"]["rows"]] == [r["simulated"] for r in a["validation"]["rows"]]
+    assert [r["fitted_simulated"] for r in a["edit_diff"]["rows"]] == [r["simulated"] for r in fitted["validation"]["rows"]]
+    cyc = next(r for r in a["edit_diff"]["rows"] if r["metric"] == "cycle_time_mean_hours")
+    assert cyc["edited_simulated"] < cyc["fitted_simulated"] and cyc["delta"] < 0
+    # provenance: edited parameters say so and keep the original value and the fitted source
+    p = _p(a)
+    assert p["servers:Impresión"]["edited"] and p["servers:Impresión"]["original_value"] == 1
+    assert p["servers:Impresión"]["value"] == 3 and p["servers:Impresión"]["fitted"]["source"]["resources"] == ["Imp-1"]
+    assert "edited by the user" in p["servers:Impresión"]["estimator"]
+    assert p["service:Impresión"]["original_value"]["dist"] == "empirical" and p["service:Impresión"]["value"]["mean_hours"] == 0.2
+    assert p["arrivals"]["edited"] and p["arrivals"]["value"] == {"type": "poisson", "rate": 1.5}
+    # shares 3:1 are normalised and the record says so
+    assert p["routing:Recepción"]["value"] == pytest.approx({"Revisión": 0.75, "Impresión": 0.25})
+    assert next(e for e in a["edits"] if e["parameter"] == "routing:Recepción")["normalised"] is True
+    assert not p["service:Revisión"].get("edited")
+    # alternatives are compared with the edited model as the baseline
+    assert a["alternatives"][0]["warnings"][0].startswith("The baseline failed")
+    assert sc.get_model(shop, "Taller editado")["model"]["provenance"]["edited_by_user"] == [
+        "arrivals", "servers:Impresión", "service:Impresión", "routing:Recepción"]
+    # the edits travel in the recipe and re-run identically
+    again = el.calibrate_process(shop, "taller", None, None, recipe=a["recipe"], replications=8, seed=4)
+    assert again["baseline"]["metrics"] == a["baseline"]["metrics"] and again["model_source"] == "edited"
+
+
+def test_invalid_model_edits_are_rejected_with_explicit_messages_in_both_languages(shop):
+    cases = [
+        ({"arrival_rate": -1}, "arrival rate must be greater than zero", "tasa de llegadas debe ser mayor que cero"),
+        ({"arrival_rate": "x"}, "must be a finite number", "debe ser un número finito"),
+        ({"stations": {"Nada": {"servers": 2}}}, "unknown activity 'Nada'", "actividad desconocida 'Nada'"),
+        ({"stations": {"Impresión": {"servers": 0}}}, "at least 1", "al menos 1"),
+        ({"stations": {"Impresión": {"servers": 1.5}}}, "whole number", "número entero"),
+        ({"stations": {"Impresión": {"service": {"dist": "exponential", "mean": -2}}}}, "stations.Impresión.service",
+         "stations.Impresión.service"),
+        ({"stations": {"Impresión": {"service": {"dist": "empirical", "values": [1]}}}}, "replaced, not edited",
+         "se sustituye, no se edita"),
+        ({"stations": {"Impresión": {"speed": 3}}}, "unknown key 'speed'", "clave desconocida 'speed'"),
+        ({"routing": {"next": {"Recepción": {"Revisión": 0, "Impresión": 0}}}}, "add up to zero", "suman cero"),
+        ({"routing": {"next": {"Recepción": {"Revisión": -1, "Impresión": 2}}}}, "cannot be negative", "no puede ser negativa"),
+        ({"routing": {"next": {"Recepción": {"Fantasma": 1}}}}, "unknown target 'Fantasma'", "destino desconocido 'Fantasma'"),
+        ({"bogus": 1}, "unknown key 'bogus'", "clave desconocida 'bogus'"),
+    ]
+    for edits, en, es in cases:
+        with pytest.raises(pm.ProcessError, match="Model edit rejected") as e:
+            el.calibrate_process(shop, "taller", gen.MAPPING, gen.OPTIONS, replications=2, model_edits=edits)
+        assert en in str(e.value), (edits, str(e.value))
+        with pytest.raises(pm.ProcessError, match="Edición del modelo rechazada") as e2:
+            call_tool_sync(shop, "data_process", {"action": "calibrate", "dataset": "taller", "mapping": gen.MAPPING,
+                                                  "log_options": gen.OPTIONS, "replications": 2,
+                                                  "model_edits": edits, "lang": "es"})
+        assert es in str(e2.value), (edits, str(e2.value))
+
+
+LIFE = """caso,paso,momento,ciclo,quien
+C1,Imprimir,2026-02-02 09:00:00,start,Ana
+C1,Imprimir,2026-02-02 09:30:00,start,Beto
+C1,Imprimir,2026-02-02 10:00:00,complete,Beto
+C1,Imprimir,2026-02-02 11:00:00,complete,Ana
+C1,Entrega,2026-02-02 11:30:00,complete,Ana
+C2,Imprimir,2026-02-02 12:00:00,start,Ana
+C2,Imprimir,2026-02-02 12:10:00,start,Beto
+C2,Imprimir,2026-02-02 12:50:00,complete,Ana
+C2,Imprimir,2026-02-02 13:10:00,complete,Beto
+C2,Entrega,2026-02-02 13:30:00,complete,Ana
+"""
+LMAP = {"case": "caso", "activity": "paso", "timestamp": "momento", "lifecycle": "ciclo"}
+
+
+def _durations(log):
+    return sorted((cid, e[5]["rows"], round((e[0] - e[2]) / 3600, 4)) for cid, evs in log["cases"] for e in evs
+                  if e[1] == "Imprimir")
+
+
+def test_overlapping_runs_are_paired_by_resource_when_mapped_else_fifo(services):
+    services.ingest_text(LIFE, "solape", "csv")
+    by_res = el.load(services, "solape", {**LMAP, "resource": "quien"}, {"end_activities": ["Entrega"]})
+    fifo = el.load(services, "solape", LMAP, {"end_activities": ["Entrega"]})
+    # by hand. C1: Beto 09:30->10:00 = 0.5 h (rows 2,3), Ana 09:00->11:00 = 2 h (rows 1,4).
+    #           C2: Ana 12:00->12:50 = 5/6 h (rows 6,8), Beto 12:10->13:10 = 1 h (rows 7,9)
+    got = {(c, tuple(r)): d for c, r, d in _durations(by_res)}
+    assert got == {("C1", (2, 3)): 0.5, ("C1", (1, 4)): 2.0, ("C2", (6, 8)): 0.8333, ("C2", (7, 9)): 1.0}
+    # first in, first out (no resource mapped): C1 09:00->10:00 = 1 h, 09:30->11:00 = 1.5 h; C2 same as by resource
+    got = {(c, tuple(r)): d for c, r, d in _durations(fifo)}
+    assert got == {("C1", (1, 3)): 1.0, ("C1", (2, 4)): 1.5, ("C2", (6, 8)): 0.8333, ("C2", (7, 9)): 1.0}
+    pr = by_res["diag"]["pairing"]
+    assert pr["rule"] == "resource_then_fifo"
+    act = next(a for a in pr["activities"] if a["activity"] == "Imprimir")
+    # four pairs, all overlapping on the second completion only ... C1: both completions saw 2 / 1 open starts
+    assert act["pairs"] == 4 and act["by_resource"] == 4 and act["by_fifo"] == 0 and act["rule_used"] == "resource"
+    assert act["overlapping"] == 2 and act["differs_from_fifo"] == 1       # only C1's first completion took the later start
+    assert by_res["diag"]["resource_mismatch"]["total"] == 0
+    assert fifo["diag"]["resource_mismatch"]["total"] == 0                   # no resource column, nothing to compare
+    pf = fifo["diag"]["pairing"]
+    assert pf["rule"] == "fifo" and "No resource column" in pf["description"]
+    assert next(a for a in pf["activities"] if a["activity"] == "Imprimir")["rule_used"] == "fifo"
+    # a step with a single run never overlaps
+    ent = next(a for a in pr["activities"] if a["activity"] == "Entrega")
+    assert ent["pairs"] == 0
+    # reported in the profile too, and the completion-only mode has no pairing at all
+    prof = el.profile_process(services, "solape", {**LMAP, "resource": "quien"}, {"end_activities": ["Entrega"]})
+    assert prof["log"]["pairing"]["rule"] == "resource_then_fifo"
+    services.ingest_text(SEQ, "pedidos2", "csv")
+    assert el.profile_process(services, "pedidos2", M)["log"]["pairing"] is None
+
+
+def test_row_references_are_localised(services):
+    services.ingest_text(BAD, "bad2", "csv")
+    en = el.profile_process(services, "bad2", M, {"timezone": "Europe/Madrid"})
+    es = call_tool_sync(services, "data_process", {"action": "profile", "dataset": "bad2", "mapping": M,
+                                                   "log_options": {"timezone": "Europe/Madrid"}, "lang": "es"})
+    ex_en = next(d for d in en["deviations"] if d["type"] == "invalid timestamp")["examples"]
+    ex_es = next(d for d in es["deviations"] if d["type"] == "invalid timestamp")["examples"]
+    assert ex_en[0].startswith("row 13: ") and ex_es[0].startswith("fila 13: ")
+    miss = next(d for d in es["deviations"] if d["type"] == "missing case or activity")
+    assert miss["examples"] == ["fila 17"]
+    services.ingest_text(DUP, "dup2", "csv")
+    d = call_tool_sync(services, "data_process", {"action": "profile", "dataset": "dup2", "mapping": M, "lang": "es"})
+    dup = next(x for x in d["deviations"] if x["type"] == "duplicate")["examples"]
+    assert dup[0].startswith("fila ") and " = fila " in dup[0] and "row" not in dup[0]

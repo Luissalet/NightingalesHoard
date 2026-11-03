@@ -314,6 +314,7 @@ def build_log(rows: list[tuple], m: dict, opts: dict, total: int, tz_cols: set =
     start_after_end = []
     no_start, no_complete, res_mismatch = [], [], []
     in_progress: set = set()
+    pairing: dict[str, dict] = {}
     if mode == "lifecycle":
         groups: dict[tuple, list] = defaultdict(list)
         for ev in unique:
@@ -321,12 +322,28 @@ def build_log(rows: list[tuple], m: dict, opts: dict, total: int, tz_cols: set =
         for (cid, act), evs in groups.items():
             evs.sort(key=lambda e: (e[2], e[4], e[7]))      # timestamp, start before complete, source row
             queue: list = []
+            pr = pairing.setdefault(act, {"pairs": 0, "overlapping": 0, "by_resource": 0, "by_fifo": 0,
+                                          "differs_from_fifo": 0})
             for e in evs:
                 if e[4] == 0:
                     queue.append(e)
                     continue
                 if queue:
-                    s = queue.pop(0)
+                    k = 0
+                    if len(queue) > 1:
+                        pr["overlapping"] += 1
+                    if "resource" in m and e[5] is not None:
+                        same = [i for i, q_ in enumerate(queue) if q_[5] == e[5]]
+                        if same:
+                            k = same[0]
+                            pr["by_resource"] += 1
+                            pr["differs_from_fifo"] += 1 if k else 0
+                        else:
+                            pr["by_fifo"] += 1
+                    else:
+                        pr["by_fifo"] += 1
+                    pr["pairs"] += 1
+                    s = queue.pop(k)
                     if s[5] is not None and e[5] is not None and s[5] != e[5]:
                         res_mismatch.append({"case": cid, "activity": act, "rows": [s[7], e[7]],
                                              "start_resource": s[5], "complete_resource": e[5]})
@@ -417,6 +434,12 @@ def build_log(rows: list[tuple], m: dict, opts: dict, total: int, tz_cols: set =
         "complete_without_start": _limited(no_start),
         "start_without_complete": _limited(no_complete),
         "resource_mismatch": _limited(res_mismatch),
+        "pairing": None if mode != "lifecycle" else {
+            "rule": "resource_then_fifo" if "resource" in m else "fifo",
+            "description": tx("el.pairing_resource") if "resource" in m else tx("el.pairing_fifo"),
+            "activities": [{"activity": a, **v, "rule_used": (
+                "resource" if v["by_resource"] and not v["by_fifo"] else
+                "resource+fifo" if v["by_resource"] else "fifo")} for a, v in sorted(pairing.items())]},
         "timezone": {"declared": opts["timezone"], "offsets": {k: v for k, v in offsets.items()},
                      "mixed_offsets": len([o for o in offsets if o not in ("naive",)]) > 1 or (
                          "naive" in offsets and len(offsets) > 1),
@@ -637,25 +660,25 @@ def _deviation_list(log: dict, cases: list) -> list[dict]:
             add(d["type"], d["detail"], d["cases"], d["examples"], tx("el.why_" + d["type"].replace(" ", "_")))
     ex = diag["excluded"]
     add("invalid timestamp", "", ex["invalid_timestamp"]["total"],
-        [f"row {r['row']}: {json.dumps(r['value'], ensure_ascii=False)}" for r in ex["invalid_timestamp"]["items"]], tx("el.why_invalid"))
+        [tx("el.row_value", n=r['row'], value=json.dumps(r['value'], ensure_ascii=False)) for r in ex["invalid_timestamp"]["items"]], tx("el.why_invalid"))
     add("invalid start", "", ex["invalid_start"]["total"],
-        [f"row {r['row']}: {json.dumps(r['value'], ensure_ascii=False)}" for r in ex["invalid_start"]["items"]], tx("el.why_invalid"))
+        [tx("el.row_value", n=r['row'], value=json.dumps(r['value'], ensure_ascii=False)) for r in ex["invalid_start"]["items"]], tx("el.why_invalid"))
     add("missing case or activity", "", ex["missing_case_or_activity"]["total"],
-        [f"row {r['row']}" for r in ex["missing_case_or_activity"]["items"]], tx("el.why_missing_ids"))
+        [tx("el.row_n", n=r['row']) for r in ex["missing_case_or_activity"]["items"]], tx("el.why_missing_ids"))
     add("unknown lifecycle", "", ex["unknown_lifecycle"]["total"],
-        [f"row {r['row']}: {json.dumps(r['value'], ensure_ascii=False)}" for r in ex["unknown_lifecycle"]["items"]], tx("el.why_lifecycle"))
+        [tx("el.row_value", n=r['row'], value=json.dumps(r['value'], ensure_ascii=False)) for r in ex["unknown_lifecycle"]["items"]], tx("el.why_lifecycle"))
     add("duplicate", "", diag["duplicates"]["total"],
-        [f"row {r['row']} = row {r['duplicate_of']}" for r in diag["duplicates"]["items"]], tx("el.why_duplicate"))
+        [tx("el.row_dup", n=r['row'], m=r['duplicate_of']) for r in diag["duplicates"]["items"]], tx("el.why_duplicate"))
     add("tie", "", diag["ties"]["total"],
         [f"{r['case']}: {' = '.join(r['activities'])}" for r in diag["ties"]["items"]], tx("el.why_tie"))
     add("complete without start", "", diag["complete_without_start"]["total"],
-        [f"{r['case']}/{r['activity']} row {r['row']}" for r in diag["complete_without_start"]["items"]],
+        [f"{r['case']}/{r['activity']} {tx('el.row_n', n=r['row'])}" for r in diag["complete_without_start"]["items"]],
         tx("el.why_no_start"))
     add("start without complete", "", diag["start_without_complete"]["total"],
-        [f"{r['case']}/{r['activity']} row {r['row']}" for r in diag["start_without_complete"]["items"]],
+        [f"{r['case']}/{r['activity']} {tx('el.row_n', n=r['row'])}" for r in diag["start_without_complete"]["items"]],
         tx("el.why_no_complete"))
     add("start after end", "", diag["start_after_end"]["total"],
-        [f"row {r['row']}" for r in diag["start_after_end"]["items"]], tx("el.why_start_after_end"))
+        [tx("el.row_n", n=r['row']) for r in diag["start_after_end"]["items"]], tx("el.why_start_after_end"))
     add("zone change", "", diag["timezone"]["zone_changes"]["total"],
         [f"{r['case']}: {', '.join(r['offsets'])}" for r in diag["timezone"]["zone_changes"]["items"]],
         tx("el.why_zone"))
@@ -754,8 +777,135 @@ def _row(metric: str, train_obs, test_obs, sim: dict, tol: float, n_test: int) -
             "ok": rel <= tol, "n_holdout": n_test, "note": None}
 
 
+# ---------------------------------------------------------------------------------- user edits of the model
+EDIT_KEYS = ("arrival_rate", "stations", "routing")
+STATION_EDIT_KEYS = ("service", "servers")
+
+
+def _edit_fail(where: str, reason: str):
+    return ProcessError(tx("el.edit_invalid", where=where, reason=reason))
+
+
+def _edit_shares(shares: Any, names: list[str], where: str, allow_end: bool) -> dict:
+    """Validated routing shares, normalised to sum 1 (the engine normalises too; the edit record says so)."""
+    if not isinstance(shares, dict) or not shares:
+        raise _edit_fail(where, tx("el.edit_shares_shape"))
+    out, total = {}, 0.0
+    for name, w in shares.items():
+        if name not in names and not (allow_end and name == "END"):
+            raise _edit_fail(where, tx("el.edit_share_unknown", name=name, names=", ".join(names + (["END"] if allow_end else []))))
+        if isinstance(w, bool) or not isinstance(w, (int, float)) or not math.isfinite(w):
+            raise _edit_fail(where, tx("el.edit_share_number", name=name))
+        if w < 0:
+            raise _edit_fail(where, tx("el.edit_share_negative", name=name))
+        out[name] = float(w)
+        total += float(w)
+    if total <= 0:
+        raise _edit_fail(where, tx("el.edit_share_sum"))
+    return {k: v / total for k, v in out.items()}
+
+
+def apply_model_edits(model: dict, params: list[dict], edits: Optional[dict]) -> tuple[dict, list[dict]]:
+    """Copy of the fitted model with the user's edits, and the edited parameters with the original value.
+
+    Everything is validated here with explicit messages (the engine would reject some of it later, but with less
+    context); params is updated in place: the edited ones keep their fitted provenance under "fitted"."""
+    if not edits:
+        return model, []
+    if not isinstance(edits, dict):
+        raise _edit_fail("model_edits", tx("el.edit_shape", keys=", ".join(EDIT_KEYS)))
+    for k in edits:
+        if k not in EDIT_KEYS:
+            raise _edit_fail("model_edits", tx("el.edit_unknown_key", key=k, keys=", ".join(EDIT_KEYS)))
+    new = json.loads(json.dumps(model))
+    by_name = {p["parameter"]: p for p in params}
+    names = [s["name"] for s in new["stations"]]
+    records: list[dict] = []
+
+    def record(key: str, value: Any, normalised: bool = False):
+        p = by_name[key]
+        original = p["value"]
+        p["fitted"] = {"estimator": p["estimator"], "n": p["n"], "identifiable": p["identifiable"],
+                       "source": p["source"], "missing_data": p.get("missing_data")}
+        p["edited"] = True
+        p["original_value"] = original
+        p["value"] = value
+        p["estimator"] = tx("el.edited_estimator")
+        records.append({"parameter": key, "original": original, "edited": value, "normalised": normalised})
+
+    if "arrival_rate" in edits:
+        r = edits["arrival_rate"]
+        if isinstance(r, bool) or not isinstance(r, (int, float)) or not math.isfinite(r):
+            raise _edit_fail("arrival_rate", tx("el.edit_rate_number"))
+        if r <= 0:
+            raise _edit_fail("arrival_rate", tx("el.edit_rate_positive"))
+        new["arrivals"] = {"type": "poisson", "rate": float(r)}
+        record("arrivals", {"type": "poisson", "rate": float(r)})
+    st_edits = edits.get("stations") or {}
+    if not isinstance(st_edits, dict):
+        raise _edit_fail("stations", tx("el.edit_stations_shape"))
+    for name, ch in st_edits.items():
+        where = f"stations.{name}"
+        if name not in names:
+            raise _edit_fail(where, tx("el.edit_unknown_activity", act=name, acts=", ".join(names)))
+        if not isinstance(ch, dict) or not ch:
+            raise _edit_fail(where, tx("el.edit_station_shape", keys=", ".join(STATION_EDIT_KEYS)))
+        for k in ch:
+            if k not in STATION_EDIT_KEYS:
+                raise _edit_fail(where, tx("el.edit_station_key", key=k, keys=", ".join(STATION_EDIT_KEYS)))
+        st = next(s for s in new["stations"] if s["name"] == name)
+        if "servers" in ch:
+            v = ch["servers"]
+            if isinstance(v, float) and v.is_integer():
+                v = int(v)
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise _edit_fail(f"{where}.servers", tx("el.edit_servers_int"))
+            if v < 1:
+                raise _edit_fail(f"{where}.servers", tx("el.edit_servers_min"))
+            st["servers"] = v
+            record(f"servers:{name}", v)
+        if "service" in ch:
+            spec = ch["service"]
+            if not isinstance(spec, dict) or spec.get("dist") in (None, "empirical"):
+                raise _edit_fail(f"{where}.service", tx("el.edit_service_shape", dists=", ".join(
+                    d for d in sc.DISTS if d != "empirical")))
+            try:
+                sc.make_sampler(spec, f"{where}.service")
+            except sc.ScenarioError as exc:
+                raise _edit_fail(f"{where}.service", str(exc)) from None
+            st["service"] = json.loads(json.dumps(spec))
+            record(f"service:{name}", {"dist": spec["dist"], "mean_hours": sc.dist_mean(spec), "spec": spec})
+    rt = edits.get("routing")
+    if rt is not None:
+        if not isinstance(rt, dict) or not rt or any(k not in ("start", "next") for k in rt):
+            raise _edit_fail("routing", tx("el.edit_routing_shape"))
+        if "start" in rt:
+            sh = _edit_shares(rt["start"], names, "routing.start", False)
+            new["routing"]["start"] = sh
+            record("routing:start", sh, normalised=abs(sum(float(v) for v in rt["start"].values()) - 1) > 1e-9)
+        nx = rt.get("next") or {}
+        if not isinstance(nx, dict):
+            raise _edit_fail("routing.next", tx("el.edit_routing_shape"))
+        for act, shares in nx.items():
+            if act not in names:
+                raise _edit_fail(f"routing.next.{act}", tx("el.edit_unknown_activity", act=act, acts=", ".join(names)))
+            sh = _edit_shares(shares, names, f"routing.next.{act}", True)
+            new["routing"]["next"][act] = sh
+            key = f"routing:{act}"
+            if key not in by_name:       # the step ended every observed case: it had no fitted routing row
+                raise _edit_fail(f"routing.next.{act}", tx("el.edit_unknown_activity", act=act, acts=", ".join(names)))
+            record(key, sh, normalised=abs(sum(float(v) for v in shares.values()) - 1) > 1e-9)
+    try:
+        sc._prepare(new)                 # the engine's own validation of the edited model as a whole
+    except sc.ScenarioError as exc:
+        raise _edit_fail("model_edits", str(exc)) from None
+    return new, records
+
+
+
 def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = None, replications: int = 20,
-                  seed: int = 1, tolerances: Optional[dict] = None, variants: Optional[list] = None) -> dict:
+                  seed: int = 1, tolerances: Optional[dict] = None, variants: Optional[list] = None,
+                  model_edits: Optional[dict] = None) -> dict:
     if not 1 <= int(replications) <= 100:
         raise ProcessError(tx("pm.replications_range"))
     tol = dict(DEFAULT_TOLERANCES)
@@ -781,42 +931,73 @@ def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = Non
     b_rows = _bottlenecks(profile_activities(train, disc), disc)
     bott = b_rows[0]["activity"] if b_rows else None
     obs_train, obs_test = _observed(train, bott), _observed(test, bott)
+    fitted_model = model
+    model, edit_records = apply_model_edits(fitted_model, params, model_edits)
     vlist = _variants(model, variants)
-    try:
-        if vlist:
-            cmp_ = sc.compare_models(model, [{"name": v["name"], "overrides": v["overrides"]} for v in vlist],
-                                     int(replications), int(seed))
-            run = cmp_["base"]
-        else:
-            cmp_ = None
-            run = sc._public(sc.run_model(model, int(replications), int(seed)))
-    except sc.ScenarioError as exc:
-        raise ProcessError(tx("pm.sim_failed", exc=exc)) from None
-    met = run["metrics"]
     nt = len(test)
-    rows = [_row("cycle_time_mean_hours", obs_train["cycle"]["mean"], obs_test["cycle"]["mean"],
-                 met["lead_time_mean"], tol["cycle_time_mean_hours"], nt),
-            _row("cycle_time_p50_hours", obs_train["cycle"]["p50"], obs_test["cycle"]["p50"], met["lead_time_p50"],
-                 tol["cycle_time_p50_hours"], nt),
-            _row("cycle_time_p90_hours", obs_train["cycle"]["p90"], obs_test["cycle"]["p90"], met["lead_time_p90"],
-                 tol["cycle_time_p90_hours"], nt),
-            _row("cases_per_hour", obs_train["cases_per_hour"], obs_test["cases_per_hour"], met["throughput"],
-                 tol["cases_per_hour"], nt)]
-    if bott:
-        wkey = f"wait:{bott}"
-        tw, hw = obs_train["bottleneck_wait"], obs_test["bottleneck_wait"]
-        r = _row("bottleneck_wait_mean_hours", tw and tw["mean"], hw and hw["mean"],
-                 met.get(wkey, {"mean": None}), tol["bottleneck_wait_mean_hours"], nt)
-        r["activity"] = bott
-        if hw is None:
-            r["note"] = tx("el.wait_not_identifiable", act=bott)
-        rows.append(r)
+
+    def simulate(mod: dict, with_variants: bool):
+        try:
+            if with_variants and vlist:
+                c = sc.compare_models(mod, [{"name": v["name"], "overrides": v["overrides"]} for v in vlist],
+                                      int(replications), int(seed))
+                return c, c["base"]
+            return None, sc._public(sc.run_model(mod, int(replications), int(seed)))
+        except sc.ScenarioError as exc:
+            raise ProcessError(tx("pm.sim_failed", exc=exc)) from None
+
+    def validation_rows(met: dict) -> list[dict]:
+        out = [_row("cycle_time_mean_hours", obs_train["cycle"]["mean"], obs_test["cycle"]["mean"],
+                    met["lead_time_mean"], tol["cycle_time_mean_hours"], nt),
+               _row("cycle_time_p50_hours", obs_train["cycle"]["p50"], obs_test["cycle"]["p50"],
+                    met["lead_time_p50"], tol["cycle_time_p50_hours"], nt),
+               _row("cycle_time_p90_hours", obs_train["cycle"]["p90"], obs_test["cycle"]["p90"],
+                    met["lead_time_p90"], tol["cycle_time_p90_hours"], nt),
+               _row("cases_per_hour", obs_train["cases_per_hour"], obs_test["cases_per_hour"], met["throughput"],
+                    tol["cases_per_hour"], nt)]
+        if bott:
+            tw, hw = obs_train["bottleneck_wait"], obs_test["bottleneck_wait"]
+            r = _row("bottleneck_wait_mean_hours", tw and tw["mean"], hw and hw["mean"],
+                     met.get(f"wait:{bott}", {"mean": None}), tol["bottleneck_wait_mean_hours"], nt)
+            r["activity"] = bott
+            if hw is None:
+                r["note"] = tx("el.wait_not_identifiable", act=bott)
+            out.append(r)
+        return out
+    cmp_, run = simulate(model, True)
+    met = run["metrics"]
+    rows = validation_rows(met)
+    edit_diff = None
+    if edit_records:
+        _c, frun = simulate(fitted_model, False)
+        frows = validation_rows(frun["metrics"])
+        fev = [r for r in frows if r["ok"] is not None]
+        edit_diff = {
+            "fitted_passed": bool(fev) and all(r["ok"] for r in fev),
+            "parameters": [{k: r[k] for k in ("parameter", "original", "edited", "normalised")} for r in edit_records],
+            "rows": [{"metric": e["metric"], "holdout_observed": e["holdout_observed"],
+                      "fitted_simulated": f["simulated"], "edited_simulated": e["simulated"],
+                      "delta": None if f["simulated"] is None or e["simulated"] is None
+                      else e["simulated"] - f["simulated"],
+                      "fitted_relative_difference": f["relative_difference"],
+                      "edited_relative_difference": e["relative_difference"],
+                      "fitted_ok": f["ok"], "edited_ok": e["ok"]} for f, e in zip(frows, rows)],
+            "headline": {k: {"fitted": frun["metrics"][k]["mean"], "edited": met[k]["mean"]}
+                         for k in pm.HEADLINE if k in met and k in frun["metrics"]},
+            "note": tx("el.edit_diff_note")}
     evaluated = [r for r in rows if r["ok"] is not None]
     passed = bool(evaluated) and all(r["ok"] for r in evaluated)
     failed = [r["metric"] for r in evaluated if not r["ok"]]
     verdict = tx("el.calib_pass", n=len(evaluated), test=nt) if passed else tx(
         "el.calib_fail", metrics=", ".join(failed) or "-", test=nt)
+    if edit_diff is not None:
+        edit_diff["edited_passed"] = passed
+        verdict = f"{verdict} {tx('el.edit_verdict', n=len(edit_records))}"
+        edit_diff["verdict"] = tx("el.edit_flip_" + ("same" if edit_diff["fitted_passed"] == passed else
+                                                    ("gain" if passed else "loss")))
     warnings = list(desc["warnings"]) + list(run["warnings"])
+    if edit_records:
+        warnings.insert(0, tx("el.warn_edited", n=len(edit_records)))
     if nt < pm.SMALL_LOG:
         warnings.append(tx("el.warn_small_holdout", n=nt))
     outs = pm.variant_results(vlist, cmp_) if cmp_ else []
@@ -833,6 +1014,8 @@ def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = Non
         "validation": {"passed": passed, "verdict": verdict, "rows": rows, "tolerances": tol,
                        "replications": int(replications), "seed": int(seed)},
         "baseline": {"metrics": {k: met[k] for k in pm.HEADLINE if k in met}, "stations": run["stations"]},
+        "model_source": "edited" if edit_records else "fitted",
+        "edits": edit_records, "edit_diff": edit_diff,
         "alternatives": outs,
         "warnings": warnings, "method": tx("el.calib_method"), "caveat": tx("el.caveat_sim"),
     }
@@ -936,7 +1119,8 @@ def profile_process(services, dataset: Optional[str], mapping: Optional[dict], l
 def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict], log_options: Optional[dict] = None,
                       holdout: float = 0.3, split_at: Optional[str] = None, replications: int = 20, seed: int = 1,
                       tolerances: Optional[dict] = None, variants: Optional[list] = None,
-                      model_name: Optional[str] = None, recipe: Optional[Any] = None, source: str = "ui") -> dict:
+                      model_name: Optional[str] = None, recipe: Optional[Any] = None, source: str = "ui",
+                      model_edits: Optional[dict] = None) -> dict:
     dataset, mapping, log_options, rec = _inputs(dataset, mapping, log_options, recipe)
     if rec and rec.get("calibration"):
         c = rec["calibration"]
@@ -944,10 +1128,11 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
         replications, seed = c.get("replications", replications), c.get("seed", seed)
         tolerances = tolerances or c.get("tolerances")
         variants = variants or rec.get("variants")
+        model_edits = model_edits or c.get("model_edits")
 
     def do():
         log = load(services, dataset, mapping, log_options)
-        res = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants)
+        res = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits)
         res["dataset"] = dataset
         res["cases"] = {"total": len(log["cases"]), "closed": log["diag"]["closed_cases"],
                         "open": len(log["cases"]) - log["diag"]["closed_cases"]}
@@ -962,12 +1147,14 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
             saved["provenance"] = {"from_dataset": dataset, "fit_window": res["split"]["fit_window"],
                                    "parameters": [{k: p[k] for k in ("parameter", "identifiable", "n", "estimator")}
                                                   for p in res["parameters"]],
-                                   "validation_passed": res["validation"]["passed"]}
+                                   "validation_passed": res["validation"]["passed"],
+                                   "edited_by_user": [e["parameter"] for e in res["edits"]]}
             res["scenario_model"] = sc.save_model(services, model_name, saved, source=source)["name"]
         res["recipe"] = recipe_for(services, dataset, log["quality"]["mapping"], public_options(log["options"]),
                                    {"holdout": None if split_at else holdout, "split_at": split_at,
                                     "replications": int(replications), "seed": int(seed),
-                                    "tolerances": res["validation"]["tolerances"]}, variants)
+                                    "tolerances": res["validation"]["tolerances"],
+                                    "model_edits": model_edits or None}, variants)
         res["_log_summary"] = (f"holdout calibration on {dataset}: "
                                f"{'passed' if res['validation']['passed'] else 'FAILED'} "
                                f"({res['split']['fit_cases']} fit / {res['split']['holdout_cases']} held-out cases), "
@@ -981,7 +1168,8 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
 def export_process(services, dataset: Optional[str], mapping: Optional[dict], log_options: Optional[dict] = None,
                    with_calibration: bool = False, holdout: float = 0.3, split_at: Optional[str] = None,
                    replications: int = 20, seed: int = 1, tolerances: Optional[dict] = None,
-                   variants: Optional[list] = None, source: str = "ui") -> dict:
+                   variants: Optional[list] = None, source: str = "ui",
+                   model_edits: Optional[dict] = None) -> dict:
     """The profile and the recipe as one JSON document: references to the dataset, never a copy of its rows."""
     dataset, mapping, log_options, _rec = _inputs(dataset, mapping, log_options, None)
 
@@ -991,10 +1179,10 @@ def export_process(services, dataset: Optional[str], mapping: Optional[dict], lo
         cal = None
         calib_settings = None
         if with_calibration:
-            cal = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants)
+            cal = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits)
             calib_settings = {"holdout": None if split_at else holdout, "split_at": split_at,
                               "replications": int(replications), "seed": int(seed),
-                              "tolerances": cal["validation"]["tolerances"]}
+                              "tolerances": cal["validation"]["tolerances"], "model_edits": model_edits or None}
         recipe = recipe_for(services, dataset, log["quality"]["mapping"], public_options(log["options"]),
                             calib_settings, variants)
         diag = prof["log"]
@@ -1015,7 +1203,7 @@ def export_process(services, dataset: Optional[str], mapping: Optional[dict], lo
             "missing_data": prof["missing_data"]}
         if cal:
             recipe["model_proposal"] = {"model": cal["model"], "parameters": cal["parameters"],
-                                        "split": cal["split"]}
+                                        "split": cal["split"], "source": cal["model_source"], "edits": cal["edits"]}
             recipe["validation"] = cal["validation"]
             recipe["alternatives"] = [{k: a[k] for k in ("name", "changes", "headline")} for a in cal["alternatives"]]
         else:
