@@ -13,9 +13,9 @@ from .engine import Compiled, export_python
 
 
 def _date_kind(fmt):
-    if not is_date_format(fmt):
-        return None
     fmt = re.sub(r'"[^"]*"|\\.|\[[^\]]*\]', '', fmt).lower()
+    if not is_date_format(fmt) and not re.search('[hs]', fmt):
+        return None
     has_date, has_time = bool(re.search('[dy]', fmt)), bool(re.search('[hs]', fmt))
     return 'datetime-local' if has_date and has_time else 'time' if has_time else 'date'
 

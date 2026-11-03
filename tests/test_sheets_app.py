@@ -180,6 +180,24 @@ const response=value=>({ok:true,json:async()=>({results:[{cell:'Total',value}]})
     subprocess.run(['node', '-e', checks], check=True, capture_output=True)
 
 
+@pytest.mark.parametrize('fmt', ['hh', 'ss', 'hh:mm:ss'])
+def test_hour_only_and_second_only_formats_remain_time_controls_and_results(tmp_path, fmt):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws['A1'] = dt.time(13, 30, 15)
+    ws['B1'] = '=A1'
+    for cell in ['A1', 'B1']:
+        ws[cell].number_format = fmt
+    path = tmp_path / 'time.xlsx'
+    wb.save(path)
+    namespace = {'__name__': 'client_calculator'}
+    exec(export_web_app(load(path)), namespace)
+    assert namespace['_APP_MODEL']['parameters'][0]['kind'] == 'time'
+    result = namespace['calculate_app']({})['results'][0]
+    assert result['display'] == '13:30:15'
+    assert result['value'] == pytest.approx((13 * 3600 + 30 * 60 + 15) / 86400)
+
+
 def test_app_is_exported_through_native_http_and_agent_tool(client):
     from nightingale.agent_tools import call_tool_sync, tool_catalog
     folder = client.services.config.data_dir / 'files'
