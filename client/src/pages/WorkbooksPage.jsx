@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { EmptyState, Chip } from "../components/ui.jsx";
+import WorkbookExplain from "./WorkbookExplain.jsx";
 import { useCopilotActive, useCopilotRefresh } from "../copilot-hooks.js";
 
 const EPOCH = Date.UTC(1899, 11, 30);
@@ -221,6 +222,7 @@ export default function WorkbooksPage({ param }) {
                 {s.diagnostics.map((d, i) => <p key={i} className="help">{d.message}</p>)}
               </div>
             )}
+            <WorkbookExplain id={selected} params={params} results={result?.results || s.results} />
             <p className="help">{t("wb_functions")}: {s.functions.join(", ")} · {s.tables} {t("wb_table_cells")}</p>
           </div>
         </div>

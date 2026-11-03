@@ -277,7 +277,7 @@ En Gráficos, **Usar como base** carga en el constructor editable el conjunto de
 
 ## Libros de Excel como cálculo
 
-Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. Detalle: `docs/WORKBOOK-COMPILER.es.md`.
+Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. También explica el cálculo: una ordenación de sensibilidad (tornado) de los parámetros numéricos para cualquier salida, escenarios con nombre guardados con el libro y comparados con la base, y comprobación de unidades (unidades declaradas más formatos de moneda y porcentaje, propagadas por las fórmulas con Pint, con errores como sumar metros y euros). Son acciones adicionales de `data_workbook`, quedan en el registro y el número de herramientas no cambia. Detalle: `docs/WORKBOOK-COMPILER.es.md`.
 
 ## Conciliar dos conjuntos
 

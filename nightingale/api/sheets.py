@@ -107,3 +107,72 @@ def export_py(request: Request, wid: str):
     filename, code = store(request).export_code(wid)
     return Response(code, media_type="text/x-python; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# --- explain: sensitivity, scenarios, units -------------------------------------
+
+class SensitivityBody(BaseModel):
+    output: Optional[str] = None
+    delta: float = Field(default=0.1, gt=0)
+    steps: Optional[dict[str, float]] = None
+
+
+@router.post("/{wid}/sensitivity")
+@api_errors
+def sensitivity(request: Request, wid: str, body: SensitivityBody):
+    from ..sheets import explain_ops
+    return explain_ops.sensitivity(services(request), store(request), wid, body.output, body.delta, body.steps)
+
+
+class ScenarioBody(BaseModel):
+    inputs: dict[str, Any]
+    note: Optional[str] = None
+
+
+class CompareBody(BaseModel):
+    scenarios: Optional[list[str]] = None
+
+
+@router.get("/{wid}/scenarios")
+@api_errors
+def scenarios_list(request: Request, wid: str):
+    return store(request).scenario_list(wid)
+
+
+@router.post("/{wid}/scenarios/compare")
+@api_errors
+def scenarios_compare(request: Request, wid: str, body: CompareBody):
+    from ..sheets import explain_ops
+    return explain_ops.scenario_compare(services(request), store(request), wid, body.scenarios)
+
+
+@router.put("/{wid}/scenarios/{name}")
+@api_errors
+def scenario_put(request: Request, wid: str, name: str, body: ScenarioBody):
+    from ..sheets import explain_ops
+    return explain_ops.scenario_save(services(request), store(request), wid, name, body.inputs, body.note)
+
+
+@router.delete("/{wid}/scenarios/{name}")
+@api_errors
+def scenario_del(request: Request, wid: str, name: str):
+    from ..sheets import explain_ops
+    return explain_ops.scenario_delete(services(request), store(request), wid, name)
+
+
+class UnitsBody(BaseModel):
+    units: dict[str, Optional[str]] = Field(default_factory=dict)
+
+
+@router.get("/{wid}/units")
+@api_errors
+def units_get(request: Request, wid: str):
+    from ..sheets import explain_ops
+    return explain_ops.units(services(request), store(request), wid)
+
+
+@router.put("/{wid}/units")
+@api_errors
+def units_put(request: Request, wid: str, body: UnitsBody):
+    from ..sheets import explain_ops
+    return explain_ops.units(services(request), store(request), wid, body.units)
