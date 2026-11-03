@@ -34,6 +34,15 @@ async function download(path, body) {
   return response.blob();
 }
 
+async function downloadGet(path) {
+  const response = await fetch(new URL(import.meta.env.BASE_URL + path, window.location.origin));
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Error ${response.status}`);
+  }
+  return response.blob();
+}
+
 export const api = {
   health: () => get("/api/health"),
   status: () => get("/api/status"),
@@ -96,6 +105,14 @@ export const api = {
   scenarioCompare: (body) => post("/api/scenarios/compare", body),
   scenarioSweep: (body) => post("/api/scenarios/sweep", body),
   scenarioCalibrate: (body) => post("/api/scenarios/calibrate", body),
+  migrateSuggest: (dataset, table) => post("/api/migrate/suggest", { dataset, table: table || null }),
+  migrateSpecs: () => get("/api/migrate/specs"),
+  migrateSpec: (name) => get(`/api/migrate/specs/${encodeURIComponent(name)}`),
+  migrateSave: (name, spec) => put(`/api/migrate/specs/${encodeURIComponent(name)}`, spec),
+  migrateDelete: (name) => del(`/api/migrate/specs/${encodeURIComponent(name)}`),
+  migrateRehearse: (body) => post("/api/migrate/rehearse", body),
+  migrateDdl: (body) => download("api/migrate/ddl.sql", body),
+  migrateFile: (name) => downloadGet(`api/migrate/file/${encodeURIComponent(name)}`),
 
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
