@@ -68,13 +68,13 @@ class VulcanBody(BaseModel):
 
 @router.get("/templates")
 @api_errors
-def templates():
+def templates(request: Request):
     return fq.templates()
 
 
 @router.post("/vulcan")
 @api_errors
-def vulcan(body: VulcanBody):
+def vulcan(request: Request, body: VulcanBody):
     return fq.fetch_vulcan(body.model_id, body.base_url, body.target or "fdm-print")
 
 
