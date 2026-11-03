@@ -22,10 +22,20 @@ async function request(method, path, { params, body } = {}) {
 
 const get = (path, params) => request("GET", path, { params });
 const post = (path, body) => request("POST", path, { body: body ?? {} });
+const put = (path, body) => request("PUT", path, { body: body ?? {} });
 const del = (path, params) => request("DELETE", path, { params });
 async function download(path, body) {
   const url = new URL(import.meta.env.BASE_URL + path, window.location.origin);
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Error ${response.status}`);
+  }
+  return response.blob();
+}
+
+async function downloadGet(path) {
+  const response = await fetch(new URL(import.meta.env.BASE_URL + path, window.location.origin));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Error ${response.status}`);
@@ -78,6 +88,15 @@ export const api = {
   reconcileSuggest: (left, right) => post("/api/reconcile/suggest", { left, right }),
   reconcileRun: (body) => post("/api/reconcile/run", body),
   reconcileExport: (body) => download("api/reconcile/export.csv", body),
+
+  migrateSuggest: (dataset, table) => post("/api/migrate/suggest", { dataset, table: table || null }),
+  migrateSpecs: () => get("/api/migrate/specs"),
+  migrateSpec: (name) => get(`/api/migrate/specs/${encodeURIComponent(name)}`),
+  migrateSave: (name, spec) => put(`/api/migrate/specs/${encodeURIComponent(name)}`, spec),
+  migrateDelete: (name) => del(`/api/migrate/specs/${encodeURIComponent(name)}`),
+  migrateRehearse: (body) => post("/api/migrate/rehearse", body),
+  migrateDdl: (body) => download("api/migrate/ddl.sql", body),
+  migrateFile: (name) => downloadGet(`api/migrate/file/${encodeURIComponent(name)}`),
 
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
