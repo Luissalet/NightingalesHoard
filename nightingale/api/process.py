@@ -1,4 +1,5 @@
-"""/api/process/* — discover a process from an event log, check it against a reference, rehearse changes."""
+"""/api/process/* — discover a process from an event log, check it against a reference, rehearse changes;
+profile the checked event log, calibrate a scenario model on a temporal holdout and export the recipe."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from .. import event_log as el
 from .. import process_mining as pm
 from .deps import api_errors, services
 
@@ -42,6 +44,33 @@ class RehearseBody(LogBody):
     model_name: Optional[str] = None
 
 
+class EventLogBody(BaseModel):
+    dataset: Optional[str] = None
+    mapping: Optional[dict[str, Optional[str]]] = None
+    log_options: Optional[dict[str, Any]] = None
+    recipe: Optional[dict[str, Any]] = None
+
+
+class ProfileBody(EventLogBody):
+    threshold: float = Field(0.5, ge=0, le=1)
+    min_count: int = Field(1, ge=1)
+    max_variants: int = Field(20, ge=1, le=500)
+
+
+class CalibrateBody(EventLogBody):
+    holdout: float = Field(0.3, ge=0.05, le=0.8)
+    split_at: Optional[str] = None
+    replications: int = Field(20, ge=1, le=100)
+    seed: int = 1
+    tolerances: Optional[dict[str, float]] = None
+    variants: list[dict[str, Any]] = Field(default_factory=list)
+    model_name: Optional[str] = None
+
+
+class ExportBody(CalibrateBody):
+    with_calibration: bool = False
+
+
 @router.post("/suggest")
 @api_errors
 def suggest(request: Request, body: SuggestBody):
@@ -67,3 +96,26 @@ def conform(request: Request, body: ConformBody):
 def rehearse(request: Request, body: RehearseBody):
     return pm.rehearse_process(services(request), body.dataset, body.mapping, body.variants, body.replications,
                                body.seed, body.tolerance, body.save_as, body.model_name)
+
+
+@router.post("/profile")
+@api_errors
+def profile(request: Request, body: ProfileBody):
+    return el.profile_process(services(request), body.dataset, body.mapping, body.log_options, body.threshold,
+                              body.min_count, body.max_variants, body.recipe)
+
+
+@router.post("/calibrate")
+@api_errors
+def calibrate(request: Request, body: CalibrateBody):
+    return el.calibrate_process(services(request), body.dataset, body.mapping, body.log_options, body.holdout,
+                                body.split_at, body.replications, body.seed, body.tolerances, body.variants,
+                                body.model_name, body.recipe)
+
+
+@router.post("/export")
+@api_errors
+def export(request: Request, body: ExportBody):
+    return el.export_process(services(request), body.dataset, body.mapping, body.log_options, body.with_calibration,
+                             body.holdout, body.split_at, body.replications, body.seed, body.tolerances,
+                             body.variants)

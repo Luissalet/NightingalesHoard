@@ -795,14 +795,35 @@ def _run_migrate(s: Services, a: MigrateArgs) -> dict:
 
 
 class ProcessArgs(BaseModel):
-    action: Literal["suggest", "discover", "conform", "rehearse"] = Field(
+    action: Literal["suggest", "discover", "conform", "rehearse", "profile", "calibrate", "export"] = Field(
         "discover", description="suggest = propose the column mapping; discover = process map, variants, rework, "
         "throughput times, bottlenecks, resources; conform = check cases against a reference process; rehearse = "
-        "simulate the discovered process and compare changes with the baseline.")
-    dataset: str = Field(..., description="event-log dataset: one row per event")
+        "simulate the discovered process and compare changes with the baseline; profile = checked event log "
+        "(duplicates, ties, invalid timestamps, zones, open cases, missing steps) with variants, graph coverage, "
+        "times with n and percentiles, service vs waiting, concurrency, bottlenecks and deviations; calibrate = "
+        "fit a scenario model on the cases before a temporal split, check it against the held-out cases "
+        "(pass/fail) and compare variants with the same seeds; export = the profile and recipe as JSON with a "
+        "reference to the dataset (no rows).")
+    dataset: Optional[str] = Field(None, description="event-log dataset: one row per event (or per start/complete "
+                                   "event with a lifecycle column); optional when a recipe names it")
     mapping: Optional[dict[str, Optional[str]]] = Field(
-        None, description="columns: {case, activity, timestamp (end of the step), start?, resource?, cost?}. "
-        "Required except for suggest; a start column enables waiting vs working time and capacity.")
+        None, description="columns: {case, activity, timestamp (end of the step, or of the event), start?, "
+        "lifecycle? (start/complete values; not together with start), resource?, cost?}. Required except for "
+        "suggest; start times enable waiting vs working time and capacity.")
+    log_options: Optional[dict[str, Any]] = Field(
+        None, description="profile/calibrate/export: {timezone (IANA name or +01:00, for timestamps without an "
+        "offset; default UTC), timestamp_format? (strptime), end_activities? [..] (cases not ending in one are open), "
+        "expected? [ordered steps] (missing steps; its last step also closes a case), lifecycle_values? {start: [..], "
+        "complete: [..]}}")
+    holdout: float = Field(0.3, ge=0.05, le=0.8, description="calibrate/export: share of the latest cases (by start) "
+                           "held out to check the model")
+    split_at: Optional[str] = Field(None, description="calibrate/export: split instant instead of holdout (ISO)")
+    tolerances: Optional[dict[str, float]] = Field(
+        None, description="calibrate: relative tolerances {cycle_time_mean_hours, cycle_time_p50_hours, "
+        "cycle_time_p90_hours, cases_per_hour, bottleneck_wait_mean_hours}")
+    with_calibration: bool = Field(False, description="export: include the holdout calibration")
+    recipe: Optional[dict[str, Any]] = Field(None, description="profile/calibrate: an exported recipe to re-run "
+                                             "(mapping, options and settings; warns if the data changed)")
     threshold: float = Field(0.5, ge=0, le=1, description="discover: heuristic-miner dependency threshold for kept edges")
     min_count: int = Field(1, ge=1, description="discover: minimum count of an edge to keep it")
     max_variants: int = Field(20, ge=1, le=500, description="discover: variants to list")
@@ -814,16 +835,28 @@ class ProcessArgs(BaseModel):
         None, description="rehearse: [{name, changes: [{type: add_resource, activity, count} | {type: remove_step, "
         "activity} | {type: set_routing, from, to, share} | {type: scale_duration, activity, factor}]}]; empty = "
         "validate the baseline only")
-    replications: int = Field(20, ge=1, le=100, description="rehearse: simulation replications")
-    seed: int = Field(1, description="rehearse: random seed (shared by baseline and variants)")
+    replications: int = Field(20, ge=1, le=100, description="rehearse/calibrate: simulation replications")
+    seed: int = Field(1, description="rehearse/calibrate: random seed (shared by baseline and variants)")
     tolerance: float = Field(0.15, gt=0, lt=1, description="rehearse: relative tolerance of the baseline validation")
-    model_name: Optional[str] = Field(None, description="rehearse: also store the discovered model in the scenario lab")
+    model_name: Optional[str] = Field(None, description="rehearse/calibrate: also store the model in the scenario lab")
     save_as: Optional[str] = Field(None, description="discover: prefix for the edges/variants/cases datasets; "
                                    "conform/rehearse: dataset name for the result")
 
 
 def _run_process(s: Services, a: ProcessArgs) -> dict:
     from . import process_mining as pm
+    from . import event_log as el
+    if a.action == "profile":
+        return el.profile_process(s, a.dataset, a.mapping, a.log_options, a.threshold, a.min_count, a.max_variants,
+                                  a.recipe, source="agent")
+    if a.action == "calibrate":
+        return el.calibrate_process(s, a.dataset, a.mapping, a.log_options, a.holdout, a.split_at, a.replications,
+                                    a.seed, a.tolerances, a.variants, a.model_name, a.recipe, source="agent")
+    if a.action == "export":
+        return el.export_process(s, a.dataset, a.mapping, a.log_options, a.with_calibration, a.holdout, a.split_at,
+                                 a.replications, a.seed, a.tolerances, a.variants, source="agent")
+    if not a.dataset:
+        raise ValueError(f"dataset is required for {a.action}")
     if a.action == "suggest":
         return pm.suggest_mapping(s, a.dataset)
     if not a.mapping:
@@ -1095,9 +1128,14 @@ TOOLS: list[Tool] = [
          "example cases. rehearse builds a simulation model of the process, validates the baseline against the "
          "observed throughput time (and says when it is not representative), then compares changes (add a resource, "
          "remove a step, change a routing share, shorten a duration) with common random numbers and 95% intervals. "
-         "Durations are in hours. Logged.\n"
+         "profile checks the event log itself (start/complete lifecycle or start column, zone, duplicates, ties, "
+         "invalid timestamps, open cases, missing steps) and separates service from waiting where it can; calibrate "
+         "fits a model with the provenance of every parameter on the cases before a temporal split and checks it "
+         "on the held-out cases (it can fail and says so); export returns the profile and recipe with a dataset "
+         "reference. The dataset is never modified. Durations are in hours, instants in UTC. Logged.\n"
          "Sinónimos: minería de procesos, descubrimiento de procesos, registro de eventos, cuello de botella, "
-         "variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining.",
+         "variantes, conformidad, desviaciones, retrabajo, tiempo de ciclo, simulación de cambios, process mining, "
+         "perfil del registro de eventos, inicio y fin, espera y servicio, calibración con periodo reservado, receta.",
          ProcessArgs, _ann(False, False, False), _run_process, capped=False),
     Tool("data_twin", "Learn a dynamic twin from a time series and simulate what-ifs with prediction intervals.\n"
          "fit: interpretable linear ARX (lag chosen on a selection block) or first-order-plus-dead-time model; the last part of "

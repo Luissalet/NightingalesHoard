@@ -3,10 +3,12 @@ import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Chip } from "../components/ui.jsx";
 import { formatNumber } from "../format.js";
+import { CalibrationPanel, ProfilePanel, downloadJson } from "../components/EventLogPanels.jsx";
 
-const SLOTS = ["case", "activity", "timestamp", "start", "resource", "cost"];
+const SLOTS = ["case", "activity", "timestamp", "start", "lifecycle", "resource", "cost"];
 const REQUIRED = new Set(["case", "activity", "timestamp"]);
-const TABS = ["map", "variants", "bottlenecks", "conformance", "rehearsal"];
+const TABS = ["map", "profile", "variants", "bottlenecks", "conformance", "rehearsal", "calibration"];
+const list = (txt) => txt.split(",").map((x) => x.trim()).filter(Boolean);
 const CHANGES = ["add_resource", "scale_duration", "remove_step", "set_routing"];
 
 function N({ v, lang, digits = 2 }) {
@@ -124,13 +126,22 @@ export default function ProcessPage() {
   const [rehSave, setRehSave] = useState("");
   const [modelName, setModelName] = useState("");
   const [reh, setReh] = useState(null);
+  const [tz, setTz] = useState("UTC");
+  const [ends, setEnds] = useState("");
+  const [expected, setExpected] = useState("");
+  const [prof, setProf] = useState(null);
+  const [profErr, setProfErr] = useState("");
+  const [holdout, setHoldout] = useState(0.3);
+  const [seed, setSeed] = useState(1);
+  const [calModel, setCalModel] = useState("");
+  const [cal, setCal] = useState(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => { if (!dataset && names[0]) setDataset(names[0]); }, [names]);
   useEffect(() => {
     if (!dataset) return;
-    setRes(null); setConf(null); setReh(null); setError("");
+    setRes(null); setConf(null); setReh(null); setError(""); setProf(null); setCal(null); setProfErr("");
     api.processSuggest(dataset).then((s) => { setCols(s.columns.map((c) => c.name)); setMapping(s.mapping); setWarn(s.warnings); }).catch((e) => setError(e.message));
   }, [dataset]);
 
@@ -141,10 +152,17 @@ export default function ProcessPage() {
   const cleanMap = () => Object.fromEntries(Object.entries(mapping).filter(([, v]) => v));
   const mapOk = REQUIRED.size === [...REQUIRED].filter((k) => mapping[k]).length;
   const acts = res ? res.activities.map((a) => a.activity) : [];
+  const logOptions = () => ({ timezone: tz || "UTC", end_activities: list(ends), expected: list(expected) });
+  const logBody = () => ({ dataset, mapping: cleanMap(), log_options: logOptions() });
+  const vsBody = () => variants.filter((v) => v.changes.length).map((v) => ({ name: v.name, changes: v.changes.map(changeBody) }));
 
   const doDiscover = guard("discover", async () => {
     const r = await act(() => api.processDiscover({ dataset, mapping: cleanMap(), threshold: Number(threshold), min_count: Number(minCount), save_as: prefix || null }), prefix ? t("pr_saved") : null);
-    setRes(r); setConf(null); setReh(null); setTab("map");
+    setRes(r); setConf(null); setReh(null); setCal(null); setTab("map");
+    const first = r.activities.map((a) => a.activity);
+    setVariants((vs) => vs.map((v) => ({ ...v, changes: v.changes.map((c) => ({ ...c, activity: c.activity || first[0] || "", from: c.from || first[0] || "", to: c.to || first[1] || "" })) })));
+    setProf(null); setProfErr("");
+    api.processProfile({ ...logBody(), threshold: Number(threshold), min_count: Number(minCount) }).then(setProf).catch((e) => setProfErr(e.message));
     if (r.activities.length && refText.includes('"steps": []')) {
       setRefText(JSON.stringify({ steps: r.variants[0].activities.filter((a, i, arr) => arr.indexOf(a) === i) }, null, 2));
     }
@@ -164,8 +182,44 @@ export default function ProcessPage() {
     const vs = variants.filter((v) => v.changes.length).map((v) => ({ name: v.name, changes: v.changes.map(changeBody) }));
     setReh(await act(() => api.processRehearse({ dataset, mapping: cleanMap(), variants: vs, replications: Number(reps), save_as: rehSave || null, model_name: modelName || null }), rehSave ? t("pr_saved") : null));
   });
+  const doCalibrate = guard("calibrate", async () => {
+    setCal(await act(() => api.processCalibrate({ ...logBody(), holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: vsBody(), model_name: calModel || null }), calModel ? t("pr_model_saved") : null));
+  });
+  const doExport = (withCal) => guard("export", async () => {
+    const r = await api.processExport({ ...logBody(), with_calibration: withCal, holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: withCal ? vsBody() : [] });
+    downloadJson(r.recipe, r.filename);
+  })();
   const setChange = (vi, ci, patch) => setVariants(variants.map((v, i) => (i !== vi ? v : { ...v, changes: v.changes.map((c, j) => (j !== ci ? c : { ...c, ...patch })) })));
   const blankChange = () => ({ type: "add_resource", activity: acts[0] || "", count: 1, factor: 0.8, from: acts[0] || "", to: acts[1] || "", share: 0.1 });
+
+  const variantEditor = (
+    <>
+      {variants.map((v, vi) => (
+        <div key={vi} className="flex flex-col gap-2 rounded-md border p-3" style={{ borderColor: "var(--line)" }}>
+          <div className="flex items-center gap-2">
+            <input className="field" aria-label={t("pr_variant_name")} value={v.name} onChange={(e) => setVariants(variants.map((x, i) => (i === vi ? { ...x, name: e.target.value } : x)))} />
+            <button className="btn btn-sm" aria-label={t("pr_remove")} onClick={() => setVariants(variants.filter((_, i) => i !== vi))}>✕</button>
+          </div>
+          {v.changes.map((c, ci) => (
+            <div key={ci} className="flex flex-wrap items-center gap-2">
+              <select className="field" style={{ width: "auto" }} aria-label={t("pr_change")} value={c.type} onChange={(e) => setChange(vi, ci, { type: e.target.value })}>{CHANGES.map((k) => <option key={k} value={k}>{t("pr_ch_" + k)}</option>)}</select>
+              {c.type !== "set_routing" && <select className="field" style={{ width: "auto" }} aria-label={t("pr_activity")} value={c.activity} onChange={(e) => setChange(vi, ci, { activity: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>}
+              {c.type === "add_resource" && <label className="text-[13px]">{t("pr_how_many")}<input className="field num" style={{ width: 70 }} type="number" min="1" value={c.count} onChange={(e) => setChange(vi, ci, { count: e.target.value })} /></label>}
+              {c.type === "scale_duration" && <label className="text-[13px]">{t("pr_factor")}<input className="field num" style={{ width: 80 }} type="number" min="0.05" step="0.05" value={c.factor} onChange={(e) => setChange(vi, ci, { factor: e.target.value })} /></label>}
+              {c.type === "set_routing" && <>
+                <select className="field" style={{ width: "auto" }} aria-label={t("pr_from")} value={c.from} onChange={(e) => setChange(vi, ci, { from: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>
+                <span className="help">→</span>
+                <select className="field" style={{ width: "auto" }} aria-label={t("pr_to")} value={c.to} onChange={(e) => setChange(vi, ci, { to: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>
+                <label className="text-[13px]">{t("pr_new_share")}<input className="field num" style={{ width: 80 }} type="number" min="0" max="1" step="0.05" value={c.share} onChange={(e) => setChange(vi, ci, { share: e.target.value })} /></label>
+              </>}
+              <button className="btn btn-sm" aria-label={t("pr_remove")} onClick={() => setVariants(variants.map((x, i) => (i !== vi ? x : { ...x, changes: x.changes.filter((_, j) => j !== ci) })))}>✕</button>
+            </div>
+          ))}
+          <button className="btn btn-sm self-start" onClick={() => setVariants(variants.map((x, i) => (i === vi ? { ...x, changes: [...x.changes, blankChange()] } : x)))}>{t("pr_add_change")}</button>
+        </div>
+      ))}
+    </>
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -187,6 +241,12 @@ export default function ProcessPage() {
           ))}
         </div>
         <p className="help">{t("pr_mapping_help")}</p>
+        <div className="flex flex-wrap items-end gap-3" data-testid="pr-log-options">
+          <div><label className="label" htmlFor="pr-tz">{t("el_timezone")}</label><input id="pr-tz" className="field mono" style={{ width: 150 }} value={tz} onChange={(e) => setTz(e.target.value)} /></div>
+          <div><label className="label" htmlFor="pr-ends">{t("el_end_activities")}</label><input id="pr-ends" className="field" style={{ width: 220 }} value={ends} placeholder={t("el_list_ph")} onChange={(e) => setEnds(e.target.value)} /></div>
+          <div className="grow"><label className="label" htmlFor="pr-expected">{t("el_expected")}</label><input id="pr-expected" className="field" value={expected} placeholder={t("el_list_ph")} onChange={(e) => setExpected(e.target.value)} /></div>
+        </div>
+        <p className="help">{t("el_options_help")}</p>
         {warn.map((w, i) => <p key={i} className="font-semibold">{w}</p>)}
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-[13px]">{t("pr_threshold")}<input className="field num" style={{ width: 80 }} type="number" min="0" max="1" step="0.05" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
@@ -232,6 +292,31 @@ export default function ProcessPage() {
                   <ul className="text-[13px] list-disc pl-5">{res.rework.loops.map((l) => <li key={l.type + l.activities.join()}>{l.activities.join(" → ")} · {l.cases} {t("pr_cases")} ({pct(l.share_of_cases, lang)}) · {l.occurrences}×</li>)}</ul>
                 )}
               </div>
+            </div>
+          )}
+
+          {tab === "profile" && (
+            prof ? <ProfilePanel prof={prof} lang={lang} t={t} busy={busy} onExport={() => doExport(false)} />
+              : <div className="panel" data-testid="pr-profile-pending">{profErr ? <p className="font-semibold" role="alert">{profErr}</p> : <p className="help">{t("pr_working")}</p>}</div>
+          )}
+
+          {tab === "calibration" && (
+            <div className="flex flex-col gap-4">
+              <div className="panel flex flex-col gap-3" data-testid="pr-calibrate">
+                <h2 className="font-semibold">{t("el_calibrate")}</h2>
+                <p className="help">{t("el_calibrate_help")}</p>
+                {variantEditor}
+                <div className="flex flex-wrap items-end gap-3">
+                  <button className="btn btn-sm" onClick={() => setVariants([...variants, { name: `Variant ${variants.length + 1}`, changes: [blankChange()] }])}>{t("pr_add_variant")}</button>
+                  <label className="text-[13px]">{t("el_holdout")}<input className="field num" style={{ width: 80 }} type="number" min="0.05" max="0.8" step="0.05" value={holdout} onChange={(e) => setHoldout(e.target.value)} data-testid="pr-holdout" /></label>
+                  <label className="text-[13px]">{t("pr_reps")}<input className="field num" style={{ width: 80 }} type="number" min="1" max="100" value={reps} onChange={(e) => setReps(e.target.value)} /></label>
+                  <label className="text-[13px]">{t("el_seed")}<input className="field num" style={{ width: 80 }} type="number" value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
+                  <label className="text-[13px]">{t("pr_model_name")}<input className="field" value={calModel} onChange={(e) => setCalModel(e.target.value)} /></label>
+                  <button className="btn btn-primary" onClick={doCalibrate} disabled={!!busy} data-testid="pr-run-calibrate">{busy === "calibrate" ? t("pr_working") : t("el_run_calibrate")}</button>
+                  {cal && <button className="btn btn-sm" onClick={() => doExport(true)} disabled={!!busy} data-testid="pr-export-cal">{t("el_export_cal")}</button>}
+                </div>
+              </div>
+              {cal && <CalibrationPanel cal={cal} lang={lang} t={t} />}
             </div>
           )}
 
@@ -300,30 +385,7 @@ export default function ProcessPage() {
               <div className="panel flex flex-col gap-3" data-testid="pr-rehearse">
                 <h2 className="font-semibold">{t("pr_rehearse")}</h2>
                 <p className="help">{t("pr_rehearse_help")}</p>
-                {variants.map((v, vi) => (
-                  <div key={vi} className="flex flex-col gap-2 rounded-md border p-3" style={{ borderColor: "var(--line)" }}>
-                    <div className="flex items-center gap-2">
-                      <input className="field" aria-label={t("pr_variant_name")} value={v.name} onChange={(e) => setVariants(variants.map((x, i) => (i === vi ? { ...x, name: e.target.value } : x)))} />
-                      <button className="btn btn-sm" aria-label={t("pr_remove")} onClick={() => setVariants(variants.filter((_, i) => i !== vi))}>✕</button>
-                    </div>
-                    {v.changes.map((c, ci) => (
-                      <div key={ci} className="flex flex-wrap items-center gap-2">
-                        <select className="field" style={{ width: "auto" }} aria-label={t("pr_change")} value={c.type} onChange={(e) => setChange(vi, ci, { type: e.target.value })}>{CHANGES.map((k) => <option key={k} value={k}>{t("pr_ch_" + k)}</option>)}</select>
-                        {c.type !== "set_routing" && <select className="field" style={{ width: "auto" }} aria-label={t("pr_activity")} value={c.activity} onChange={(e) => setChange(vi, ci, { activity: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>}
-                        {c.type === "add_resource" && <label className="text-[13px]">{t("pr_how_many")}<input className="field num" style={{ width: 70 }} type="number" min="1" value={c.count} onChange={(e) => setChange(vi, ci, { count: e.target.value })} /></label>}
-                        {c.type === "scale_duration" && <label className="text-[13px]">{t("pr_factor")}<input className="field num" style={{ width: 80 }} type="number" min="0.05" step="0.05" value={c.factor} onChange={(e) => setChange(vi, ci, { factor: e.target.value })} /></label>}
-                        {c.type === "set_routing" && <>
-                          <select className="field" style={{ width: "auto" }} aria-label={t("pr_from")} value={c.from} onChange={(e) => setChange(vi, ci, { from: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>
-                          <span className="help">→</span>
-                          <select className="field" style={{ width: "auto" }} aria-label={t("pr_to")} value={c.to} onChange={(e) => setChange(vi, ci, { to: e.target.value })}>{acts.map((a) => <option key={a}>{a}</option>)}</select>
-                          <label className="text-[13px]">{t("pr_new_share")}<input className="field num" style={{ width: 80 }} type="number" min="0" max="1" step="0.05" value={c.share} onChange={(e) => setChange(vi, ci, { share: e.target.value })} /></label>
-                        </>}
-                        <button className="btn btn-sm" aria-label={t("pr_remove")} onClick={() => setVariants(variants.map((x, i) => (i !== vi ? x : { ...x, changes: x.changes.filter((_, j) => j !== ci) })))}>✕</button>
-                      </div>
-                    ))}
-                    <button className="btn btn-sm self-start" onClick={() => setVariants(variants.map((x, i) => (i === vi ? { ...x, changes: [...x.changes, blankChange()] } : x)))}>{t("pr_add_change")}</button>
-                  </div>
-                ))}
+                {variantEditor}
                 <div className="flex flex-wrap items-end gap-3">
                   <button className="btn btn-sm" onClick={() => setVariants([...variants, { name: `Variant ${variants.length + 1}`, changes: [blankChange()] }])}>{t("pr_add_variant")}</button>
                   <label className="text-[13px]">{t("pr_reps")}<input className="field num" style={{ width: 80 }} type="number" min="1" max="100" value={reps} onChange={(e) => setReps(e.target.value)} /></label>

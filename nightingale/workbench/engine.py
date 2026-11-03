@@ -535,6 +535,9 @@ class Engine:
         if encoding and str(encoding).lower() not in _CSV_ENCODINGS:
             raise DataError(f"unsupported encoding: {encoding!r}; use utf-8, utf-16 or latin-1")
         date_fmt = date_format or _sniff_dayfirst_format(path, delim, bool(header), str(encoding or "utf-8"))
+        text_cols = options.get("text_columns") or []
+        if isinstance(text_cols, str):
+            text_cols = [c.strip() for c in text_cols.split(",") if c.strip()]
 
         def build(enc: Optional[str]) -> str:
             args = [f"'{_esc(str(path))}'", f"header={str(bool(header)).lower()}"]
@@ -546,6 +549,9 @@ class Engine:
                 args.append(f"encoding='{_esc(str(enc))}'")
             if date_fmt:
                 args.append(f"dateformat='{_esc(date_fmt)}'")
+            if text_cols:
+                # columns kept exactly as written (e.g. timestamps whose UTC offsets must survive)
+                args.append("types={" + ", ".join(f"'{_esc(c)}': 'VARCHAR'" for c in text_cols) + "}")
             return f"SELECT * FROM read_csv_auto({', '.join(args)})"
 
         candidates = [encoding] if encoding else [None, *_CSV_ENCODING_FALLBACKS]

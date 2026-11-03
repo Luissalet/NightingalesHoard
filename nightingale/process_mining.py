@@ -43,7 +43,8 @@ class ProcessError(ValueError):
 # ----------------------------------------------------------------------- helpers
 def _dropped_warning(quality: dict) -> str:
     reasons = {"missing case or activity": "pm.drop_no_case", "missing or unreadable timestamp": "pm.drop_no_time",
-               "missing or unreadable start": "pm.drop_no_start"}
+               "missing or unreadable start": "pm.drop_no_start",
+               "unknown lifecycle value": "el.drop_lifecycle"}
     shown = {(tx(reasons[k]) if k in reasons else k): v for k, v in quality["dropped"].items()}
     return tx("pm.warn_dropped", total=quality["dropped_total"], detail=shown)
 
@@ -105,55 +106,13 @@ def _check_mapping(cols: list[str], mapping: dict) -> dict:
     return out
 
 
-def load_log(services, dataset: str, mapping: dict) -> tuple[list[tuple[str, list[Event]]], dict]:
-    table, typed = _table_columns(services, dataset)
-    m = _check_mapping([c for c, _ in typed], mapping)
-    sel = [f"CAST({_q(m['case'])} AS VARCHAR)", f"CAST({_q(m['activity'])} AS VARCHAR)",
-           f"epoch(TRY_CAST({_q(m['timestamp'])} AS TIMESTAMP))",
-           f"epoch(TRY_CAST({_q(m['start'])} AS TIMESTAMP))" if "start" in m else "NULL",
-           f"CAST({_q(m['resource'])} AS VARCHAR)" if "resource" in m else "NULL",
-           f"TRY_CAST({_q(m['cost'])} AS DOUBLE)" if "cost" in m else "NULL"]
-    with services.engine.lock() as conn:
-        total = conn.execute(f"SELECT count(*) FROM {_q(table)}").fetchone()[0]
-        if total > MAX_EVENTS:
-            raise ProcessError(tx("pm.too_many_rows", total=total, limit=MAX_EVENTS))
-        rows = conn.execute(
-            f"SELECT * FROM (SELECT {', '.join(sel)}, row_number() OVER () AS rn FROM {_q(table)}) "
-            "ORDER BY 1, 3, 7").fetchall()
-    cases: list[tuple[str, list[Event]]] = []
-    dropped = Counter()
-    neg_dur = 0
-    cur_id, cur = None, None
-    used = 0
-    for cid, act, t, st, res, cost, _rn in rows:
-        if cid is None or act is None:
-            dropped["missing case or activity"] += 1
-            continue
-        if t is None or not math.isfinite(t):
-            dropped["missing or unreadable timestamp"] += 1
-            continue
-        if "start" in m:
-            if st is None or not math.isfinite(st):
-                dropped["missing or unreadable start"] += 1
-                continue
-            if st > t:
-                neg_dur += 1
-                st = t
-        else:
-            st = None
-        used += 1
-        if cid != cur_id:
-            cur_id, cur = cid, []
-            cases.append((cid, cur))
-        cur.append((t, act, st, res, _f(cost)))
-    # with a start column the events of a case are ordered by completion; sorting was done in SQL on column 3
-    quality = {"rows": total, "events_used": used, "cases": len(cases),
-               "dropped": dict(dropped), "dropped_total": sum(dropped.values()),
-               "start_after_end": neg_dur, "has_start": "start" in m, "has_resource": "resource" in m,
-               "has_cost": "cost" in m, "mapping": m}
-    if not cases:
-        raise ProcessError(tx("pm.no_events"))
-    return cases, quality
+def load_log(services, dataset: str, mapping: dict, options: Optional[dict] = None
+             ) -> tuple[list[tuple[str, list[Event]]], dict]:
+    """The checked event log (nightingale/event_log.py): every case, in deterministic order, with the data checks
+    summarised in quality["checks"]. Open cases are only told apart when end activities are declared in options."""
+    from . import event_log
+    log = event_log.load(services, dataset, mapping, options)
+    return log["cases"], log["quality"]
 
 
 # ------------------------------------------------------------------ mapping suggestion
@@ -439,6 +398,11 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
         warnings.append(tx("pm.warn_overlaps", n=overlaps))
     if not has_start:
         warnings.append(tx("pm.warn_no_start"))
+    checks = quality.get("checks") or {}
+    if checks.get("duplicates_removed"):
+        warnings.append(tx("el.warn_duplicates", n=checks["duplicates_removed"]))
+    if checks.get("ties"):
+        warnings.append(tx("el.warn_ties", n=checks["ties"]))
     return {
         "cases": n_cases, "events": n_events, "activities_count": len(activities), "variants_count": len(vlist),
         "span_hours": span_h, "time_unit": TIME_UNITS, "wait_includes_work": not has_start,
@@ -677,7 +641,9 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
         raise ProcessError(tx("pm.too_few_cases", n=n, min=MIN_CASES))
     has_start = quality["has_start"]
     names: list[str] = []
-    dur: dict[str, list[float]] = defaultdict(list)
+    dur: dict[str, list[float]] = defaultdict(list)       # end - start of each instance
+    elapsed: dict[str, list[float]] = defaultdict(list)   # time since the previous completion in the case
+    nostart: set = set()                                   # activities with at least one instance without a start
     spans: dict[str, list[tuple[float, float]]] = defaultdict(list)
     res: dict[str, set] = defaultdict(set)
     res_acts: dict[str, set] = defaultdict(set)
@@ -694,11 +660,13 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
                 names.append(a)
             cnt[a] += 1
             visits[a] += 1
-            if has_start:
+            if e[2] is not None:
                 dur[a].append(max(0.0, (e[0] - e[2]) / 3600.0))
                 spans[a].append((e[2], e[0]))
-            elif i:
-                dur[a].append(max(0.0, (e[0] - evs[i - 1][0]) / 3600.0))
+            else:
+                nostart.add(a)
+            if i:
+                elapsed[a].append(max(0.0, (e[0] - evs[i - 1][0]) / 3600.0))
             if e[3] is not None:
                 res[a].add(e[3])
                 res_acts[e[3]].add(a)
@@ -706,12 +674,14 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
         max_visits = max(max_visits, max(cnt.values()))
     stations, notes, warnings = [], [], []
     for a in names:
-        xs = dur.get(a) or []
+        # service time and capacity need the start of every instance of the step; otherwise the step is modelled
+        # with the elapsed time since the previous completion (waiting included) and unlimited capacity
+        capacity = has_start or (a not in nostart and bool(dur.get(a)))
+        xs = (dur.get(a) if capacity else elapsed.get(a)) or []
         if not xs:
             xs = [0.0]
             warnings.append(tx("pm.warn_no_duration", act=a))
-        capacity = has_start
-        if has_start:
+        if capacity:
             servers = len(res[a]) if res[a] else max(1, _concurrency(spans[a]))
             basis = tx("pm.basis_resources") if res[a] else tx("pm.basis_concurrency")
         else:
@@ -720,7 +690,9 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
         stations.append({"name": a, "servers": servers, "service": spec})
         notes.append({"activity": a, "servers": servers if capacity else None, "capacity_modelled": capacity,
                       "capacity_basis": basis, "duration_samples": len(xs),
-                      "duration_mean_hours": sum(xs) / len(xs)})
+                      "duration_mean_hours": sum(xs) / len(xs),
+                      "service_basis": "service" if capacity else "elapsed",
+                      "resources_seen": len(res[a]) or None, "resource_names": sorted(res[a])[:20] or None})
         if len(xs) < SMALL_LOG:
             warnings.append(tx("pm.warn_few_samples", act=a, n=len(xs)))
     shared = sorted(r for r, acts_ in res_acts.items() if len(acts_) > 1)
@@ -971,6 +943,30 @@ def conform_process(services, dataset: str, mapping: dict, reference: dict, max_
 HEADLINE = ("lead_time_mean", "lead_time_p50", "lead_time_p90", "throughput", "wip")
 
 
+def variant_results(vlist: list[dict], cmp_: dict) -> list[dict]:
+    """Headline rows and the touched stations of each compared variant, with the delta and its 95% interval."""
+    outs = []
+    for v, cv in zip(vlist, cmp_["variants"]):
+        touched = {c.get("activity") or c.get("from") for c in v["raw"]}
+        keep = [r for r in cv["rows"] if r["metric"] in HEADLINE or
+                (":" in r["metric"] and r["metric"].split(":", 1)[0] in ("wait", "util", "queue")
+                 and r["metric"].split(":", 1)[1] in touched)]
+        head = next(r for r in cv["rows"] if r["metric"] == "lead_time_mean")
+        if head["distinguishable"]:
+            summary = tx("pm.sum_shorter" if head["delta"] < 0 else "pm.sum_longer", base=head["base"],
+                         variant=head["variant"], pct=head["delta_pct"], lo=head["delta_ci_low"],
+                         hi=head["delta_ci_high"])
+        else:
+            summary = tx("pm.sum_same")
+        outs.append({"name": v["name"], "changes": v["changes"], "rows": keep, "summary": summary,
+                     "headline": {"metric": "lead_time_mean", "base": head["base"], "variant": head["variant"],
+                                  "delta": head["delta"], "delta_pct": head["delta_pct"],
+                                  "ci_low": head["delta_ci_low"], "ci_high": head["delta_ci_high"],
+                                  "distinguishable": head["distinguishable"], "better": head["better"]},
+                     "warnings": cv["warnings"]})
+    return outs
+
+
 def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[list[dict]] = None,
                      replications: int = 20, seed: int = 1, tolerance: float = 0.15,
                      save_as: Optional[str] = None, model_name: Optional[str] = None, source: str = "ui") -> dict:
@@ -1011,25 +1007,7 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
         warnings = list(desc["warnings"]) + list(base_run["warnings"])
         if not validation["representative"]:
             warnings.insert(0, validation["note"])
-        outs = []
-        for v, cv in zip(vlist, (cmp_["variants"] if cmp_ else [])):
-            touched = {c.get("activity") or c.get("from") for c in v["raw"]}
-            keep = [r for r in cv["rows"] if r["metric"] in HEADLINE or
-                    (":" in r["metric"] and r["metric"].split(":", 1)[0] in ("wait", "util", "queue")
-                     and r["metric"].split(":", 1)[1] in touched)]
-            head = next(r for r in cv["rows"] if r["metric"] == "lead_time_mean")
-            if head["distinguishable"]:
-                summary = tx("pm.sum_shorter" if head["delta"] < 0 else "pm.sum_longer", base=head["base"],
-                            variant=head["variant"], pct=head["delta_pct"], lo=head["delta_ci_low"],
-                            hi=head["delta_ci_high"])
-            else:
-                summary = tx("pm.sum_same")
-            outs.append({"name": v["name"], "changes": v["changes"], "rows": keep, "summary": summary,
-                         "headline": {"metric": "lead_time_mean", "base": head["base"], "variant": head["variant"],
-                                      "delta": head["delta"], "delta_pct": head["delta_pct"],
-                                      "ci_low": head["delta_ci_low"], "ci_high": head["delta_ci_high"],
-                                      "distinguishable": head["distinguishable"], "better": head["better"]},
-                         "warnings": cv["warnings"]})
+        outs = variant_results(vlist, cmp_) if cmp_ else []
         res = {
             "dataset": dataset, "mapping": quality["mapping"], "model": {
                 "arrivals": desc["arrivals"], "arrival_rate_per_hour": desc["arrival_rate_per_hour"],
