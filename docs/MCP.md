@@ -2,7 +2,7 @@
 
 `mcp_server.py` is a stdio bridge. Discovery reads the shipped static catalog without starting a server or engine. Calls proxy to `POST /api/agent/call` on the explicitly started app with the bearer token from `<DATA_DIR>/mcp-token`; the bridge never opens the database directly.
 
-Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 21 Data tools, 20 Calculation tools and two module controls (43 tools).
+Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 23 Data tools, 20 Calculation tools and two module controls (45 tools).
 
 Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
 `N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
@@ -31,6 +31,7 @@ parameter lookup and `data_join_preview` coverage calculation do not create a ve
 | `data_cluster` | write | K-means clustering with an elbow/silhouette scan. Cluster labels go to a new dataset by default — see `write_to` below. |
 | `data_forecast` | write | Time-series forecast (Holt-Winters, or a documented seasonal-naive fallback) with a confidence interval. The forecast goes to a new dataset (`<source>__forecast_<model_id>`) by default. |
 | `data_export` | read/write | `mode="inventory"` reads the imported workbook's source hash, sheet/table/comment inventory and OOXML part hashes; `mode="flat"` exports one dataset to CSV/XLSX/Parquet/JSON; `mode="preserve_workbook"` writes changed cells from a same-sized dataset version into a copy of the original `.xlsx` and returns a lineage receipt. Optional `workbook_updates` adds more dataset/version pairs from the same original workbook to that one copy; all tabs are preflighted before the workbook file is replaced, and the receipt lists each tab. Unchanged cells, formulas, comments, hyperlinks and validation metadata are preserved; formulas cannot be overwritten and validation rules are not enforced. Shape changes are refused. See [workbook export](WORKBOOK-EXPORT.md) / [Spanish guide](WORKBOOK-EXPORT.es.md). |
+| `data_reconcile` | read/write | `action="suggest"` proposes key and value column pairs between `left` and `right`; `action="run"` reconciles on `keys` (and optional `compare` pairs) with `options` (`trim`, `case_insensitive`, `numeric`, `empty_as_missing`, `tolerance`). Returns row buckets (paired, only left/right, ambiguous, missing key), per-column cell categories, samples and an explanation; `save_as` writes the row-level result as a new dataset. Logged. |
 | `data_log` | read | Search the analysis log by free text, source (`ui`/`agent`), dataset, or an id like `N-000123`. |
 | `data_ask` | read | Ask a question in plain language; a shared language model (via Hoard Link) writes and runs one SQL query, shown alongside the answer. Needs a resolved LLM backend — see `data_ask`'s error message if none is configured. |
 

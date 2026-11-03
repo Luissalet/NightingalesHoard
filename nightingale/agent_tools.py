@@ -655,6 +655,37 @@ def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
     return st.delete(need())
 
 
+class ReconcilePair(BaseModel):
+    left: str
+    right: str
+
+
+class ReconcileArgs(BaseModel):
+    action: Literal["suggest", "run"] = Field(
+        "suggest", description="suggest = profile both datasets and propose column correspondences and key candidates "
+        "with their evidence (nothing applied); run = reconcile on the keys you choose.")
+    left: str = Field(..., description="left dataset name")
+    right: str = Field(..., description="right dataset name")
+    keys: Optional[list[ReconcilePair]] = Field(None, description="run: key column pairs; keys are never guessed")
+    compare: Optional[list[ReconcilePair]] = Field(None, description="run: column pairs to compare cell by cell "
+                                                   "(default: same-named non-key columns)")
+    options: Optional[dict[str, Any]] = Field(None, description="run: trim, case_insensitive, numeric, empty_as_missing "
+                                              "(key normalisation, all off by default) and tolerance (numbers)")
+    sample: int = Field(10, ge=0, le=200, description="run: example rows per bucket")
+    save_as: Optional[str] = Field(None, description="run: save every row with its bucket as a new dataset")
+
+
+def _run_reconcile(s: Services, a: ReconcileArgs) -> dict:
+    from . import reconcile as rec
+    if a.action == "suggest":
+        return rec.suggest_datasets(s, a.left, a.right, source="agent")
+    if not a.keys:
+        raise ValueError("keys are required to reconcile; use action='suggest' to see candidates")
+    compare = [p.model_dump() for p in a.compare] if a.compare is not None else None
+    return rec.reconcile_datasets(s, a.left, a.right, [p.model_dump() for p in a.keys], compare, a.options,
+                                  a.sample, a.save_as, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -758,6 +789,15 @@ TOOLS: list[Tool] = [
          "Sinónimos: compilar excel, convertir hoja de cálculo en aplicación, hoja de cotización, ejecutar fórmulas, "
          "recalcular excel, motor de cálculo del excel, comparar con excel, exportar cálculo a python, trazar fórmula.",
          WorkbookArgs, _ann(False, True, False), _run_workbook, capped=False),
+    Tool("data_reconcile", "Reconcile two datasets that should describe the same things, row by row and cell by cell.\n"
+         "suggest profiles both and proposes column correspondences and key candidates with evidence (shared values, "
+         "name similarity, uniqueness); nothing is applied. run pairs rows only on the keys you choose: every row ends "
+         "paired, only on one side, ambiguous (key repeated) or with a missing key, and every compared cell is equal, "
+         "within tolerance, different, zero versus missing, empty versus missing, value on one side only or missing on "
+         "both. Nothing is dropped or multiplied; save_as keeps every row with its bucket as a new dataset.\n"
+         "Sinónimos: conciliar tablas, cuadrar dos excel, comparar clientes de dos sistemas, filas que faltan, "
+         "duplicados entre tablas, correspondencia de columnas, reconcile, match records.",
+         ReconcileArgs, _ann(False, False, False), _run_reconcile, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),

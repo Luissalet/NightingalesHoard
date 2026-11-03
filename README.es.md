@@ -235,7 +235,7 @@ una transformación antes de aplicarla cuando el efecto no sea obviamente seguro
 nombre de un conjunto de datos (`data_list` primero), y que cite el id del registro de análisis
 (`N-000123`) al informar de un resultado. Cálculo aporta otras 20 herramientas nativas,
 documentadas en [su referencia](fusion/laplace-docs/MCP.md), con las tres colisiones prefijadas
-como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 43.
+como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 45 (23 Datos, 20 Cálculo y 2 controles).
 
 ## Pruebas
 
@@ -278,3 +278,7 @@ En Gráficos, **Usar como base** carga en el constructor editable el conjunto de
 ## Libros de Excel como cálculo
 
 Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. Detalle: `docs/WORKBOOK-COMPILER.es.md`.
+
+## Conciliar dos conjuntos
+
+Compara dos conjuntos fila a fila por uno o varios pares de columnas clave (por ejemplo, una exportación del CRM frente al ERP). Nightingale sugiere pares de clave y de valor por parecido de nombres y solapamiento de valores, y clasifica cada fila como emparejada, solo izquierda, solo derecha, ambigua (clave duplicada) o sin clave, y cada celda comparada como igual, igual dentro de la tolerancia, distinta, cero frente a vacío, vacío frente a ausente o presente en un solo lado. Opciones de normalización: recortar espacios, ignorar mayúsculas, comparación numérica, vacío como ausente y tolerancia numérica. Cada recuento lleva ejemplos y una explicación; el resultado fila a fila se puede guardar como conjunto nuevo o descargar en CSV. Página **Conciliar**, API `/api/reconcile/*` (`suggest`, `run`, `export.csv`), herramienta `data_reconcile`. Cada ejecución queda en el registro de análisis.

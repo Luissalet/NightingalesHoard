@@ -6,11 +6,11 @@ from nightingale.agent_tools import TOOLS, call_tool, tool_catalog
 
 
 def test_tool_count_and_names():
-    assert len(TOOLS) == 22
+    assert len(TOOLS) == 23
     names = [t.name for t in TOOLS]
     assert names == sorted(set(names), key=names.index)  # no duplicates
     for expected in ("data_ingest", "data_list", "data_transform", "data_query", "data_quality",
-                       "data_chart", "data_model", "data_forecast", "data_export", "data_log", "data_ask", "data_versions_compare", "data_rows_compare", "data_join_preview", "data_workbook"):
+                       "data_chart", "data_model", "data_forecast", "data_export", "data_log", "data_ask", "data_versions_compare", "data_rows_compare", "data_join_preview", "data_workbook", "data_reconcile"):
         assert expected in names
 
 
