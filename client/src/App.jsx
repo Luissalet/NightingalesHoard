@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api } from "./api.js";
+import { api, setApiLang } from "./api.js";
 import { detectLang, makeT, setLang as persistLang } from "./i18n.js";
 import { Toast, Icon, ErrorBanner } from "./components/ui.jsx";
 import { formatNumber } from "./format.js";
@@ -66,13 +66,18 @@ function useHashRoute() {
 
 export default function App() {
   const route = useHashRoute();
-  const [lang, setLangState] = useState(detectLang());
+  const [lang, setLangState] = useState(() => {
+    const initial = detectLang();
+    setApiLang(initial);
+    return initial;
+  });
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
 
   const t = useMemo(() => makeT(lang), [lang]);
   const setLang = useCallback((l) => {
+    setApiLang(l);
     setLangState(l);
     persistLang(l);
   }, []);

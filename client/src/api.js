@@ -1,6 +1,23 @@
+import { detectLang } from "./i18n.js";
+
 // Thin fetch wrapper: JSON in/out, `{ error }` bodies become exceptions.
+//
+// The analysis pages (processes, twins, scenarios, experiments, effects, migration, reconciliation, workbook
+// explain) get their warnings, verdicts and error texts from the server, which writes them in the language
+// given by `?lang=`. The app keeps this in step with the interface language.
+let apiLang = null;
+export function setApiLang(lang) {
+  apiLang = lang === "es" || lang === "en" ? lang : null;
+}
+const LOCALISED = /^\/?api\/(process|twin|scenarios|experiment|effect|migrate|reconcile|sheets)\//;
+function withLang(url, path) {
+  if (LOCALISED.test(path) && !url.searchParams.has("lang")) url.searchParams.set("lang", apiLang || detectLang());
+  return url;
+}
+
 async function request(method, path, { params, body } = {}) {
   const url = new URL(import.meta.env.BASE_URL + path.replace(/^\//, ''), window.location.origin);
+  withLang(url, path);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
   }
@@ -25,7 +42,7 @@ const post = (path, body) => request("POST", path, { body: body ?? {} });
 const put = (path, body) => request("PUT", path, { body: body ?? {} });
 const del = (path, params) => request("DELETE", path, { params });
 async function download(path, body) {
-  const url = new URL(import.meta.env.BASE_URL + path, window.location.origin);
+  const url = withLang(new URL(import.meta.env.BASE_URL + path, window.location.origin), path);
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -35,7 +52,7 @@ async function download(path, body) {
 }
 
 async function downloadGet(path) {
-  const response = await fetch(new URL(import.meta.env.BASE_URL + path, window.location.origin));
+  const response = await fetch(withLang(new URL(import.meta.env.BASE_URL + path, window.location.origin), path));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Error ${response.status}`);

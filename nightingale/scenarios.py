@@ -32,6 +32,8 @@ from pathlib import Path
 from statistics import NormalDist
 from typing import Any, Callable, Optional
 
+from .texts import t as tx
+
 _NORM = NormalDist()
 UNITS = {"hours": 1.0, "hour": 1.0, "h": 1.0, "minutes": 1 / 60, "minute": 1 / 60, "min": 1 / 60,
          "seconds": 1 / 3600, "second": 1 / 3600, "s": 1 / 3600, "days": 24.0, "day": 24.0}
@@ -40,8 +42,6 @@ MAX_REPLICATIONS = 200
 MAX_JOB_DRAWS = 6_000_000
 SMALL_SAMPLE = 30
 VERY_SMALL_SAMPLE = 10
-CAVEAT = ("Scenarios under the stated assumptions, not predictions: results depend on the model, the seed and "
-          "any calibration sample.")
 # higher_better True / False; None = descriptive, no judgement
 POLARITY = {"throughput": True, "lead_time_mean": False, "lead_time_p50": False, "lead_time_p90": False,
             "wip": False, "lost_jobs": False, "stockouts": False, "total_cost": False, "cost_per_hour": False,
@@ -86,13 +86,13 @@ def percentile(sorted_xs: list[float], p: float) -> float:
 # ----------------------------------------------------------------- distributions
 def _num(spec: dict, key: str, where: str, positive: bool = False, nonneg: bool = True) -> float:
     if key not in spec:
-        raise ScenarioError(f"{where}: missing {key!r}")
+        raise ScenarioError(tx("sc.missing", where=where, key=key))
     try:
         v = float(spec[key])
     except (TypeError, ValueError):
-        raise ScenarioError(f"{where}: {key!r} must be a number") from None
+        raise ScenarioError(tx("sc.not_number", where=where, key=key)) from None
     if not math.isfinite(v) or (positive and v <= 0) or (nonneg and v < 0):
-        raise ScenarioError(f"{where}: {key!r} must be {'greater than 0' if positive else 'not negative'}")
+        raise ScenarioError(tx("sc.must_positive" if positive else "sc.must_nonneg", where=where, key=key))
     return v
 
 
@@ -101,7 +101,7 @@ def make_sampler(spec: Any, where: str) -> Callable[[float], float]:
     if isinstance(spec, (int, float)):
         spec = {"dist": "fixed", "value": spec}
     if not isinstance(spec, dict) or "dist" not in spec:
-        raise ScenarioError(f"{where}: expected {{\"dist\": one of {', '.join(DISTS)}, ...}}")
+        raise ScenarioError(tx("sc.dist_shape", where=where, dists=", ".join(DISTS)))
     d = spec["dist"]
     if d == "fixed":
         v = _num(spec, "value", where)
@@ -112,12 +112,12 @@ def make_sampler(spec: Any, where: str) -> Callable[[float], float]:
     if d == "uniform":
         lo, hi = _num(spec, "min", where), _num(spec, "max", where)
         if hi < lo:
-            raise ScenarioError(f"{where}: max is below min")
+            raise ScenarioError(tx("sc.max_below_min", where=where))
         return lambda u: lo + (hi - lo) * u
     if d == "triangular":
         lo, mode, hi = _num(spec, "min", where), _num(spec, "mode", where), _num(spec, "max", where)
         if not lo <= mode <= hi or hi == lo:
-            raise ScenarioError(f"{where}: need min <= mode <= max and max > min")
+            raise ScenarioError(tx("sc.tri_order", where=where))
         fc = (mode - lo) / (hi - lo)
 
         def tri(u):
@@ -133,16 +133,16 @@ def make_sampler(spec: Any, where: str) -> Callable[[float], float]:
     if d == "empirical":
         vals = spec.get("values")
         if not isinstance(vals, list) or not vals:
-            raise ScenarioError(f"{where}: empirical needs 'values' (a list) or 'dataset' and 'column'")
+            raise ScenarioError(tx("sc.emp_needs", where=where))
         try:
             xs = sorted(float(v) for v in vals)
         except (TypeError, ValueError):
-            raise ScenarioError(f"{where}: empirical values must be numbers") from None
+            raise ScenarioError(tx("sc.emp_numbers", where=where)) from None
         if xs[0] < 0 or not all(math.isfinite(x) for x in xs):
-            raise ScenarioError(f"{where}: empirical values must be finite and not negative")
+            raise ScenarioError(tx("sc.emp_finite", where=where))
         n = len(xs)
         return lambda u: xs[min(int(u * n), n - 1)]
-    raise ScenarioError(f"{where}: unknown distribution {d!r}; use one of {', '.join(DISTS)}")
+    raise ScenarioError(tx("sc.unknown_dist", where=where, dist=d, dists=", ".join(DISTS)))
 
 
 def dist_mean(spec: Any) -> Optional[float]:
@@ -191,7 +191,7 @@ def _set_path(model: dict, path: str, value: Any) -> None:
                         idx = j
                         break
             if idx is None or idx >= len(node):
-                raise ScenarioError(f"override path {path!r}: no item {part!r}")
+                raise ScenarioError(tx("sc.ovr_noitem", path=path, part=part))
             if last:
                 node[idx] = value
             else:
@@ -202,11 +202,11 @@ def _set_path(model: dict, path: str, value: Any) -> None:
             else:
                 if part not in node or not isinstance(node[part], (dict, list)):
                     if part in node:
-                        raise ScenarioError(f"override path {path!r}: {part!r} is not a container")
+                        raise ScenarioError(tx("sc.ovr_notcont", path=path, part=part))
                     node[part] = {}
                 node = node[part]
         else:
-            raise ScenarioError(f"override path {path!r} does not exist")
+            raise ScenarioError(tx("sc.ovr_nopath", path=path))
 
 
 def apply_overrides(model: dict, overrides: dict) -> dict:
@@ -224,17 +224,17 @@ class _Station:
 def _prepare(model: dict) -> dict:
     """Validate and compile a model into the structures the event loop uses."""
     if not isinstance(model, dict):
-        raise ScenarioError("model must be a JSON object")
+        raise ScenarioError(tx("sc.model_object"))
     horizon = float(model.get("horizon_hours", 168))
     if not math.isfinite(horizon) or horizon <= 0:
-        raise ScenarioError("horizon_hours must be greater than 0")
+        raise ScenarioError(tx("sc.horizon"))
     warm = float(model.get("warmup_hours", horizon * 0.1))
     if not 0 <= warm < horizon:
-        raise ScenarioError("warmup_hours must be at least 0 and below horizon_hours")
+        raise ScenarioError(tx("sc.warmup"))
     # arrivals
     arr = model.get("arrivals")
     if not isinstance(arr, dict) or "type" not in arr:
-        raise ScenarioError("arrivals: expected {\"type\": \"poisson\" | \"schedule\" | \"empirical\", ...}")
+        raise ScenarioError(tx("sc.arr_shape"))
     kind = arr["type"]
     if kind == "poisson":
         rate = _num(arr, "rate", "arrivals", positive=True)
@@ -242,30 +242,30 @@ def _prepare(model: dict) -> dict:
     elif kind == "schedule":
         rates = arr.get("rates")
         if not isinstance(rates, list) or not rates:
-            raise ScenarioError("arrivals: schedule needs 'rates', a list of rates per hour (24 = by hour of day)")
+            raise ScenarioError(tx("sc.arr_rates"))
         try:
             rates = [float(r) for r in rates]
         except (TypeError, ValueError):
-            raise ScenarioError("arrivals: schedule rates must be numbers") from None
+            raise ScenarioError(tx("sc.arr_rates_num")) from None
         if min(rates) < 0 or max(rates) <= 0:
-            raise ScenarioError("arrivals: schedule rates must be not negative and at least one above 0")
+            raise ScenarioError(tx("sc.arr_rates_pos"))
         arrival = {"type": "schedule", "rates": rates, "rmax": max(rates)}
     elif kind == "empirical":
         sampler = make_sampler({"dist": "empirical", "values": arr.get("values")}, "arrivals")
         mean = dist_mean({"dist": "empirical", "values": arr["values"]})
         if not mean or mean <= 0:
-            raise ScenarioError("arrivals: empirical inter-arrival times must have a mean above 0")
+            raise ScenarioError(tx("sc.arr_emp_mean"))
         arrival = {"type": "empirical", "sampler": sampler, "rmax": 1 / mean}
     else:
-        raise ScenarioError(f"arrivals: unknown type {kind!r}")
+        raise ScenarioError(tx("sc.arr_unknown", kind=kind))
     # job types
     types = model.get("job_types") or []
     if types:
         if not isinstance(types, list):
-            raise ScenarioError("job_types must be a list")
+            raise ScenarioError(tx("sc.jt_list"))
         mix = [float(t.get("mix", 1)) for t in types]
         if min(mix) < 0 or sum(mix) <= 0:
-            raise ScenarioError("job_types: mix values must be not negative and sum above 0")
+            raise ScenarioError(tx("sc.jt_mix"))
         total = sum(mix)
         cum, acc = [], 0.0
         for mx in mix:
@@ -273,31 +273,31 @@ def _prepare(model: dict) -> dict:
             cum.append(acc)
         scale = [float(t.get("service_scale", 1)) for t in types]
         if min(scale) <= 0:
-            raise ScenarioError("job_types: service_scale must be above 0")
+            raise ScenarioError(tx("sc.jt_scale"))
         names = [str(t.get("name", f"type{i + 1}")) for i, t in enumerate(types)]
     else:
         cum, scale, names = [1.0], [1.0], ["all"]
     # stations
     raw = model.get("stations")
     if not isinstance(raw, list) or not raw:
-        raise ScenarioError("stations: at least one station is required")
+        raise ScenarioError(tx("sc.st_one"))
     costs = model.get("costs") or {}
     stations, seen = [], set()
     for i, s in enumerate(raw):
         if not isinstance(s, dict):
-            raise ScenarioError(f"stations[{i}] must be an object")
+            raise ScenarioError(tx("sc.st_object", i=i))
         st = _Station()
         st.idx = i
-        st.name = str(s.get("name", f"Station {i + 1}"))
+        st.name = str(s.get("name", tx("sc.st_default", i=i + 1)))
         if st.name in seen:
-            raise ScenarioError(f"station names must be unique ({st.name!r})")
+            raise ScenarioError(tx("sc.st_unique", name=st.name))
         seen.add(st.name)
-        where = f"station {st.name!r}"
+        where = tx("sc.where_station", name=st.name)
         servers = s.get("servers", 1)
         if not isinstance(servers, int) or isinstance(servers, bool) or servers < 1:
-            raise ScenarioError(f"{where}: servers must be a whole number of at least 1")
+            raise ScenarioError(tx("sc.st_servers", where=where))
         st.servers = servers
-        st.sampler = make_sampler(s.get("service"), where + " service")
+        st.sampler = make_sampler(s.get("service"), tx("sc.where_service", where=where))
         st.shifts = None
         if s.get("shifts"):
             sh = []
@@ -305,17 +305,17 @@ def _prepare(model: dict) -> dict:
                 a, b = float(w.get("from", 0)), float(w.get("to", 24))
                 n = int(w.get("servers", servers))
                 if not (0 <= a < 24 and 0 < b <= 24) or a == b or n < 0:
-                    raise ScenarioError(f"{where}: shifts need from/to hours in 0-24 and servers >= 0")
+                    raise ScenarioError(tx("sc.st_shifts", where=where))
                 sh.append((a, b, n))
             st.shifts = sh
         buf = s.get("buffer")
         if buf is not None:
             if not isinstance(buf, int) or isinstance(buf, bool) or buf < 0:
-                raise ScenarioError(f"{where}: buffer must be a whole number >= 0 or null")
+                raise ScenarioError(tx("sc.st_buffer", where=where))
         st.buffer = buf
         st.on_full = s.get("on_full", "lose")
         if st.on_full not in ("lose", "block"):
-            raise ScenarioError(f"{where}: on_full must be 'lose' or 'block'")
+            raise ScenarioError(tx("sc.st_onfull", where=where))
         st.cost = float(s.get("server_cost_hour", costs.get("server_hour", 0)))
         stations.append(st)
     routing = _prepare_routing(model.get("routing"), stations)
@@ -324,11 +324,11 @@ def _prepare(model: dict) -> dict:
     inventory = None
     if inv:
         if not isinstance(inv, dict):
-            raise ScenarioError("inventory must be an object")
+            raise ScenarioError(tx("sc.inv_object"))
         which = inv.get("station", stations[0].name)
         match = [st for st in stations if st.name == which]
         if not match:
-            raise ScenarioError(f"inventory: unknown station {which!r}")
+            raise ScenarioError(tx("sc.inv_station", which=which))
         q = _num(inv, "order_quantity", "inventory", positive=True)
         inventory = {
             "station": match[0].idx, "initial": _num(inv, "initial", "inventory"),
@@ -337,17 +337,16 @@ def _prepare(model: dict) -> dict:
             "lead": make_sampler(inv.get("lead_time", {"dist": "fixed", "value": 0}), "inventory lead_time"),
         }
         if inventory["per_job"] <= 0:
-            raise ScenarioError("inventory: per_job must be above 0")
+            raise ScenarioError(tx("sc.inv_perjob"))
         if inventory["order_quantity"] < inventory["per_job"]:
-            raise ScenarioError("inventory: order_quantity is smaller than per_job; jobs could never start")
+            raise ScenarioError(tx("sc.inv_qty"))
     reps = int(model.get("replications", 20))
     if not 1 <= reps <= MAX_REPLICATIONS:
-        raise ScenarioError(f"replications must be between 1 and {MAX_REPLICATIONS}")
+        raise ScenarioError(tx("sc.reps_range", max=MAX_REPLICATIONS))
     visits = routing["K"] if routing else 1
     expected = arrival["rmax"] * horizon * reps * (len(stations) * visits + 2)
     if expected > MAX_JOB_DRAWS:
-        raise ScenarioError("model too large for one run (about "
-                            f"{int(expected):,} random draws); shorten the horizon or the replications")
+        raise ScenarioError(tx("sc.too_large", n=int(expected)))
     return {
         "horizon": horizon, "warm": warm, "reps": reps, "seed": int(model.get("seed", 1)), "arrival": arrival,
         "cum": cum, "scale": scale, "type_names": names, "stations": stations, "inventory": inventory,
@@ -363,25 +362,25 @@ MAX_ROUTE_STEPS = 200
 
 def _cumulative(shares: Any, index: dict, where: str, allow_end: bool) -> tuple[list[int], list[float]]:
     if not isinstance(shares, dict) or not shares:
-        raise ScenarioError(f"{where}: expected an object {{station: share}}")
+        raise ScenarioError(tx("sc.share_object", where=where))
     targets, weights = [], []
     for name, w in shares.items():
         try:
             w = float(w)
         except (TypeError, ValueError):
-            raise ScenarioError(f"{where}: share of {name!r} must be a number") from None
+            raise ScenarioError(tx("sc.share_number", where=where, name=name)) from None
         if w < 0 or not math.isfinite(w):
-            raise ScenarioError(f"{where}: share of {name!r} must not be negative")
+            raise ScenarioError(tx("sc.share_neg", where=where, name=name))
         if name == "END" and allow_end:
             targets.append(-1)
         elif name in index:
             targets.append(index[name])
         else:
-            raise ScenarioError(f"{where}: unknown station {name!r}")
+            raise ScenarioError(tx("sc.share_unknown", where=where, name=name))
         weights.append(w)
     total = sum(weights)
     if total <= 0:
-        raise ScenarioError(f"{where}: shares must sum to more than 0")
+        raise ScenarioError(tx("sc.share_sum", where=where))
     cum, acc = [], 0.0
     for w in weights:
         acc += w / total
@@ -393,15 +392,15 @@ def _prepare_routing(raw: Any, stations: list) -> Optional[dict]:
     if not raw:
         return None
     if not isinstance(raw, dict) or "start" not in raw:
-        raise ScenarioError("routing: expected {\"start\": {station: share}, \"next\": {station: {station|END: share}}}")
+        raise ScenarioError(tx("sc.routing_shape"))
     index = {st.name: st.idx for st in stations}
     visits = raw.get("max_visits", 4)
     if not isinstance(visits, int) or isinstance(visits, bool) or not 1 <= visits <= 20:
-        raise ScenarioError("routing: max_visits must be a whole number between 1 and 20")
+        raise ScenarioError(tx("sc.routing_visits"))
     nxt = {}
     for name, shares in (raw.get("next") or {}).items():
         if name not in index:
-            raise ScenarioError(f"routing.next: unknown station {name!r}")
+            raise ScenarioError(tx("sc.routing_next", name=name))
         nxt[index[name]] = _cumulative(shares, index, f"routing.next.{name}", True)
     return {"start": _cumulative(raw["start"], index, "routing.start", False), "next": nxt, "K": visits}
 
@@ -768,9 +767,7 @@ def run_model(model: dict, replications: Optional[int] = None, seed: Optional[in
     if x is not None and w is not None and l_:
         rel = abs(l_ - x * w) / l_ if l_ > 0 else 0.0
         littles = {"wip": l_, "throughput_x_lead_time": x * w, "relative_difference": rel, "ok": rel <= 0.10,
-                   "note": ("WIP matches throughput x lead time within 10%." if rel <= 0.10 else
-                            "WIP and throughput x lead time differ by more than 10%: the horizon may be too short "
-                            "or the warm-up too small for a steady state.")}
+                   "note": tx("sc.littles_ok" if rel <= 0.10 else "sc.littles_bad")}
         if not littles["ok"]:
             warnings.append(littles["note"])
     analytic = _analytic(m, p)
@@ -786,14 +783,12 @@ def run_model(model: dict, replications: Optional[int] = None, seed: Optional[in
     for s in p["stations"]:
         u = metrics[f"util:{s.name}"]["mean"]
         if u is not None and u > 0.95:
-            warnings.append(f"Station {s.name!r} is above 95% utilised: queues grow without bound and results "
-                            "depend on the horizon.")
+            warnings.append(tx("sc.warn_util", name=s.name))
     cut = metrics.get("truncated_routes")
     if cut and cut["mean"]:
-        warnings.append(f"About {cut['mean']:.1f} job routes per replication were cut at max_visits "
-                        f"({p['routing']['K']}); raise routing.max_visits if rework can repeat more often.")
+        warnings.append(tx("sc.warn_cut", n=cut["mean"], k=p["routing"]["K"]))
     if p["reps"] < 5:
-        warnings.append("Fewer than 5 replications: the intervals are very wide or missing.")
+        warnings.append(tx("sc.warn_few_reps"))
     stations = [{"name": s.name, "servers": s.servers, "wait_hours": metrics[f"wait:{s.name}"],
                  "utilisation": metrics[f"util:{s.name}"], "avg_queue": metrics[f"queue:{s.name}"],
                  "lost": metrics[f"lost:{s.name}"]} for s in p["stations"]]
@@ -801,7 +796,7 @@ def run_model(model: dict, replications: Optional[int] = None, seed: Optional[in
         "replications": p["reps"], "seed": p["seed"], "horizon_hours": p["horizon"], "warmup_hours": p["warm"],
         "metrics": metrics, "stations": stations,
         "checks": {"littles_law": littles, "analytic": analytic},
-        "warnings": warnings, "caveat": CAVEAT,
+        "warnings": warnings, "caveat": tx("sc.caveat"),
         "_per_rep": reps,
     }
 
@@ -810,13 +805,13 @@ def run_model(model: dict, replications: Optional[int] = None, seed: Optional[in
 def compare_models(base: dict, variants: list[dict], replications: Optional[int] = None,
                    seed: Optional[int] = None) -> dict:
     if not variants:
-        raise ScenarioError("variants: give at least one {name, overrides}")
+        raise ScenarioError(tx("sc.variants_give"))
     base_run = run_model(base, replications, seed)
     out, names = [], set()
     for v in variants:
-        name = str(v.get("name") or f"variant {len(out) + 1}")
+        name = str(v.get("name") or tx("sc.variant_default", i=len(out) + 1))
         if name in names:
-            raise ScenarioError(f"variant names must be unique ({name!r})")
+            raise ScenarioError(tx("sc.variant_unique", name=name))
         names.add(name)
         model = apply_overrides(base, v.get("overrides") or {})
         run = run_model(model, replications, seed)
@@ -841,22 +836,20 @@ def compare_models(base: dict, variants: list[dict], replications: Optional[int]
                     "warnings": run["warnings"], "run": _public(run)})
     return {"base": _public(base_run), "variants": out, "replications": base_run["replications"],
             "seed": base_run["seed"],
-            "method": "Common random numbers: every variant uses the same seed, so arrivals and the underlying "
-                      "service draws are shared; deltas are paired by replication. 'Distinguishable' means the 95% "
-                      "interval of the paired difference excludes 0.",
-            "caveat": CAVEAT}
+            "method": tx("sc.compare_method"),
+            "caveat": tx("sc.caveat")}
 
 
 def sweep_model(model: dict, param: str, values: list, replications: Optional[int] = None,
                 seed: Optional[int] = None) -> dict:
     if not isinstance(values, list) or not 1 <= len(values) <= 40:
-        raise ScenarioError("values: give between 1 and 40 values")
+        raise ScenarioError(tx("sc.values_range"))
     points = []
     for v in values:
         run = run_model(apply_overrides(model, {param: v}), replications, seed)
         points.append({"value": v, "metrics": run["metrics"], "warnings": run["warnings"]})
     return {"param": param, "points": points, "replications": run["replications"], "seed": run["seed"],
-            "caveat": CAVEAT}
+            "caveat": tx("sc.caveat")}
 
 
 def _public(run: dict) -> dict:
@@ -866,10 +859,9 @@ def _public(run: dict) -> dict:
 # ------------------------------------------------------------------ calibration
 def sample_warnings(n: int, what: str) -> list[str]:
     if n < VERY_SMALL_SAMPLE:
-        return [f"{what}: only {n} observations. This is too little to describe the real variability; treat any "
-                "scenario built on it as illustrative."]
+        return [tx("sc.warn_sample_tiny", what=what, n=n)]
     if n < SMALL_SAMPLE:
-        return [f"{what}: {n} observations is a small sample; the fitted shape and the tails are uncertain."]
+        return [tx("sc.warn_sample_small", what=what, n=n)]
     return []
 
 
@@ -892,7 +884,7 @@ def thin(values: list[float], cap: int = 2000) -> list[float]:
 def fit_durations(values: list[float], what: str) -> dict:
     """Parameter estimates and an empirical spec from durations in hours."""
     if not values:
-        raise ScenarioError(f"{what}: no usable values")
+        raise ScenarioError(tx("sc.fit_none", what=what))
     d = describe(values)
     out: dict[str, Any] = {"sample_size": d["n"], "summary": d, "warnings": sample_warnings(d["n"], what)}
     specs: dict[str, Any] = {"empirical": {"dist": "empirical", "values": thin(values)}}
@@ -910,12 +902,12 @@ def fit_durations(values: list[float], what: str) -> dict:
     out["specs"] = specs
     cv = d["cv"]
     if d["n"] >= SMALL_SAMPLE:
-        out["suggestion"] = {"dist": "empirical", "reason": "enough observations to resample them directly"}
+        out["suggestion"] = {"dist": "empirical", "reason": tx("sc.sugg_empirical")}
     elif cv is not None and 0.8 <= cv <= 1.25:
-        out["suggestion"] = {"dist": "exponential", "reason": f"coefficient of variation {cv:.2f} is close to 1"}
+        out["suggestion"] = {"dist": "exponential", "reason": tx("sc.sugg_exponential", cv=cv)}
     else:
         out["suggestion"] = {"dist": "lognormal" if "lognormal" in specs else "empirical",
-                             "reason": "small sample; a smooth shape is steadier than resampling a few points"}
+                             "reason": tx("sc.sugg_smooth")}
     return out
 
 
@@ -937,12 +929,10 @@ def calibrate_values(values: list[float], kind: str, what: str, timestamps: Opti
             out["arrivals"]["schedule"] = {"type": "schedule", "rates": [c / days for c in counts]}
             out["span_hours"] = span_h
             out["arrivals"]["poisson"] = {"type": "poisson", "rate": (len(ts) - 1) / span_h} if span_h > 0 else None
-            out["warnings"].append("Hourly schedule assumes every hour of the day has the same pattern on every "
-                                   "day; weekdays and seasons are not separated.")
+            out["warnings"].append(tx("sc.warn_hourly"))
             if days < 7:
-                out["warnings"].append(f"Only {days} calendar days of data: the hourly pattern rests on very few "
-                                       "repetitions of each hour.")
-    out["caveat"] = CAVEAT
+                out["warnings"].append(tx("sc.warn_days", days=days))
+    out["caveat"] = tx("sc.caveat")
     return out
 
 
@@ -958,7 +948,7 @@ def _dir(services) -> Path:
 
 def _file(services, name: str) -> Path:
     if not isinstance(name, str) or not _NAME.match(name):
-        raise ScenarioError("model name: 1-60 letters, digits, spaces, '_', '.' or '-'")
+        raise ScenarioError(tx("sc.model_name"))
     return _dir(services) / (name + ".json")
 
 
@@ -968,7 +958,7 @@ def _load_column(services, dataset: str, column: str, as_time: bool) -> list[flo
     with services.engine.lock() as conn:
         cols = [r[0] for r in conn.execute(f"DESCRIBE {q(table)}").fetchall()]
         if column not in cols:
-            raise ScenarioError(f"dataset {dataset!r} has no column {column!r}; columns: {cols}")
+            raise ScenarioError(tx("sc.no_column", dataset=dataset, column=column, cols=cols))
         expr = f"epoch(TRY_CAST({q(column)} AS TIMESTAMP))" if as_time else f"TRY_CAST({q(column)} AS DOUBLE)"
         rows = conn.execute(f"SELECT {expr} FROM {q(table)}").fetchall()
     return [float(r[0]) for r in rows if r[0] is not None and math.isfinite(float(r[0]))]
@@ -976,7 +966,7 @@ def _load_column(services, dataset: str, column: str, as_time: bool) -> list[flo
 
 def _durations(services, dataset: str, column: str, unit: str) -> list[float]:
     if unit not in UNITS:
-        raise ScenarioError(f"unit must be one of {sorted(set(UNITS))}")
+        raise ScenarioError(tx("sc.unit", units=sorted(set(UNITS))))
     xs = [v * UNITS[unit] for v in _load_column(services, dataset, column, False)]
     return [x for x in xs if x >= 0]
 
@@ -1005,7 +995,7 @@ def resolve_refs(services, model: dict) -> tuple[dict, list[dict]]:
                 else:
                     xs = _durations(services, node["dataset"], node["column"], unit)
                 if not xs:
-                    raise ScenarioError(f"{path}: no usable values in {node['dataset']}.{node['column']}")
+                    raise ScenarioError(tx("sc.no_values_in", path=path, dataset=node["dataset"], column=node["column"]))
                 node["values"] = thin(xs)
                 notes.append({"path": path, "dataset": node["dataset"], "column": node["column"],
                               "sample_size": len(xs), "warnings": sample_warnings(len(xs), path)})
@@ -1026,11 +1016,11 @@ def _model_for(services, name: Optional[str], model: Optional[dict]) -> dict:
             try:
                 model = json.loads(model)
             except json.JSONDecodeError as exc:
-                raise ScenarioError(f"model is not valid JSON: {exc}") from None
+                raise ScenarioError(tx("sc.bad_json", exc=exc)) from None
         return model
     if name:
         return get_model(services, name)["model"]
-    raise ScenarioError("give 'name' (a saved model) or 'model' (inline JSON)")
+    raise ScenarioError(tx("sc.give_model"))
 
 
 def save_model(services, name: str, model: dict, source: str = "ui") -> dict:
@@ -1039,7 +1029,7 @@ def save_model(services, name: str, model: dict, source: str = "ui") -> dict:
             try:
                 mm = json.loads(model)
             except json.JSONDecodeError as exc:
-                raise ScenarioError(f"model is not valid JSON: {exc}") from None
+                raise ScenarioError(tx("sc.bad_json", exc=exc)) from None
         else:
             mm = model
         resolved, _ = resolve_refs(services, mm) if _has_refs(mm) else (mm, [])
@@ -1076,7 +1066,8 @@ def list_models(services) -> dict:
 def get_model(services, name: str) -> dict:
     f = _file(services, name)
     if not f.exists():
-        raise LookupError(f"unknown scenario model {name!r}; saved: {[m['name'] for m in list_models(services)['models']]}")
+        raise LookupError(tx("sc.unknown_model_saved", name=name,
+                             saved=[m["name"] for m in list_models(services)["models"]]))
     return {"name": name, "model": json.loads(f.read_text(encoding="utf-8"))}
 
 
@@ -1084,7 +1075,7 @@ def delete_model(services, name: str, source: str = "ui") -> dict:
     def do():
         f = _file(services, name)
         if not f.exists():
-            raise LookupError(f"unknown scenario model {name!r}")
+            raise LookupError(tx("sc.unknown_model", name=name))
         f.unlink()
         return {"name": name, "deleted": True, "_log_summary": f"deleted scenario model {name!r}"}
     return services._log("scenario_delete", source, None, {"name": name}, do)
@@ -1171,7 +1162,7 @@ def calibrate_scenario(services, dataset: str, column: str, kind: str = "service
             xs, ts = _interarrivals(services, dataset, column, unit, kind)
             res = calibrate_values(xs, "interarrival", f"{dataset}.{column}", ts)
         else:
-            raise ScenarioError("kind must be 'service', 'interarrival' or 'timestamps'")
+            raise ScenarioError(tx("sc.kind"))
         res.update({"dataset": dataset, "column": column, "unit": unit if kind != "timestamps" else "timestamps"})
         res["_log_summary"] = f"calibrated {kind} from {dataset}.{column}: n={res['sample_size']}"
         return res

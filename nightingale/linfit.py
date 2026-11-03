@@ -7,6 +7,8 @@ from typing import Any, Optional
 import numpy as np
 from scipy import stats
 
+from .texts import t as tx
+
 CAVEAT_DEFAULT = ""
 
 
@@ -29,7 +31,7 @@ def load_frame(services, dataset: str, spec: dict[str, str]) -> tuple[dict[str, 
         desc = {r[0]: str(r[1]).upper() for r in conn.execute(f"DESCRIBE {q(table)}").fetchall()}
         missing = [c for c in spec if c not in desc]
         if missing:
-            raise FitError(f"dataset {dataset!r} has no column {missing[0]!r}; columns: {list(desc)}")
+            raise FitError(tx("fit.no_column", dataset=dataset, column=missing[0], cols=list(desc)))
         exprs, kinds = [], {}
         for col, kind in spec.items():
             typ = desc[col]
@@ -107,7 +109,7 @@ def ols(X: np.ndarray, y: np.ndarray, cov: str = "classical", groups: Optional[n
         vdof = dof
     elif cov == "cluster":
         if groups is None:
-            raise FitError("cluster covariance needs groups")
+            raise FitError(tx("fit.cluster_groups"))
         ids = np.unique(groups)
         G = len(ids)
         S = np.zeros((p, p))
@@ -119,7 +121,7 @@ def ols(X: np.ndarray, y: np.ndarray, cov: str = "classical", groups: Optional[n
         V = adj * bread @ S @ bread
         vdof = G - 1
     else:
-        raise FitError(f"unknown covariance {cov!r}")
+        raise FitError(tx("fit.unknown_cov", cov=cov))
     se = np.sqrt(np.maximum(np.diag(V), 0))
     ybar = y.mean()
     tss = float(((y - ybar) ** 2).sum())

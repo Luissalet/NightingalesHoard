@@ -22,6 +22,7 @@ import numpy as np
 from scipy import stats
 
 from .linfit import FitError, load_frame, num, ols, tq, to_float
+from .texts import t as tx
 
 ROMAN = {3: "III", 4: "IV", 5: "V", 6: "VI", 7: "VII", 8: "VIII", 9: "IX", 10: "X"}
 LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"   # I and O skipped so words stay readable
@@ -43,22 +44,22 @@ class ExperimentError(FitError):
 # ---------------------------------------------------------------- factors and constraints
 def check_factors(factors: Any) -> list[dict]:
     if not isinstance(factors, list) or not factors:
-        raise ExperimentError("give at least one factor: [{name, low, high}]")
+        raise ExperimentError(tx("ex.need_factor"))
     if len(factors) > 12:
-        raise ExperimentError("at most 12 factors per design")
+        raise ExperimentError(tx("ex.max_factors"))
     out, seen = [], set()
     for f in factors:
         if not isinstance(f, dict) or "name" not in f or "low" not in f or "high" not in f:
-            raise ExperimentError("every factor needs name, low and high")
+            raise ExperimentError(tx("ex.factor_fields"))
         nm = str(f["name"])
         if not _IDENT.match(nm):
-            raise ExperimentError(f"factor name {nm!r}: use letters, digits and '_' (it must start with a letter) so constraints can name it")
+            raise ExperimentError(tx("ex.factor_name", name=nm))
         if nm in seen:
-            raise ExperimentError(f"factor {nm!r} is listed twice")
+            raise ExperimentError(tx("ex.factor_twice", name=nm))
         seen.add(nm)
         lo, hi = float(f["low"]), float(f["high"])
         if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
-            raise ExperimentError(f"factor {nm!r}: high must be greater than low")
+            raise ExperimentError(tx("ex.factor_bounds", name=nm))
         out.append({"name": nm, "low": lo, "high": hi, "integer": bool(f.get("integer", False))})
     return out
 
@@ -70,7 +71,7 @@ def _eval(node: ast.AST, env: dict[str, np.ndarray]):
         return float(node.value)
     if isinstance(node, ast.Name):
         if node.id not in env:
-            raise ExperimentError(f"constraint names unknown factor {node.id!r}; factors: {list(env)}")
+            raise ExperimentError(tx("ex.constraint_unknown", name=node.id, factors=list(env)))
         return env[node.id]
     if isinstance(node, ast.UnaryOp):
         v = _eval(node.operand, env)
@@ -100,12 +101,12 @@ def _eval(node: ast.AST, env: dict[str, np.ndarray]):
         for op, comp in zip(node.ops, node.comparators):
             right = _eval(comp, env)
             if type(op) not in ops:
-                raise ExperimentError("constraints support comparisons, and/or/not and + - * / **")
+                raise ExperimentError(tx("ex.constraint_ops"))
             piece = ops[type(op)](left, right)
             res = piece if res is None else np.logical_and(res, piece)
             left = right
         return res
-    raise ExperimentError("constraints support comparisons, and/or/not and + - * / ** over factor names and numbers")
+    raise ExperimentError(tx("ex.constraint_ops_long"))
 
 
 def forbidden_mask(rows: np.ndarray, factors: list[dict], forbidden: Optional[list]) -> np.ndarray:
@@ -118,18 +119,18 @@ def forbidden_mask(rows: np.ndarray, factors: list[dict], forbidden: Optional[li
             try:
                 tree = ast.parse(item.strip(), mode="eval")
             except SyntaxError as exc:
-                raise ExperimentError(f"constraint {item!r} is not a valid expression: {exc.msg}") from None
+                raise ExperimentError(tx("ex.constraint_invalid", item=item, msg=exc.msg)) from None
             val = _eval(tree, env)
             bad |= np.broadcast_to(np.asarray(val, bool), bad.shape)
         elif isinstance(item, dict):
             m = np.ones(len(rows), bool)
             for nm, rg in item.items():
                 if nm not in env:
-                    raise ExperimentError(f"forbidden box names unknown factor {nm!r}")
+                    raise ExperimentError(tx("ex.box_unknown", name=nm))
                 m &= (env[nm] >= float(rg[0])) & (env[nm] <= float(rg[1]))
             bad |= m
         else:
-            raise ExperimentError("a forbidden combination is an expression string or a {factor: [low, high]} box")
+            raise ExperimentError(tx("ex.forbidden_form"))
     return bad
 
 
@@ -185,7 +186,7 @@ def fractional_structure(k: int, p: int) -> dict:
     if p == 0:
         return {"generators": [], "words": [], "resolution": None}
     if p >= k or k - p < 2:
-        raise ExperimentError(f"a 2^({k}-{p}) design leaves too few base factors")
+        raise ExperimentError(tx("ex.few_base", k=k, p=p))
     gens = GENERATORS.get((k, p)) or _greedy_generators(k, p)
     added = list(range(k - p, k))
     words = _words(gens, k - p, added)
@@ -299,20 +300,20 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
     types: list[str] = []
     if kind in ("full", "fractional"):
         if k < 2:
-            raise ExperimentError("a 2-level factorial needs at least 2 factors")
+            raise ExperimentError(tx("ex.full_min"))
         if kind == "full":
             if k > 10:
-                raise ExperimentError("a full 2-level factorial above 10 factors has over a thousand runs; use 'fractional'")
+                raise ExperimentError(tx("ex.full_max"))
             p = 0
         else:
             if k < 3:
-                raise ExperimentError("a fractional factorial needs at least 3 factors; use 'full'")
+                raise ExperimentError(tx("ex.frac_min"))
             if k > 10:
-                raise ExperimentError("fractional designs are supported up to 10 factors")
+                raise ExperimentError(tx("ex.frac_max"))
             if fraction is not None:
                 p = int(fraction)
                 if not 1 <= p <= k - 2:
-                    raise ExperimentError(f"fraction must be between 1 and {k - 2} for {k} factors")
+                    raise ExperimentError(tx("ex.fraction_range", max=k - 2, k=k))
             else:
                 options = []
                 for pp in range(0, k - 1):
@@ -323,13 +324,13 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
                     options.append((pp, 2 ** (k - pp), res))
                 ok = [o for o in options if o[2] >= min_resolution]
                 if not ok:
-                    raise ExperimentError(f"no fraction of {k} factors reaches resolution {min_resolution}")
+                    raise ExperimentError(tx("ex.no_resolution", k=k, res=min_resolution))
                 if max_runs:
                     fit = [o for o in ok if o[1] <= max_runs]
                     if fit:
                         ok = fit
                     else:
-                        warnings.append(f"The smallest design with resolution >= {min_resolution} has {min(o[1] for o in ok)} runs, above your limit of {max_runs}.")
+                        warnings.append(tx("ex.warn_smallest", res=min_resolution, n=min(o[1] for o in ok), limit=max_runs))
                 p = max(ok, key=lambda o: o[0])[0]
         coded, st = coded_factorial(k, p)
         types = ["factorial"] * len(coded)
@@ -340,20 +341,18 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
         if p:
             info["alias_structure"] = alias_structure(st, names, k)
             r = st["resolution"]
-            info["interpretation"] = {3: "Resolution III: main effects are aliased with two-factor interactions; use only for screening, assuming interactions are negligible.",
-                                      4: "Resolution IV: main effects are clear of two-factor interactions, but two-factor interactions are aliased with each other.",
-                                      5: "Resolution V: main effects and two-factor interactions are clear of each other."}.get(r, "Resolution %s." % ROMAN.get(r, r))
+            info["interpretation"] = tx({3: "ex.res3", 4: "ex.res4", 5: "ex.res5"}.get(r, "ex.res_other"), r=ROMAN.get(r, r))
             if r <= 3:
-                warnings.append("Resolution III: main effects are confounded with two-factor interactions.")
+                warnings.append(tx("ex.warn_res3"))
         nc = 3 if center_points is None else int(center_points)
         if nc:
             coded = np.vstack([coded, np.zeros((nc, k))])
             types += ["center"] * nc
     elif kind == "ccd":
         if not 2 <= k <= 6:
-            raise ExperimentError("the central composite design supports 2 to 6 factors")
+            raise ExperimentError(tx("ex.ccd_range"))
         if variant not in ("face", "inscribed", "circumscribed"):
-            raise ExperimentError("variant must be 'face', 'inscribed' or 'circumscribed'")
+            raise ExperimentError(tx("ex.ccd_variant"))
         p = 0 if k <= 4 else 1
         cube, st = coded_factorial(k, p)
         F = len(cube)
@@ -374,12 +373,11 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
         info.update({"variant": variant, "alpha": float(axial_val), "factorial_fraction": p,
                      "generators": st.get("generators", [])})
         if variant == "circumscribed":
-            warnings.append(f"Circumscribed design: axial points sit at +-{axial_val:.3f} of the half-range, outside the stated "
-                            "bounds. Use 'face' or 'inscribed' if the bounds are hard limits.")
+            warnings.append(tx("ex.warn_circ", alpha=axial_val))
     elif kind == "lhs":
         n = int(runs) if runs else max(10, 5 * k)
         if n < k + 1 or n > 2000:
-            raise ExperimentError(f"lhs needs between {k + 1} and 2000 runs")
+            raise ExperimentError(tx("ex.lhs_runs", lo=k + 1))
         if forbidden:
             pool_n = max(n * 8, 200)
             u = _maximin_lhs(pool_n, k, rng, tries=5)
@@ -387,8 +385,7 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
             bad = forbidden_mask(actual_pool, fs, forbidden)
             ok = u[~bad]
             if len(ok) < n:
-                raise ExperimentError(f"only {len(ok)} of {pool_n} sampled points ({len(ok) / pool_n:.0%}) satisfy the constraints; "
-                                      f"cannot place {n} runs. Relax the forbidden region or ask for fewer runs.")
+                raise ExperimentError(tx("ex.lhs_pool", ok=len(ok), pool=pool_n, share=len(ok) / pool_n, n=n))
             u = _farthest_point(ok, n)
             info["feasible_fraction"] = float(len(ok) / pool_n)
         else:
@@ -396,9 +393,9 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
         coded = 2 * u - 1
         types = ["lhs"] * n
         info["min_pairwise_distance"] = float(np.min(_pdist(u)))
-        info["space_filling"] = "maximin Latin hypercube (best of several seeded draws)"
+        info["space_filling"] = tx("ex.space_filling")
     else:
-        raise ExperimentError("kind must be 'full', 'fractional', 'ccd' or 'lhs'")
+        raise ExperimentError(tx("ex.kind"))
     actual = decode(coded, fs)
     for i, f in enumerate(fs):
         if f["integer"]:
@@ -411,18 +408,17 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
             keep = ~bad
             coded, actual = coded[keep], actual[keep]
             types = [t for t, kp in zip(types, keep) if kp]
-            warnings.append(f"{len(removed)} of {len(removed) + len(coded)} planned runs hit a forbidden combination and were removed. "
-                            "The design is no longer orthogonal or balanced; effects that were separate may now be partly confounded.")
+            warnings.append(tx("ex.warn_removed", n=len(removed), total=len(removed) + len(coded)))
     if len(coded) == 0:
-        raise ExperimentError("every planned run is forbidden")
+        raise ExperimentError(tx("ex.all_forbidden"))
     prop = properties(coded)
     if removed:
-        prop["note"] = "properties computed on the remaining runs"
-        for key, label in (("main_effects", "main effects"), ("two_factor_interactions", "two-factor interactions")):
+        prop["note"] = tx("ex.prop_note")
+        for key, label in (("main_effects", tx("ex.label_main")), ("two_factor_interactions", tx("ex.label_two"))):
             if not prop["estimable"][key]:
-                warnings.append(f"After removing runs, {label} can no longer all be estimated.")
+                warnings.append(tx("ex.warn_after_removal", label=label))
     if kind in ("full", "fractional") and len(coded) < k + 1:
-        raise ExperimentError("too few runs remain to estimate the main effects")
+        raise ExperimentError(tx("ex.too_few_remain"))
     order = np.arange(len(coded))
     std_order = order + 1
     if randomize:
@@ -437,8 +433,7 @@ def design_experiment(factors: list[dict], kind: str = "fractional", fraction: O
     return {"kind": kind, "factors": fs, "runs": rows, "n_runs": len(rows), "info": info, "properties": prop,
             "removed_runs": removed, "randomized": bool(randomize), "seed": seed, "warnings": warnings,
             "coded": [[float(v) for v in coded[i]] for i in order],
-            "note": "Run in the 'run' order (randomised to protect against drift); 'std_order' is the standard order. "
-                    "Center points estimate curvature and pure error."}
+            "note": tx("ex.design_note")}
 
 
 # ---------------------------------------------------------------- model fitting
@@ -457,10 +452,10 @@ def _choose_terms(coded: np.ndarray, order: str):
     sel = X[:, [0]]
     for c in range(1, X.shape[1]):
         if kinds[c] == "quadratic" and levels[idx[c][0]] < 3:
-            dropped.append((c, "needs three or more levels of that factor"))
+            dropped.append((c, tx("ex.drop_levels")))
             continue
         if kinds[c] != "main" and rank >= distinct:
-            dropped.append((c, "no degrees of freedom left (as many terms as distinct settings)"))
+            dropped.append((c, tx("ex.drop_dof")))
             continue
         trial = np.hstack([sel, X[:, [c]]])
         if np.linalg.matrix_rank(trial) > rank:
@@ -477,7 +472,7 @@ def _choose_terms(coded: np.ndarray, order: str):
                     break
             if tgt is not None:
                 aliased.setdefault(tgt, []).append(c)
-            dropped.append((c, "aliased with an earlier term" if tgt is not None else "linearly dependent on earlier terms"))
+            dropped.append((c, tx("ex.drop_aliased") if tgt is not None else tx("ex.drop_dependent")))
     quad_kept = [c for c in keep if kinds[c] == "quadratic"]
     if len(quad_kept) == 1 and aliased.get(quad_kept[0]):
         # squares of different factors are the same column (only centre points add a third level): a single pooled
@@ -485,7 +480,7 @@ def _choose_terms(coded: np.ndarray, order: str):
         c = quad_kept[0]
         keep.remove(c)
         aliased.pop(c)
-        dropped.append((c, "squares cannot be told apart with a third level only at the centre; see the curvature test"))
+        dropped.append((c, tx("ex.drop_squares")))
         order = "interactions" if "interaction" in kinds else "main"
     return order, X, kinds, idx, keep, aliased, dropped, distinct
 
@@ -561,9 +556,9 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
     k = len(fs)
     n = len(y)
     if n < k + 2:
-        raise ExperimentError(f"{n} runs are too few for {k} factors: need at least {k + 2}")
+        raise ExperimentError(tx("ex.too_few_runs", n=n, k=k, need=k + 2))
     if model not in ("auto", "main", "interactions", "quadratic"):
-        raise ExperimentError("model must be 'auto', 'main', 'interactions' or 'quadratic'")
+        raise ExperimentError(tx("ex.model_kind"))
     coded = encode(X_actual, fs)
     s = fit_surface(coded, y, names, model)
     fit = s["fit"]
@@ -585,16 +580,12 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
         if len(eff_idx) >= 4:
             L = lenth(2 * coefs[eff_idx], level)
     if few:
-        warnings.append(f"Only {dof} residual degree(s) of freedom and no replicates: significance is judged with Lenth's pseudo standard "
-                        "error (which assumes most effects are zero) rather than the classical t-test.")
+        warnings.append(tx("ex.warn_lenth_few", dof=dof))
     if saturated:
-        warnings.append("The design is saturated (as many terms as distinct runs): there is no error estimate, so significance "
-                        "is judged with Lenth's pseudo standard error, which assumes most effects are zero." if L else
-                        "The design is saturated: there is no error estimate and too few effects for Lenth's method; effects are "
-                        "reported without intervals.")
+        warnings.append(tx("ex.warn_saturated_lenth" if L else "ex.warn_saturated"))
     else:
         if dof <= 2 and not few:
-            warnings.append(f"Only {dof} residual degrees of freedom: the noise estimate, and every interval, is very uncertain.")
+            warnings.append(tx("ex.warn_dof", dof=dof))
     t = tq(dof, level) if dof > 0 else float("nan")
     for i, (kd, lab) in enumerate(zip(s["kinds"], s["labels"])):
         b = float(coefs[i])
@@ -628,8 +619,7 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
             lof = {"pure_error": out_pe, "lack_of_fit_df": df_lof, "F": num(F) if math.isfinite(F) else None,
                    "p_value": float(stats.f.sf(F, df_lof, df_pe)) if math.isfinite(F) else 0.0}
             if lof["p_value"] < 0.05:
-                warnings.append(f"Lack of fit is significant (p={lof['p_value']:.3g}): the model form is too simple for this "
-                                "surface (curvature or missing interactions); the effects below are not the whole story.")
+                warnings.append(tx("ex.warn_lof", p=lof["p_value"]))
         else:
             lof = {"pure_error": out_pe}
     # curvature with centre points on a model that has no squares
@@ -651,31 +641,29 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
         curv = {"factorial_mean_minus_center_mean": diff, "centre_points": int(is_center.sum()),
                 "p_value": float(2 * stats.t.sf(abs(tv), dfc)) if math.isfinite(tv) and dfc > 0 else None}
         if curv["p_value"] is not None and curv["p_value"] < 0.05:
-            warnings.append(f"Curvature detected (p={curv['p_value']:.3g}): the response at the centre differs from the factorial "
-                            "average, so a straight-line model is wrong inside the region. Add axial points (central composite) "
-                            "to fit the curvature.")
+            warnings.append(tx("ex.warn_curv", p=curv["p_value"]))
         elif curv["p_value"] is None:
-            notes.append("Centre points exist but cannot be tested for curvature (too little replication).")
+            notes.append(tx("ex.note_center_untested"))
     elif is_center.sum() == 0 and "quadratic" not in s["kinds"]:
-        notes.append("No centre points: curvature cannot be checked; the straight-line model may hide it.")
+        notes.append(tx("ex.note_no_center"))
     if s["aliased"]:
-        notes.append("Some terms are completely aliased in this design and are shown together: " +
-                     "; ".join(f"{a} with {', '.join(b)}" for a, b in s["aliased"].items()))
+        notes.append(tx("ex.note_aliased", items="; ".join(tx("ex.alias_item", a=a, b=", ".join(b))
+                                                          for a, b in s["aliased"].items())))
     if s["dropped"]:
-        notes.append("Not estimated: " + "; ".join(f"{d['term']} ({d['reason']})" for d in s["dropped"][:12]))
+        notes.append(tx("ex.note_dropped", items="; ".join(f"{d['term']} ({d['reason']})" for d in s["dropped"][:12])))
     if dof > 0 and s["order"] != "main":
-        notes.append("Interval widths assume that terms not in the model (higher-order interactions) are zero.")
+        notes.append(tx("ex.note_interval"))
     res = fit["resid"]
     normal = None
     if 8 <= n <= 5000 and dof >= 8:
         sw = stats.shapiro(res)
         normal = {"shapiro_p": float(sw.pvalue)}
         if sw.pvalue < 0.01:
-            warnings.append(f"Residuals look non-normal (Shapiro p={sw.pvalue:.3g}); the p-values and intervals are approximate.")
+            warnings.append(tx("ex.warn_normal", p=sw.pvalue))
     stats_out = {"n": n, "terms": int(fit["rank"]), "residual_df": int(dof), "r2": num(fit["r2"]), "adj_r2": num(fit["adj_r2"]),
                  "rmse": num(math.sqrt(fit["sigma2"])) if dof > 0 else None, "model": s["order"]}
     out: dict[str, Any] = {"response": response, "factors": fs, "model": s["order"], "terms": terms, "fit": stats_out,
-                           "coding": "coded -1..+1 between each factor's low and high; an effect is the response change from low to high",
+                           "coding": tx("ex.coding"),
                            "level": level, "lenth": L, "lack_of_fit": lof, "curvature": curv, "residual_check": normal,
                            "warnings": warnings, "notes": notes,
                            "residuals": [{"fitted": float(f), "residual": float(r)} for f, r in zip(y - res, res)]}
@@ -697,7 +685,7 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
         out["surface"] = {"x": names[top[0]], "y": names[top[1]], "x_values": [float(v) for v in xs], "y_values": [float(v) for v in ys],
                           "mean": [[float(pr["mean"][i * surface_grid + j]) for j in range(surface_grid)] for i in range(surface_grid)],
                           "ci_half": [[float(pr["ci_half"][i * surface_grid + j]) for j in range(surface_grid)] for i in range(surface_grid)],
-                          "others_held_at": "centre of their range"}
+                          "others_held_at": tx("ex.others_at")}
     # main effect predictions with confidence at the centre of the other factors
     if dof > 0:
         me = []
@@ -728,9 +716,9 @@ def analyze_experiment(X_actual: np.ndarray, y: np.ndarray, factors: list[dict],
                 inside = bool(np.all(np.abs(xs_) <= 1 + 1e-9))
                 out["stationary_point"] = {"type": kind, "inside_region": inside, "settings": {nm: float(v) for nm, v in zip(names, decode(xs_[None], fs)[0])},
                                            "predicted": float(pr["mean"][0]), "ci_half": float(pr["ci_half"][0]),
-                                           "note": None if inside else "The stationary point lies outside the studied region: it is an extrapolation, not a result."}
+                                           "note": None if inside else tx("ex.stationary_note")}
                 if not inside:
-                    warnings.append("The stationary point of the fitted surface lies outside the studied region; do not read it as an optimum.")
+                    warnings.append(tx("ex.warn_stationary"))
         except np.linalg.LinAlgError:
             pass
     best = int(np.argmax(y)), int(np.argmin(y))
@@ -749,12 +737,12 @@ def candidate_points(factors: list[dict], forbidden: Optional[list], given: Opti
         pts = []
         for c in given:
             if not isinstance(c, dict) or any(nm not in c for nm in names):
-                raise ExperimentError(f"every candidate needs all factors {names}")
+                raise ExperimentError(tx("ex.cand_all", names=names))
             pts.append([float(c[nm]) for nm in names])
         pts = np.array(pts)
         for j, f in enumerate(factors):
             if np.any(pts[:, j] < f["low"] - 1e-9) or np.any(pts[:, j] > f["high"] + 1e-9):
-                raise ExperimentError(f"a candidate lies outside the bounds of {f['name']!r} [{f['low']}, {f['high']}]")
+                raise ExperimentError(tx("ex.cand_bounds", name=f["name"], lo=f["low"], hi=f["high"]))
     else:
         rng = np.random.default_rng(seed)
         parts = [decode(2 * rng.random((n_random, k)) - 1, factors), decode(np.zeros((1, k)), factors)]
@@ -771,7 +759,7 @@ def candidate_points(factors: list[dict], forbidden: Optional[list], given: Opti
     if forbidden:
         pts = pts[~forbidden_mask(pts, factors, forbidden)]
     if len(pts) == 0:
-        raise ExperimentError("no candidate point satisfies the constraints")
+        raise ExperimentError(tx("ex.cand_none"))
     return np.unique(np.round(pts, 12), axis=0)
 
 
@@ -779,9 +767,9 @@ def next_runs(X_actual: np.ndarray, y: np.ndarray, factors: list[dict], response
               n: int = 1, model: str = "auto", forbidden: Optional[list] = None, candidates: Optional[list] = None,
               seed: int = 0, xi: float = 0.0) -> dict:
     if objective not in ("explore", "maximize", "minimize"):
-        raise ExperimentError("objective must be 'explore', 'maximize' or 'minimize'")
+        raise ExperimentError(tx("ex.objective"))
     if not 1 <= n <= 20:
-        raise ExperimentError("n must be between 1 and 20")
+        raise ExperimentError(tx("ex.n_range"))
     names = [f["name"] for f in factors]
     coded = encode(X_actual, factors)
     s = fit_surface(coded, y, names, model)
@@ -791,11 +779,9 @@ def next_runs(X_actual: np.ndarray, y: np.ndarray, factors: list[dict], response
     sigma = math.sqrt(fit["sigma2"]) if dof > 0 else 1.0
     relative = dof <= 0
     if relative:
-        warnings.append("The model uses up every degree of freedom, so the noise level is unknown: standard deviations are in units of the "
-                        "(unknown) noise sd and expected improvement cannot be computed in response units.")
+        warnings.append(tx("ex.warn_relative"))
     elif dof <= 2:
-        warnings.append(f"Only {dof} residual degrees of freedom: the noise estimate is shaky, so the uncertainty ranking is rough. "
-                        "A replicate at the centre would help the noise estimate.")
+        warnings.append(tx("ex.warn_shaky", dof=dof))
     pts = candidate_points(factors, forbidden, candidates, seed)
     C = encode(pts, factors)
     F = _row_features(s, C)
@@ -829,7 +815,7 @@ def next_runs(X_actual: np.ndarray, y: np.ndarray, factors: list[dict], response
         if not np.isfinite(score[i]):
             break
         if objective != "explore" and score[i] <= 1e-12 * max(1.0, abs(best_obs or 1)):
-            warnings.append("No candidate has a meaningful expected improvement under the fitted model; recommending the most uncertain point instead.")
+            warnings.append(tx("ex.warn_no_ei"))
             objective_row = "explore"
             score_alt = var_unit.copy()
             for u in used:
@@ -856,30 +842,29 @@ def next_runs(X_actual: np.ndarray, y: np.ndarray, factors: list[dict], response
         sdv = row["predicted_sd"]
         parts = []
         if row["objective"] == "explore":
-            parts.append(f"largest remaining prediction uncertainty among {len(pts)} feasible candidates (sd {sdv:.4g}"
-                         f"{'' if relative else ' in response units'}, versus {median_sd:.4g} for the median candidate and {centre_sd:.4g} at the centre)")
+            parts.append(tx("ex.why_explore", n=len(pts), sd=sdv, units="" if relative else tx("ex.units_suffix"),
+                            median=median_sd, centre=centre_sd))
         else:
-            parts.append(f"best expected improvement for {objective} ({row['expected_improvement']:.4g}): predicted {row['predicted_mean']:.4g} "
-                         f"against the best observed {best_obs:.4g}, with prediction sd {sdv:.4g}")
+            parts.append(tx("ex.why_best", objective=objective, ei=row["expected_improvement"],
+                            mean=row["predicted_mean"], best=best_obs, sd=sdv))
         d = row["nearest_existing_run_distance"]
         if d < 1e-9:
             row["replicate"] = True
-            parts.append("it repeats an existing setting (in a balanced design every corner is equally uncertain), so it also sharpens the noise estimate")
+            parts.append(tx("ex.why_repeat"))
         else:
-            parts.append(f"{d:.2f} coded units from the nearest planned or existing run" if np.isfinite(d) else "")
-        parts.append(f"measuring it would lower the largest prediction sd from {max_before:.4g} to {row['max_prediction_sd_after']:.4g}")
+            parts.append(tx("ex.why_distance", d=d) if np.isfinite(d) else "")
+        parts.append(tx("ex.why_lower", before=max_before, after=row["max_prediction_sd_after"]))
         row["why"] = "; ".join(p for p in parts if p) + "."
         outside = any(row["coded"][j] > 1.0 + 1e-9 or row["coded"][j] < -1.0 - 1e-9 for j in range(len(names)))
         if outside:
-            row["why"] += " It lies outside the coded -1..+1 region of the existing runs."
+            row["why"] += tx("ex.why_outside")
     alt_idx = np.argsort(-(var_unit0 if objective == "explore" else (ei0 if ei0 is not None else var_unit0)))[:6]
     alts = [{"settings": {nm: float(pts[i, j]) for j, nm in enumerate(names)}, "predicted_mean": float(mu[i]),
              "predicted_sd": float(math.sqrt(max(var_unit0[i], 0)) * sigma),
              **({"expected_improvement": float(ei0[i])} if ei0 is not None else {})} for i in alt_idx]
     s_out = {"model": s["order"], "terms": s["labels"], "residual_df": int(dof), "noise_sd": None if relative else float(sigma),
              "n_runs": int(len(y)), "candidates_considered": int(len(pts))}
-    s_out["caveat"] = ("Both rules assume the fitted model form is right: a point in a region the model thinks is flat but is not "
-                       "can be missed. The variance rule is independent of the measured responses; only the improvement rule uses them.")
+    s_out["caveat"] = tx("ex.next_caveat")
     return {"objective": objective, "response": response, "recommendations": rows, "alternatives": alts, "model": s_out,
             "max_prediction_sd_before": max_before, "warnings": warnings}
 
@@ -893,10 +878,10 @@ def _entropy(p: np.ndarray) -> float:
 def _outcome_matrix(h_names: list[str], test: dict) -> tuple[list[str], np.ndarray]:
     outs = test.get("outcomes")
     if not isinstance(outs, dict):
-        raise ExperimentError(f"test {test.get('name')!r}: 'outcomes' maps each hypothesis to its predicted outcome(s)")
+        raise ExperimentError(tx("ex.test_outcomes", test=test.get("name")))
     missing = [h for h in h_names if h not in outs]
     if missing:
-        raise ExperimentError(f"test {test.get('name')!r} gives no predicted outcome for hypothesis {missing[0]!r}")
+        raise ExperimentError(tx("ex.test_missing", test=test.get("name"), h=missing[0]))
     labels: list[str] = []
     dist = {}
     for h in h_names:
@@ -904,10 +889,10 @@ def _outcome_matrix(h_names: list[str], test: dict) -> tuple[list[str], np.ndarr
         if isinstance(o, str):
             o = {o: 1.0}
         if not isinstance(o, dict) or not o:
-            raise ExperimentError(f"test {test.get('name')!r}, hypothesis {h!r}: give an outcome label or {{label: probability}}")
+            raise ExperimentError(tx("ex.test_label", test=test.get("name"), h=h))
         tot = sum(float(v) for v in o.values())
         if abs(tot - 1) > 1e-6 or any(float(v) < 0 for v in o.values()):
-            raise ExperimentError(f"test {test.get('name')!r}, hypothesis {h!r}: outcome probabilities must be >= 0 and sum to 1 (got {tot:g})")
+            raise ExperimentError(tx("ex.test_probs", test=test.get("name"), h=h, tot=tot))
         dist[h] = {str(a): float(b) for a, b in o.items()}
         for a in dist[h]:
             if a not in labels:
@@ -925,9 +910,9 @@ def _posterior(prior: np.ndarray, M: np.ndarray):
 
 def choose_test(hypotheses: list, tests: list, threshold: float = 0.95, max_depth: int = 3) -> dict:
     if not isinstance(hypotheses, list) or len(hypotheses) < 2:
-        raise ExperimentError("give at least two hypotheses")
+        raise ExperimentError(tx("ex.two_hyp"))
     if not isinstance(tests, list) or not tests:
-        raise ExperimentError("give at least one test")
+        raise ExperimentError(tx("ex.one_test"))
     h_names, prior = [], []
     for h in hypotheses:
         if isinstance(h, str):
@@ -935,26 +920,26 @@ def choose_test(hypotheses: list, tests: list, threshold: float = 0.95, max_dept
         else:
             h_names.append(str(h["name"])); prior.append(h.get("prior"))
     if len(set(h_names)) != len(h_names):
-        raise ExperimentError("hypothesis names must be unique")
+        raise ExperimentError(tx("ex.hyp_unique"))
     if any(p is None for p in prior):
         if any(p is not None for p in prior):
-            raise ExperimentError("give a prior for every hypothesis or for none")
+            raise ExperimentError(tx("ex.prior_all"))
         prior_a = np.full(len(h_names), 1 / len(h_names))
     else:
         prior_a = np.array([float(p) for p in prior])
         if np.any(prior_a < 0) or prior_a.sum() <= 0:
-            raise ExperimentError("priors must be non-negative and not all zero")
+            raise ExperimentError(tx("ex.prior_nonneg"))
         prior_a = prior_a / prior_a.sum()
     parsed = []
     names = set()
     for t in tests:
         nm = str(t.get("name"))
         if nm in names:
-            raise ExperimentError(f"test name {nm!r} is repeated")
+            raise ExperimentError(tx("ex.test_repeated", name=nm))
         names.add(nm)
         cost = float(t.get("cost", 1.0))
         if not cost > 0:
-            raise ExperimentError(f"test {nm!r}: cost must be positive")
+            raise ExperimentError(tx("ex.test_cost", name=nm))
         labels, M = _outcome_matrix(h_names, t)
         parsed.append({"name": nm, "cost": cost, "labels": labels, "M": M})
     H0 = _entropy(prior_a)
@@ -981,7 +966,7 @@ def choose_test(hypotheses: list, tests: list, threshold: float = 0.95, max_dept
     rows.sort(key=lambda r: (-r["gain_per_cost"], r["cost"]))
     best = rows[0]
     if best["information_gain_bits"] <= 1e-12:
-        raise ExperimentError("none of the tests discriminates between the hypotheses: every hypothesis predicts the same outcomes")
+        raise ExperimentError(tx("ex.no_discrim"))
     full_tests = sorted([r for r in rows if r["fully_separates"]], key=lambda r: r["cost"])
 
     def plan(pri, left, depth):
@@ -1012,21 +997,20 @@ def choose_test(hypotheses: list, tests: list, threshold: float = 0.95, max_dept
         return node
 
     tree = plan(prior_a, parsed, max_depth)
-    reason = (f"{best['test']} has the best information gain per unit cost: {best['information_gain_bits']:.3f} bits "
-              f"(of {H0:.3f} bits of uncertainty) for cost {best['cost']:g}, i.e. {best['gain_per_cost']:.3f} bits per unit cost.")
+    reason = tx("ex.choose_reason", test=best["test"], gain=best["information_gain_bits"], h0=H0, cost=best["cost"],
+                gpc=best["gain_per_cost"])
     if best["fully_separates"]:
-        reason += " Each of its possible outcomes points to a single hypothesis, so one run of this test settles the question."
+        reason += tx("ex.choose_single")
     elif full_tests:
-        reason += (f" It does not separate every hypothesis by itself; the cheapest test that does is {full_tests[0]['test']} "
-                   f"(cost {full_tests[0]['cost']:g}).")
+        reason += tx("ex.choose_partial", test=full_tests[0]["test"], cost=full_tests[0]["cost"])
     else:
-        reason += " No single test separates all hypotheses; the sequential plan below combines several."
+        reason += tx("ex.choose_none")
     return {"hypotheses": h_names, "prior": {h: float(p) for h, p in zip(h_names, prior_a)}, "uncertainty_bits": H0,
             "recommendation": {"test": best["test"], "cost": best["cost"], "information_gain_bits": best["information_gain_bits"],
                                "gain_per_cost": best["gain_per_cost"], "fully_separates": best["fully_separates"], "why": reason},
             "cheapest_fully_separating": None if not full_tests else {"test": full_tests[0]["test"], "cost": full_tests[0]["cost"]},
             "ranking": rows, "plan": tree, "stop_when_posterior_at_least": threshold,
-            "assumptions": "The predicted outcome probabilities per hypothesis, the priors and the costs are your inputs; the ranking is only as good as they are."}
+            "assumptions": tx("ex.assumptions")}
 
 
 # ---------------------------------------------------------------- service wrappers
@@ -1053,7 +1037,7 @@ def _factors_from_data(services, dataset: str, factors: list) -> list[dict]:
             v = to_float(cols[f["name"]]) if need and f["name"] in cols else to_float(load_frame(services, dataset, {f["name"]: "num"})[0][f["name"]])
             v = v[np.isfinite(v)]
             if len(v) == 0:
-                raise ExperimentError(f"column {f['name']!r} has no numeric values")
+                raise ExperimentError(tx("ex.no_numeric", name=f["name"]))
             f = {**f, "low": float(v.min()), "high": float(v.max()), "_inferred": True}
         out.append(f)
     res = check_factors(out)
@@ -1091,10 +1075,9 @@ def analyze(services, dataset: str, factors, response: str, model: str = "auto",
         res.pop("_surface", None)
         res["dataset"] = dataset
         if dropped:
-            res["warnings"].append(f"{dropped} rows with a missing factor or response were ignored.")
+            res["warnings"].append(tx("ex.warn_ignored", n=dropped))
         if any(f.get("range_inferred_from_data") for f in fs):
-            res["warnings"].append("Factor ranges were taken from the data (min and max): coded effects refer to that span. "
-                                   "Give low and high to use the planned levels.")
+            res["warnings"].append(tx("ex.warn_inferred"))
         top = res["ranking"][:2]
         res["_log_summary"] = (f"analysed {response} on {dataset}: {res['model']} model, R2 {res['fit']['r2'] if res['fit']['r2'] is None else round(res['fit']['r2'], 3)}"
                                f", leading terms {', '.join(top)}")
