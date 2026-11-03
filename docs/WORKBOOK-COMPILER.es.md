@@ -43,3 +43,13 @@ Límites: no se comprueban unidades dentro de búsquedas, funciones de texto ni 
 `TEXTO` usa separadores en inglés (el Excel de Luis en español mostraría `1.234,57`). Las funciones de búsqueda sobre datos sin ordenar imitan a Excel pero Excel no documenta ese caso. Sin cálculo iterativo, sin tablas de datos de hipótesis ni matrices dinámicas.
 
 La revisión2 de2006 corrige también el selector de fecha de la página: toma el sistema del libro al mostrar y editar parámetros. Los resúmenes antiguos sin sistema de fechas se recalculan al leer desde el original retenido, sin reescribir su metadata histórica. Prueba de UI1904:2026-11-03 se edita a2026-11-10 y el resultado del día siguiente es2026-11-11.
+
+## Entregar una calculadora a un cliente
+
+**Exportar calculadora** descarga un único archivo Python con el cálculo compilado, un formulario web local, resultados, fuentes y licencias. El destinatario necesita Python 3; no necesita Nightingale, Excel, un LLM ni paquetes adicionales. Ejecuta `python presupuesto_app.py --port 8080` y abre la dirección que aparece. Escucha en `127.0.0.1` y funciona sin conexión a internet.
+
+Conserva números, textos, booleanos, opciones de las listas de validación y fechas/horas. Usa el sistema 1900/1904 del libro. Los errores de Excel se muestran como errores y los resultados congelados se identifican. Permite fijar la fecha de HOY/AHORA y restablecer los parámetros originales. Comparte el cálculo y los límites del módulo Python: no reproduce una hoja de cálculo completa ni ejecuta macros.
+
+API: `GET /api/sheets/{id}/export.app.py`. MCP: `data_workbook` con `action="export"`, `workbook_id` y `format="app"`. Omitir `format`, o usar `"python"`, mantiene la exportación del módulo de cálculo. El archivo guardado por MCP coincide en bytes UTF-8 con la descarga HTTP, también en Windows.
+
+Caso inventado probado: presupuesto de mecanizado con unidades, precio, material, IVA, urgencia y fecha del pedido. Para 24 unidades de acero sin urgencia, entrega 617,83 € y fecha prevista 2026-11-10; la aplicación exportada y el cálculo nativo coinciden. Diez pruebas del exportador cubren ambos sistemas de fechas, tipos, congelados, errores, conversión de entradas JavaScript, API/herramienta y servidor real con `python -I -S`. La capacidad 2011 está pendiente de revisión e integración y depende de la corrección 2006.

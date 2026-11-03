@@ -551,12 +551,12 @@ def generate(model: Model) -> str:
     for k in model.order:
         c = model.cells[k]
         if c.frozen:
-            lines.append(f"    ({k!r}, None),  # {addr(k)} congelada: {c.frozen}")
+            lines.append(f"    ({k!r}, None),  # {addr(k)!r} congelada: {c.frozen!r}")
         else:
-            lines.append(f"    ({k!r}, lambda V, R, C: {g.expr(c.ast)}),  # {addr(k)} {c.formula}")
+            lines.append(f"    ({k!r}, lambda V, R, C: {g.expr(c.ast)}),  # {addr(k)!r} {c.formula!r}")
     for cyc in model.cycles:
         for k in cyc:
-            lines.append(f"    ({k!r}, None),  # {addr(k)} referencia circular")
+            lines.append(f"    ({k!r}, None),  # {addr(k)!r} referencia circular")
     lines.append("]")
     return "\n".join(lines) + "\n"
 

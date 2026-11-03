@@ -150,17 +150,24 @@ class WorkbookStore:
         meta["checks"] = meta["checks"][-20:]
         self._save_meta(wid, meta)
 
-    def export(self, wid: str) -> dict:
+    def export(self, wid: str, *, format: str = "python") -> dict:
         c = self.compiled(wid)
-        code = export_python(c.model)
+        filename, code = self.export_code(wid, format=format)
         self.exports.mkdir(parents=True, exist_ok=True)
-        path = self.exports / f"{_slug(c.model.name)}_calculo.py"
-        path.write_text(code, encoding="utf-8")
+        path = self.exports / filename
+        path.write_bytes(code.encode("utf-8"))
+        usage = (f"python {path.name} --port 8080" if format == "app" else
+                 f"python {path.name} '{{\"{addr(c.model.parameters[0]) if c.model.parameters else 'Hoja!A1'}\": 1}}'")
         return {"workbook": wid, "path": str(path), "filename": path.name, "bytes": len(code.encode("utf-8")),
-                "usage": f"python {path.name} '{{\"{addr(c.model.parameters[0]) if c.model.parameters else 'Hoja!A1'}\": 1}}'"}
+                "format": format, "usage": usage}
 
-    def export_code(self, wid: str) -> tuple[str, str]:
+    def export_code(self, wid: str, *, format: str = "python") -> tuple[str, str]:
         c = self.compiled(wid)
+        if format == "app":
+            from .web_app import export_web_app
+            return f"{_slug(c.model.name)}_app.py", export_web_app(c.model)
+        if format != "python":
+            raise ValueError("formato de exportación no reconocido: " + format)
         return f"{_slug(c.model.name)}_calculo.py", export_python(c.model)
 
     def trace(self, wid: str, cell: str) -> dict:
