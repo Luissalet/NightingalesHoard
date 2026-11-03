@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..texts import t as tx
+
 
 def _logged(services, op: str, source: str, wid: str, params: dict, fn, summary):
     def do():
@@ -52,10 +54,10 @@ def run(services, st, wid: str, a: Any, source: str = "agent") -> dict:
         return st.scenario_list(wid)
     if a.op == "save":
         if not a.scenario:
-            raise ValueError("scenario (the name) is required to save")
+            raise ValueError(tx("wb.scn_req_save"))
         return scenario_save(services, st, wid, a.scenario, a.inputs or {}, a.note, source)
     if a.op == "delete":
         if not a.scenario:
-            raise ValueError("scenario (the name) is required to delete")
+            raise ValueError(tx("wb.scn_req_delete"))
         return scenario_delete(services, st, wid, a.scenario, source)
     return scenario_compare(services, st, wid, a.scenario_names, source)

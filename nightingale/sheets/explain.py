@@ -12,6 +12,7 @@ from typing import Any
 from . import runtime as rt
 from .compiler import Model, addr, from_json, is_date_format, to_json
 from .engine import Compiled
+from ..texts import t as tx
 
 MAX_TARGETS = 40
 MAX_PARAMETERS = 200
@@ -37,19 +38,19 @@ def sensitivity(c: Compiled, output: str | None = None, delta: float = 0.1,
     """One-at-a-time perturbation of every numeric parameter; ranked per output cell (tornado)."""
     m = c.model
     if not (_is_number(delta) and delta > 0):
-        raise ValueError("delta must be a positive number (0.1 = ±10%)")
+        raise ValueError(tx("wb.delta"))
     abs_steps: dict = {}
     for ref, st in (steps or {}).items():
         key = c.resolve(ref)
         if key not in m.cells or (m.cells[key].formula and not m.cells[key].frozen):
-            raise ValueError(f"{ref}: steps can only be given for input parameters")
+            raise ValueError(tx("wb.step_input", ref=ref))
         if not (_is_number(st) and st > 0):
-            raise ValueError(f"{ref}: the step must be a positive number")
+            raise ValueError(tx("wb.step_positive", ref=ref))
         abs_steps[key] = float(st)
     if output:
         okey = c.resolve(output)
         if okey not in m.cells:
-            raise LookupError(f"{output} is empty")
+            raise LookupError(tx("wb.cell_empty", ref=output))
         targets = [okey]
     else:
         targets = _labelled_targets(m)
@@ -64,24 +65,25 @@ def sensitivity(c: Compiled, output: str | None = None, delta: float = 0.1,
         v = cell.value
         info = {"parameter": addr(key), "label": m.labels.get(key)}
         if key in m.options:
-            skipped.append({**info, "reason": "chosen from a list of options"})
+            skipped.append({**info, "reason": tx("wb.skip_options")})
         elif not _is_number(v):
-            kind = "boolean" if isinstance(v, bool) else "empty" if v in (None, "") else "text" if isinstance(v, str) else "not a number"
-            skipped.append({**info, "reason": f"not numeric ({kind})"})
+            kind = tx("wb.kind_boolean" if isinstance(v, bool) else "wb.kind_empty" if v in (None, "")
+                      else "wb.kind_text" if isinstance(v, str) else "wb.kind_other")
+            skipped.append({**info, "reason": tx("wb.skip_nonnumeric", kind=kind)})
         elif is_date_format(cell.number_format) and key not in abs_steps:
-            skipped.append({**info, "reason": "date; give an absolute step in days to include it"})
+            skipped.append({**info, "reason": tx("wb.skip_date")})
         else:
             base = float(v)
             if key in abs_steps:
                 lo, hi = base - abs_steps[key], base + abs_steps[key]
             elif base == 0:
-                skipped.append({**info, "reason": "base value is 0; a relative change does nothing, give an absolute step"})
+                skipped.append({**info, "reason": tx("wb.skip_zero")})
                 continue
             else:
                 lo, hi = sorted((base * (1 - delta), base * (1 + delta)))
             cases.append((key, info, base, lo, hi))
     if len(params) > MAX_PARAMETERS:
-        skipped.append({"parameter": None, "label": None, "reason": f"{len(params) - MAX_PARAMETERS} more parameters beyond the first {MAX_PARAMETERS}"})
+        skipped.append({"parameter": None, "label": None, "reason": tx("wb.skip_more", n=len(params) - MAX_PARAMETERS, max=MAX_PARAMETERS)})
 
     runs = {key: (c.raw({key: lo}), c.raw({key: hi})) for key, _info, _b, lo, hi in cases}
     out_targets = []
@@ -91,7 +93,7 @@ def sensitivity(c: Compiled, output: str | None = None, delta: float = 0.1,
         tgt = {"output": d["cell"], "label": d["label"], "base": to_json(bv), "rows": [], "no_effect": []}
         if _out_number(bv) is None:
             tgt["status"] = "error" if isinstance(bv, rt.XlError) else "not numeric"
-            tgt["note"] = "the output is an error or not a number at the base values, so there is nothing to rank"
+            tgt["note"] = tx("wb.no_rank")
             out_targets.append(tgt)
             continue
         rows, bad = [], []
@@ -138,7 +140,7 @@ def compare_scenarios(c: Compiled, scenarios: dict[str, dict]) -> dict:
                 key = c.resolve(ref)
                 cell = m.cells.get(key)
                 if cell is not None and cell.formula and not cell.frozen:
-                    raise ValueError(f"{addr(key)} is a formula")
+                    raise ValueError(tx("wb.is_formula", addr=addr(key)))
                 over[key] = from_json(v)
             cols[name] = c.raw(over)
         except Exception as e:  # noqa: BLE001 - a broken scenario is reported, never hidden
@@ -184,14 +186,14 @@ def parse_unit(text: str):
     try:
         return registry().Unit(t)
     except Exception as e:  # noqa: BLE001
-        raise ValueError(f"unknown unit {text!r}: {str(e).splitlines()[0]}") from None
+        raise ValueError(tx("wb.unknown_unit", text=text, detail=str(e).splitlines()[0])) from None
 
 
 def unit_text(u) -> str | None:
     if u is None:
         return None
     if u == SCALAR:
-        return "number"
+        return tx("wb.unit_number")
     s = f"{u:~}".strip()
     s = s.replace(" ** ", "^").replace(" / ", "/").replace(" * ", "*")
     return s or "1"
@@ -275,7 +277,7 @@ class _Infer:
         la, lb = unit_text(a), unit_text(b)
         self.errors.append({"cell": addr(self.cur), "label": self.m.labels.get(self.cur), "formula": cell.formula,
                             "operation": op, "left_unit": la, "right_unit": lb,
-                            "message": message or f"cannot combine {la} and {lb} with {op}"})
+                            "message": message or tx("wb.cannot_combine", a=la, b=lb, op=op)})
 
     # -- helpers
     def range_unit(self, n):
@@ -363,7 +365,7 @@ class _Infer:
             if len(branches) == 2:
                 a, b = branches
                 if a is not None and b is not None and a != SCALAR and b != SCALAR and not _compatible(a, b):
-                    self.err(name, a, b, f"the branches of {name} have different units: {unit_text(a)} and {unit_text(b)}")
+                    self.err(name, a, b, tx("wb.branches", name=name, a=unit_text(a), b=unit_text(b)))
                     return None
                 if a is None or b is None:
                     return None
@@ -381,7 +383,7 @@ class _Infer:
                     res = u
                 elif u != SCALAR:
                     if not _compatible(res, u):
-                        self.err(name, res, u, f"{name} mixes {unit_text(res)} and {unit_text(u)}")
+                        self.err(name, res, u, tx("wb.mixes", name=name, a=unit_text(res), b=unit_text(u)))
                         return None
             return res
         return None
@@ -412,5 +414,4 @@ def check_units(c: Compiled, units: dict[str, str] | None = None) -> dict:
     unknown = [k for k in formulas if k not in inf.units]
     return {"inputs": inputs, "cells": cells, "errors": inf.errors, "formula_cells": len(formulas),
             "unit_unknown": len(unknown),
-            "note": "Cells whose inputs have no unit stay unknown and never raise an error. A plain number in a formula "
-                    "takes the unit of what it is added to or compared with."}
+            "note": tx("wb.units_note")}

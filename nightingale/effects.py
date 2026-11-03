@@ -22,14 +22,17 @@ from typing import Optional
 import numpy as np
 
 from .linfit import FitError, acf, coef_table, contrast, durbin_watson, ljung_box, load_frame, num, ols, ols_ar1, thin, tq, to_float
+from .texts import t as tx
 
 
 class EffectError(FitError):
     pass
 
 
-CAUSAL_TEXT = ("This is an estimate of the effect of the change under the assumptions listed below. The data alone cannot establish "
-               "causation: the untestable assumptions have to be argued from knowledge of how the data arose.")
+def _assume(name_id: str, status: str, detail: str, stmt: Optional[str] = None) -> dict:
+    """One assumption row: name, status, plain statement and what the data say, in the request language."""
+    return {"name": tx("ef.a_" + name_id), "status": status, "statement": tx("ef.s_" + (stmt or name_id)),
+            "detail": detail}
 
 
 # ---------------------------------------------------------------- helpers
@@ -44,7 +47,7 @@ def parse_time_point(value, time_kind: Optional[str]) -> float:
     try:
         d = _dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        raise EffectError(f"cannot read {value!r} as a number or a date (use e.g. 2026-03-01)") from None
+        raise EffectError(tx("ef.bad_value", value=value)) from None
     if d.tzinfo is None:
         d = d.replace(tzinfo=_dt.timezone.utc)
     return d.timestamp()
@@ -60,11 +63,12 @@ def _is_treated(values: list, treated_value) -> np.ndarray:
         if norm <= {"0", "1", "true", "false", "0.0", "1.0"}:
             treated_value = next(d for d in distinct if str(d).lower() in ("1", "true", "1.0")) if any(str(d).lower() in ("1", "true", "1.0") for d in distinct) else None
         else:
-            raise EffectError(f"say which value of the group column marks the treated group (treated_value); values found: {distinct[:10]}")
+            raise EffectError(tx("ef.say_treated", values=distinct[:10]))
     tv = str(treated_value).lower()
     out = np.array([str(v).lower() == tv for v in values], bool)
     if out.all() or not out.any():
-        raise EffectError(f"treated_value {treated_value!r} selects {'every' if out.all() else 'no'} row; values found: {distinct[:10]}")
+        raise EffectError(tx("ef.treated_selects", value=treated_value, which=tx("ef.which_every" if out.all() else "ef.which_no"),
+                             values=distinct[:10]))
     return out
 
 
@@ -77,10 +81,9 @@ def _step(t: np.ndarray) -> float:
 def _verdict(effect_row: dict, assumptions: list[dict], extra: str = "") -> dict:
     failed = [a for a in assumptions if a["status"] == "failed"]
     untestable = [a["name"] for a in assumptions if a["status"] == "not_testable"]
-    text = CAUSAL_TEXT
+    text = tx("ef.causal")
     if failed:
-        text = ("One or more testable assumptions failed (" + ", ".join(a["name"] for a in failed) + "): do not read the estimate as "
-                "the effect of the change. " + CAUSAL_TEXT)
+        text = tx("ef.failed_prefix", names=", ".join(a["name"] for a in failed)) + tx("ef.causal")
     return {"established": False, "assumptions_failed": [a["name"] for a in failed], "untestable_assumptions": untestable, "text": text + extra}
 
 
@@ -113,20 +116,19 @@ def did_effect(y, treat, t, t0: float, unit=None, covariates: Optional[np.ndarra
              "control_pre": int((~treat & ~post).sum()), "control_post": int((~treat & post).sum())}
     if min(cells.values()) == 0:
         empty = [k for k, v in cells.items() if v == 0][0]
-        raise EffectError(f"the cell {empty.replace('_', ' ')} is empty: difference-in-differences needs treated and control rows both before and after {t0:g}")
+        raise EffectError(tx("ef.empty_cell", cell=tx("ef.cell_" + empty), t0=t0))
     warnings: list[str] = []
     if dropped:
-        warnings.append(f"{dropped} rows with missing values were ignored.")
+        warnings.append(tx("ef.warn_missing", n=dropped))
     if min(cells.values()) < 5:
-        warnings.append(f"A cell has fewer than 5 rows ({cells}): the estimate and its interval are fragile.")
+        warnings.append(tx("ef.warn_cell5", cells=cells))
     fit, names, clustered = _did_fit(y, treat, post, cov, unit, level)
     row = coef_table(fit, names, level)[3]
     n_clusters = int(len(np.unique(unit))) if unit is not None else None
     if clustered and n_clusters < 10:
-        warnings.append(f"Only {n_clusters} clusters: cluster-robust intervals are approximate with so few units.")
+        warnings.append(tx("ef.warn_clusters", n=n_clusters))
     if unit is None:
-        warnings.append("No unit column: rows are treated as independent (robust to unequal variance only). With repeated measures of "
-                        "the same units this understates the uncertainty; give a unit column for cluster-robust errors.")
+        warnings.append(tx("ef.warn_no_unit"))
     pre_mean_treated = float(y[treat & ~post].mean())
     eff = {"estimate": row["estimate"], "se": row["se"], "ci_low": row["ci_low"], "ci_high": row["ci_high"], "p_value": row["p_value"],
            "level": level, "relative_to_treated_pre_mean": row["estimate"] / pre_mean_treated if pre_mean_treated else None}
@@ -151,19 +153,15 @@ def did_effect(y, treat, t, t0: float, unit=None, covariates: Optional[np.ndarra
                      "pre_periods": int(len(ut)), "implied_bias_if_trend_continued": bias,
                      "implied_bias_vs_estimate": (bias / eff["estimate"]) if eff["estimate"] else None}
         violated = r["p_value"] is not None and r["p_value"] < 0.10
-        assumptions.append({"name": "parallel pre-trends", "status": "failed" if violated else "passed",
-                            "statement": "Without the change, treated and control groups would have moved in parallel.",
-                            "detail": f"differential pre-period slope {r['estimate']:.4g} per period (95% CI {r['ci_low']:.4g} to {r['ci_high']:.4g}, p={r['p_value']:.3g}); "
-                                      f"if that drift continued it would add about {bias:.4g} to the estimate."
-                                      + ("" if violated else " Not rejecting parallel trends does not prove them, especially with few pre-periods.")})
+        assumptions.append(_assume(
+            "parallel", "failed" if violated else "passed",
+            tx("ef.d_parallel", est=r["estimate"], lo=r["ci_low"], hi=r["ci_high"], p=r["p_value"], bias=bias)
+            + ("" if violated else tx("ef.d_parallel_tail"))))
         if violated:
-            warnings.append(f"Parallel pre-trends rejected (p={r['p_value']:.3g}): the groups were already diverging before the change, "
-                            f"so the difference-in-differences estimate mixes the effect with that drift (about {bias:.4g} if it continued).")
+            warnings.append(tx("ef.warn_parallel", p=r["p_value"], bias=bias))
     else:
-        assumptions.append({"name": "parallel pre-trends", "status": "not_testable",
-                            "statement": "Without the change, treated and control groups would have moved in parallel.",
-                            "detail": f"needs at least 3 pre-change time points with both groups; found {len(ut)}."})
-        warnings.append("Parallel trends cannot be tested with fewer than 3 pre-change time points; the estimate relies on it unchecked.")
+        assumptions.append(_assume("parallel", "not_testable", tx("ef.d_parallel_nt", n=len(ut))))
+        warnings.append(tx("ef.warn_parallel_nt"))
     # --- placebo date
     placebo = None
     if len(ut) >= 4:
@@ -179,14 +177,13 @@ def did_effect(y, treat, t, t0: float, unit=None, covariates: Optional[np.ndarra
             r2 = coef_table(f2, nm2, level)[3]
             placebo = {"placebo_time": pt, "estimate": r2["estimate"], "ci_low": r2["ci_low"], "ci_high": r2["ci_high"], "p_value": r2["p_value"],
                        "excludes_zero": bool(r2["p_value"] is not None and r2["p_value"] < 0.05)}
-            assumptions.append({"name": "no effect at a placebo date", "status": "failed" if placebo["excludes_zero"] else "passed",
-                                "statement": "Using only pre-change data and a fake change date, the estimated 'effect' should be zero.",
-                                "detail": f"placebo estimate {r2['estimate']:.4g} (95% CI {r2['ci_low']:.4g} to {r2['ci_high']:.4g}, p={r2['p_value']:.3g})."})
+            assumptions.append(_assume("placebo_date", "failed" if placebo["excludes_zero"] else "passed",
+                                       tx("ef.d_placebo_date", est=r2["estimate"], lo=r2["ci_low"], hi=r2["ci_high"],
+                                          p=r2["p_value"])))
             if placebo["excludes_zero"]:
-                warnings.append(f"A placebo change at {pt:g} shows an 'effect' of {r2['estimate']:.4g} (p={r2['p_value']:.3g}): the design finds effects where none was applied.")
+                warnings.append(tx("ef.warn_placebo_date", pt=pt, est=r2["estimate"], p=r2["p_value"]))
     if placebo is None:
-        assumptions.append({"name": "no effect at a placebo date", "status": "not_testable", "statement": "A fake change date inside the pre-period should show no effect.",
-                            "detail": "the pre-period has fewer than 4 distinct time points on each side."})
+        assumptions.append(_assume("placebo_date", "not_testable", tx("ef.d_placebo_date_nt"), stmt="placebo_date_nt"))
     # --- serial correlation of residuals within clusters
     order_key = unit if unit is not None else treat.astype(int)
     r_ac = None
@@ -201,11 +198,10 @@ def did_effect(y, treat, t, t0: float, unit=None, covariates: Optional[np.ndarra
     if den_ > 0:
         r_ac = num_ / den_
         if r_ac > 0.3 and unit is None:
-            warnings.append(f"Residuals are positively autocorrelated within groups (lag-1 {r_ac:.2f}) and no unit column was given: the interval is too narrow.")
-    assumptions += [
-        {"name": "no other change at the same time", "status": "not_testable", "statement": "Nothing else that affects the outcome changed for one group at the change date.", "detail": "cannot be tested from these data."},
-        {"name": "no spillover between groups", "status": "not_testable", "statement": "The change did not affect the control group.", "detail": "cannot be tested from these data."},
-        {"name": "stable group composition", "status": "not_testable", "statement": "The units in each group are comparable before and after.", "detail": "cannot be tested from these data."}]
+            warnings.append(tx("ef.warn_resid_ac", r=r_ac))
+    assumptions += [_assume("other_change", "not_testable", tx("ef.d_untestable")),
+                    _assume("spillover", "not_testable", tx("ef.d_untestable")),
+                    _assume("composition", "not_testable", tx("ef.d_untestable"))]
     # --- chart: mean per group and time
     chart = []
     for gname, mask in (("treated", treat), ("control", ~treat)):
@@ -221,12 +217,12 @@ def did_effect(y, treat, t, t0: float, unit=None, covariates: Optional[np.ndarra
 # ---------------------------------------------------------------- interrupted time series
 def _its_design(k: np.ndarray, post: np.ndarray, k0: float, period: Optional[int]) -> tuple[np.ndarray, list[str]]:
     cols = [np.ones(len(k)), k, post.astype(float), (k - k0) * post]
-    names = ["intercept", "pre-trend (per step)", "level change", "slope change (per step)"]
+    names = ["intercept", tx("ef.term_pretrend"), tx("ef.term_level"), tx("ef.term_slope")]
     if period and period > 1:
         ph = (np.round(k).astype(int)) % period
         for r in range(1, period):
             cols.append((ph == r).astype(float))
-            names.append(f"season {r}/{period}")
+            names.append(tx("ef.season", r=r, period=period))
     return np.column_stack(cols), names
 
 
@@ -236,9 +232,9 @@ def _its_fit(X, y):
     lb = ljung_box(fit["resid"], min(10, max(2, len(y) // 5)), 0)
     if lb["p_value"] < 0.10 and fit["dof"] > 3:
         ar = ols_ar1(X, y)
-        ar["model"] = f"AR(1) errors by Prais-Winsten (rho {ar['rho']:.2f}); residuals were autocorrelated (Ljung-Box p={lb['p_value']:.3g})"
+        ar["model"] = tx("ef.ar1_model", rho=ar["rho"], p=lb["p_value"])
         return ar
-    fit["model"] = "ordinary least squares (no autocorrelation detected in the residuals)"
+    fit["model"] = tx("ef.ols_model")
     return fit
 
 
@@ -251,7 +247,7 @@ def its_effect(y, t, t0: float, season_period: Optional[int] = None, level: floa
     if len(ut) < len(t):
         y = np.bincount(inv, weights=y) / np.bincount(inv)
         t = ut
-        warnings.append("Several rows share a timestamp: they were averaged into one value per time.")
+        warnings.append(tx("ef.warn_same_time"))
     order = np.argsort(t)
     y, t = y[order], t[order]
     dt = _step(t)
@@ -260,13 +256,13 @@ def its_effect(y, t, t0: float, season_period: Optional[int] = None, level: floa
     post = t >= t0
     npre, npost = int((~post).sum()), int(post.sum())
     if npre < 5 or npost < 2:
-        raise EffectError(f"an interrupted time series needs at least 5 points before and 2 after the change (found {npre} and {npost})")
+        raise EffectError(tx("ef.its_points", npre=npre, npost=npost))
     if npre < 12:
-        warnings.append(f"Only {npre} points before the change: the pre-trend, and so the counterfactual, is poorly determined.")
+        warnings.append(tx("ef.warn_pre_points", n=npre))
     if npost < 4:
-        warnings.append(f"Only {npost} points after the change: the slope change cannot be judged.")
+        warnings.append(tx("ef.warn_post_points", n=npost))
     if season_period and npre < 2 * season_period:
-        raise EffectError(f"season_period {season_period} needs at least {2 * season_period} points before the change; found {npre}")
+        raise EffectError(tx("ef.season_points", period=season_period, need=2 * season_period, npre=npre))
     X, names = _its_design(k, post, k0, season_period)
     n = len(y)
     fit = _its_fit(X, y)
@@ -291,8 +287,7 @@ def its_effect(y, t, t0: float, season_period: Optional[int] = None, level: floa
     r1 = float(acf(resid, 1)[0])
     lb = ljung_box(resid, min(10, max(2, n // 5)), 0)
     if "AR(1)" in fit["model"]:
-        warnings.append(f"The series is autocorrelated (lag-1 {r1:.2f}); intervals use {fit['model'].split(';')[0]}. With a short series they remain approximate "
-                        "and tend to be a little too narrow.")
+        warnings.append(tx("ef.warn_ar", r=r1, model=fit["model"].split(";")[0]))
     # pre-period linearity
     lin = None
     if npre >= 8:
@@ -304,13 +299,13 @@ def its_effect(y, t, t0: float, season_period: Optional[int] = None, level: floa
     assumptions = []
     if lin is not None:
         bad = lin["curvature_p_value"] is not None and lin["curvature_p_value"] < 0.05
-        assumptions.append({"name": "linear pre-trend continues", "status": "failed" if bad else "passed",
-                            "statement": "Without the change the series would have kept its straight-line pre-trend.",
-                            "detail": f"curvature in the pre-period p={lin['curvature_p_value']:.3g}." + (" The straight-line counterfactual is questionable." if bad else " (This cannot show the trend would have continued after the change.)")})
+        assumptions.append(_assume("linear_pre", "failed" if bad else "passed",
+                                   tx("ef.d_linear_pre", p=lin["curvature_p_value"])
+                                   + tx("ef.d_linear_bad" if bad else "ef.d_linear_ok")))
         if bad:
-            warnings.append("The pre-period is curved: projecting its straight line forward misstates the counterfactual.")
+            warnings.append(tx("ef.warn_curved"))
     else:
-        assumptions.append({"name": "linear pre-trend continues", "status": "not_testable", "statement": "Without the change the series would have kept its straight-line pre-trend.", "detail": "fewer than 8 pre-change points."})
+        assumptions.append(_assume("linear_pre", "not_testable", tx("ef.d_linear_nt")))
     # placebo dates on pre-data only
     placebos = []
     if npre >= 10:
@@ -329,18 +324,16 @@ def its_effect(y, t, t0: float, season_period: Optional[int] = None, level: floa
                              "p_value": rp["p_value"], "excludes_zero": bool(rp["p_value"] is not None and rp["p_value"] < 0.05 / 3)})
     if placebos:
         rej = sum(p["excludes_zero"] for p in placebos)
-        assumptions.append({"name": "no level change at placebo dates", "status": "failed" if rej >= 1 else "passed",
-                            "statement": "Using only pre-change data and fake change dates, the estimated level change should be zero.",
-                            "detail": f"{rej} of {len(placebos)} placebo dates show a significant level change (Bonferroni-adjusted for {len(placebos)} dates)."})
+        assumptions.append(_assume("placebo_levels", "failed" if rej >= 1 else "passed",
+                                   tx("ef.d_placebo_levels", rej=rej, n=len(placebos))))
         if rej:
-            warnings.append(f"{rej} of {len(placebos)} placebo dates show a 'level change': the series jumps without any change being applied, so the real estimate may be noise or a structural break.")
+            warnings.append(tx("ef.warn_placebo_levels", rej=rej, n=len(placebos)))
     else:
-        assumptions.append({"name": "no level change at placebo dates", "status": "not_testable", "statement": "Fake change dates inside the pre-period should show no effect.", "detail": "fewer than 10 pre-change points."})
-    assumptions += [
-        {"name": "no other change at the same time", "status": "not_testable", "statement": "Nothing else that affects the series changed at the change date.", "detail": "cannot be tested from these data."},
-        {"name": "stable measurement", "status": "not_testable", "statement": "How the series is measured did not change at the change date.", "detail": "cannot be tested from these data."}]
+        assumptions.append(_assume("placebo_levels", "not_testable", tx("ef.d_placebo_levels_nt"), stmt="placebo_levels_nt"))
+    assumptions += [_assume("other_change", "not_testable", tx("ef.d_untestable"), stmt="other_change_its"),
+                    _assume("measurement", "not_testable", tx("ef.d_untestable"))]
     eff = {"estimate": lvl["estimate"], "se": lvl["se"], "ci_low": lvl["ci_low"], "ci_high": lvl["ci_high"], "p_value": lvl["p_value"], "level": level,
-           "definition": "immediate level change at the intervention, relative to the projected pre-trend"}
+           "definition": tx("ef.its_definition")}
     chart = {"time": [float(v) for v in t], "observed": [float(v) for v in y], "fitted": [float(v) for v in X @ fit["beta"]],
              "counterfactual": [float(v) for v in cf], "counterfactual_lo": [float(a - tcrit * b) for a, b in zip(cf, cf_se)],
              "counterfactual_hi": [float(a + tcrit * b) for a, b in zip(cf, cf_se)], "post": [bool(v) for v in post]}
@@ -368,11 +361,11 @@ def _design_from_columns(raw: dict[str, list]) -> tuple[np.ndarray, list[str], l
         else:
             levels = sorted({str(v) for v in usable})
             if len(levels) > 12:
-                raise EffectError(f"confounder {nm!r} has {len(levels)} distinct text values; group them first (at most 12 levels)")
+                raise EffectError(tx("ef.too_many_levels", name=nm, n=len(levels)))
             for lv in levels[1:]:
                 cols.append(np.array([1.0 if (v is not None and str(v) == lv) else (np.nan if v is None else 0.0) for v in vals]))
                 names.append(f"{nm}={lv}")
-            notes.append(f"{nm}: text column coded as {len(levels) - 1} dummy variables (reference {levels[0]!r}).")
+            notes.append(tx("ef.dummies", name=nm, n=len(levels) - 1, ref=levels[0]))
     return np.column_stack(cols) if cols else np.empty((len(next(iter(raw.values()))) if raw else 0, 0)), names, notes
 
 
@@ -395,17 +388,17 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
         placebo_y = placebo_y[keep]
     warnings: list[str] = []
     if n0 - len(y):
-        warnings.append(f"{n0 - len(y)} rows with missing values were ignored.")
+        warnings.append(tx("ef.warn_missing", n=n0 - len(y)))
     n = len(y)
     p = X.shape[1] if X.size else 0
     if n < p + 6:
-        raise EffectError(f"{n} rows are too few for {p} confounders and a treatment")
+        raise EffectError(tx("ef.too_few_rows", n=n, p=p))
     if treat_is_binary:
         nt, nc = int((treat == 1).sum()), int((treat == 0).sum())
         if min(nt, nc) < 5:
-            warnings.append(f"Only {min(nt, nc)} rows in the smaller group: estimates are fragile.")
+            warnings.append(tx("ef.warn_small_group", n=min(nt, nc)))
     if np.ptp(treat) == 0:
-        raise EffectError("the treatment does not vary")
+        raise EffectError(tx("ef.no_variation"))
     # naive estimate
     Xn = np.column_stack([np.ones(n), treat])
     fn = ols(Xn, y, "HC3")
@@ -414,11 +407,11 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
     XA = np.column_stack([c if c.ndim == 2 else c[:, None] for c in cols])
     fa = ols(XA, y, "HC3")
     if fa["rank"] < XA.shape[1]:
-        warnings.append("Some confounders are perfectly collinear with others or with the treatment; their coefficients are not identified.")
+        warnings.append(tx("ef.warn_collinear"))
     tab = coef_table(fa, ["intercept", "treatment"] + list(x_names), level)
     adj = tab[1]
     eff = {"estimate": adj["estimate"], "se": adj["se"], "ci_low": adj["ci_low"], "ci_high": adj["ci_high"], "p_value": adj["p_value"], "level": level,
-           "definition": "difference in the mean outcome between treated and untreated at the same confounder values (linear adjustment)" if treat_is_binary else "change in outcome per unit of the treatment variable, holding the confounders fixed",
+           "definition": tx("ef.adjust_def_binary" if treat_is_binary else "ef.adjust_def_cont"),
            "naive_estimate": naive["estimate"], "naive_ci": [naive["ci_low"], naive["ci_high"]],
            "shift_from_adjustment": adj["estimate"] - naive["estimate"]}
     # balance and overlap
@@ -433,10 +426,10 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
             balance.append({"confounder": nm, "mean_treated": float(xt.mean()), "mean_control": float(xc.mean()), "standardized_difference": float(smd),
                             "imbalanced": bool(abs(smd) > 0.1), "treated_outside_control_range": outside})
             if outside > 0.05:
-                warnings.append(f"{outside:.0%} of treated rows lie outside the control range of {nm}: the adjustment extrapolates there.")
+                warnings.append(tx("ef.warn_outside", share=outside, name=nm))
         big = [bl["confounder"] for bl in balance if abs(bl["standardized_difference"]) > 0.25]
         if big:
-            warnings.append(f"Large imbalance (|standardized difference| > 0.25) in {', '.join(big)}: linear adjustment relies heavily on the model form.")
+            warnings.append(tx("ef.warn_imbalance", names=", ".join(big)))
         try:
             from sklearn.linear_model import LogisticRegression
             Z = (X - X.mean(0)) / np.where(X.std(0) > 0, X.std(0), 1)
@@ -446,8 +439,7 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
             overlap = {"propensity_common_support": [float(lo), float(hi)], "share_outside_support": share,
                        "min": float(ps.min()), "max": float(ps.max())}
             if share > 0.05 or ps.max() > 0.97 or ps.min() < 0.03:
-                warnings.append(f"Weak overlap: {share:.0%} of rows lie outside the propensity range shared by both groups (range {ps.min():.2f} to {ps.max():.2f}). "
-                                "Some treated units have no comparable untreated unit.")
+                warnings.append(tx("ef.warn_overlap", share=share, lo=float(ps.min()), hi=float(ps.max())))
         except Exception:   # noqa: BLE001 - optional diagnostic
             overlap = {}
     # stability as confounders are added
@@ -473,10 +465,9 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
                 m = max(r2s)
                 bench = {"confounder": m[1], "partial_r2_with_outcome": float(m[0])}
         sens = {"robustness_value": float(rv), "robustness_value_ci_bound": float(rv_ci), "strongest_observed_confounder": bench,
-                "reading": f"An unmeasured confounder would need to explain at least {rv:.1%} of the remaining variance of both the treatment and the outcome to reduce the estimate to zero"
-                           + (f" ({rv_ci:.1%} to make the interval include zero)." if rv_ci > 0 else ".")}
+                "reading": tx("ef.reading", rv=rv) + (tx("ef.reading_ci", rv=rv_ci) if rv_ci > 0 else ".")}
         if rv < 0.05:
-            warnings.append(f"The estimate is fragile: a weak unmeasured confounder (robustness value {rv:.1%}) could remove it.")
+            warnings.append(tx("ef.warn_fragile", rv=rv))
     # placebo outcome
     placebo = None
     assumptions: list[dict] = []
@@ -485,25 +476,22 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
         rp = coef_table(fp, ["intercept", "treatment"] + list(x_names), level)[1]
         bad = rp["p_value"] is not None and rp["p_value"] < 0.05
         placebo = {"estimate": rp["estimate"], "ci_low": rp["ci_low"], "ci_high": rp["ci_high"], "p_value": rp["p_value"], "excludes_zero": bool(bad)}
-        assumptions.append({"name": "no effect on a placebo outcome", "status": "failed" if bad else "passed",
-                            "statement": "An outcome measured before the change, or one the change cannot affect, should show no 'effect'.",
-                            "detail": f"placebo estimate {rp['estimate']:.4g} (95% CI {rp['ci_low']:.4g} to {rp['ci_high']:.4g})."})
+        assumptions.append(_assume("placebo_outcome", "failed" if bad else "passed",
+                                   tx("ef.d_placebo_outcome", est=rp["estimate"], lo=rp["ci_low"], hi=rp["ci_high"])))
         if bad:
-            warnings.append("The placebo outcome shows an 'effect': the adjusted comparison is picking up differences the listed confounders do not remove.")
+            warnings.append(tx("ef.warn_placebo_outcome"))
     else:
-        assumptions.append({"name": "no effect on a placebo outcome", "status": "not_testable", "statement": "An outcome the change cannot affect should show no 'effect'.", "detail": "no placebo outcome was given."})
+        assumptions.append(_assume("placebo_outcome", "not_testable", tx("ef.d_placebo_outcome_nt"), stmt="placebo_outcome_nt"))
     imb = [b["confounder"] for b in balance if b["imbalanced"]]
     if balance:
-        assumptions.append({"name": "overlap (comparable units in both groups)", "status": "failed" if (overlap and overlap.get("share_outside_support", 0) > 0.05) else "passed",
-                            "statement": "For every kind of unit there are both treated and untreated cases.",
-                            "detail": (f"{overlap.get('share_outside_support', 0):.0%} of rows outside the shared propensity range." if overlap else "propensity overlap not computed.") +
-                                      (f" Imbalanced before adjustment: {', '.join(imb)}." if imb else "")})
-    assumptions += [
-        {"name": "no unmeasured confounding", "status": "not_testable", "statement": "The listed confounders are all the common causes of treatment and outcome.",
-         "detail": "cannot be tested; see the robustness value for how strong a missing confounder would have to be."},
-        {"name": "correct functional form", "status": "not_testable", "statement": "The outcome is linear in the confounders.", "detail": "check the stability table; large shifts signal sensitivity."}]
+        assumptions.append(_assume(
+            "overlap", "failed" if (overlap and overlap.get("share_outside_support", 0) > 0.05) else "passed",
+            (tx("ef.d_overlap", share=overlap.get("share_outside_support", 0)) if overlap else tx("ef.d_overlap_nc"))
+            + (tx("ef.d_imbalanced", names=", ".join(imb)) if imb else "")))
+    assumptions += [_assume("unmeasured", "not_testable", tx("ef.d_unmeasured")),
+                    _assume("form", "not_testable", tx("ef.d_form"))]
     if not p:
-        warnings.append("No confounders were listed: the 'adjusted' estimate is just the raw difference and is very likely confounded.")
+        warnings.append(tx("ef.warn_no_conf"))
     return {"method": "adjust", "effect": eff, "coefficients": tab, "balance": balance, "overlap": overlap, "stability": stability,
             "sensitivity": sens, "placebo_outcome": placebo, "assumptions": assumptions, "warnings": warnings,
             "causal_claim": _verdict(eff, assumptions), "n": int(n), "treatment_type": "binary" if treat_is_binary else "continuous"}
@@ -519,7 +507,7 @@ def estimate(services, method: str, dataset: str, outcome: str, time: Optional[s
         if method == "did":
             for need, v in (("time", time), ("intervention", intervention), ("group", group)):
                 if v is None or v == "":
-                    raise EffectError(f"difference-in-differences needs {need}")
+                    raise EffectError(tx("ef.need_did", need=need))
             spec = {outcome: "num", time: "time", group: "raw"}
             if unit:
                 spec[unit] = "raw"
@@ -538,14 +526,14 @@ def estimate(services, method: str, dataset: str, outcome: str, time: Optional[s
         elif method == "its":
             for need, v in (("time", time), ("intervention", intervention)):
                 if v is None or v == "":
-                    raise EffectError(f"an interrupted time series needs {need}")
+                    raise EffectError(tx("ef.need_its", need=need))
             cols, meta = load_frame(services, dataset, {outcome: "num", time: "time"})
             t0 = parse_time_point(intervention, meta["time_kind"])
             res = its_effect(to_float(cols[outcome]), to_float(cols[time]), t0, season_period, level)
             res["time_kind"] = meta["time_kind"]
         elif method == "adjust":
             if not treatment:
-                raise EffectError("regression adjustment needs the treatment column")
+                raise EffectError(tx("ef.need_treatment"))
             spec = {outcome: "num", treatment: "raw"}
             for c in conf:
                 spec.setdefault(c, "raw")
@@ -563,7 +551,7 @@ def estimate(services, method: str, dataset: str, outcome: str, time: Optional[s
             res = adjust_effect(to_float(cols[outcome]), tvec, Xc, cn, to_float(cols[placebo_outcome]) if placebo_outcome else None, binary, level)
             res["warnings"].extend(notes)
         else:
-            raise EffectError("method must be 'did', 'its' or 'adjust'")
+            raise EffectError(tx("ef.method"))
         res["dataset"] = dataset
         res["outcome"] = outcome
         e = res["effect"]

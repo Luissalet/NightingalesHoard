@@ -27,15 +27,13 @@ import numpy as np
 from scipy import optimize, signal
 
 from .linfit import FitError, ljung_box, load_frame, thin, to_float
+from .texts import t as tx
 
 
 class TwinError(FitError):
     pass
 
 
-CAVEAT = ("A twin is a linear model fitted to past measurements. It is only trustworthy for inputs inside the range it "
-          "saw, over horizons no longer than the one validated, while the process behaves as it did in the record. "
-          "Intervals cover coefficient uncertainty and residual noise, not structural error or process changes.")
 _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9 _.\-]{0,59}$")
 MIN_TRAIN = 30
 MIN_VALID = 10
@@ -51,12 +49,12 @@ def prepare_series(t, Y, U) -> dict:
     t, Y, U = t[order], Y[order], U[order]
     valid = np.isfinite(t) & np.isfinite(Y).all(1) & np.isfinite(U).all(1)
     if valid.sum() < MIN_TRAIN + MIN_VALID:
-        raise TwinError(f"only {int(valid.sum())} usable rows; a twin needs at least {MIN_TRAIN + MIN_VALID}")
+        raise TwinError(tx("tw.few_rows", n=int(valid.sum()), need=MIN_TRAIN + MIN_VALID))
     tv = t[valid]
     d = np.diff(tv)
     pos = d[d > 0]
     if len(pos) == 0:
-        raise TwinError("the time column has no increasing values")
+        raise TwinError(tx("tw.time_increasing"))
     dt = float(np.median(pos))
     n = len(t)
     link = np.zeros(n - 1, bool)
@@ -75,15 +73,13 @@ def prepare_series(t, Y, U) -> dict:
     start, end = (bs, bs + best + 1) if best else (0, 0)
     seg = end - start
     if seg < MIN_TRAIN + MIN_VALID:
-        raise TwinError(f"the longest regularly sampled stretch has {seg} rows; need at least {MIN_TRAIN + MIN_VALID}. "
-                        "Check gaps, duplicate timestamps and missing values.")
+        raise TwinError(tx("tw.short_stretch", seg=seg, need=MIN_TRAIN + MIN_VALID))
     info = {"rows_total": int(n), "rows_used": int(seg), "rows_left_out": int(n - seg), "dt": dt,
             "irregular_steps": int(((dd <= 0.5 * dt) | (dd >= 1.5 * dt)).sum()),
             "start_index": int(start)}
     warnings = []
     if n - seg > 0:
-        warnings.append(f"{n - seg} of {n} rows were left out (missing values, gaps or irregular sampling); the twin "
-                        f"uses the longest regular stretch of {seg} rows.")
+        warnings.append(tx("tw.warn_left_out", left=n - seg, n=n, seg=seg))
     return {"t": t[start:end], "Y": Y[start:end], "U": U[start:end], "dt": dt, "info": info, "warnings": warnings}
 
 
@@ -115,7 +111,7 @@ def _fit_arx(Y, U, p, s):
     X, T, H = _build(Y, U, p, s)
     nreg = X.shape[1]
     if len(X) < 4 * nreg:
-        raise TwinError(f"lag {p}: {len(X)} usable rows for {nreg} coefficients per output is too few")
+        raise TwinError(tx("tw.lag_few", p=p, rows=len(X), nreg=nreg))
     beta, *_ = np.linalg.lstsq(X, T, rcond=None)
     theta = beta.T  # (no, nreg)
     res = T - X @ beta
@@ -207,7 +203,6 @@ def metrics(obs: np.ndarray, pred: np.ndarray) -> dict:
             "fit_percent": 100 * (1 - float(np.linalg.norm(e)) / math.sqrt(sst)) if sst > 0 else None}
 
 
-NRMSE_DEF = "RMSE divided by the range (max - min) of the observed validation values"
 
 
 def _free_run_score(theta, p, s, Y, U, a, b):
@@ -244,8 +239,7 @@ def select_lag(Y, U, s, max_lag, n_first):
     scores = [c["_score"] for c in cands]
     best = min(scores)
     if not math.isfinite(best):
-        raise TwinError("no lag order produced a stable model on the selection block; the data may be too short or "
-                        "too noisy for a linear dynamic model")
+        raise TwinError(tx("tw.no_stable_lag"))
     chosen = next(c["lag"] for c in cands if c["_score"] <= best * 1.02 + 1e-12)
     for c in cands:
         c.pop("_score")
@@ -270,7 +264,7 @@ def _fopdt_fit(y, u, dt, start=None):
     u0 = float(u[0])
     du = float(u[-1] - u0)
     if np.ptp(u) <= 0:
-        raise TwinError("the input does not change in the training block: a step response cannot be fitted")
+        raise TwinError(tx("tw.input_flat"))
 
     def resid(par):
         return _fopdt_series(par, u, dt, u0)[0] - y
@@ -291,7 +285,7 @@ def _fopdt_fit(y, u, dt, start=None):
         if best is None or r.cost < best.cost:
             best = r
     if best is None:
-        raise TwinError("the first-order-plus-dead-time fit did not converge")
+        raise TwinError(tx("tw.fopdt_noconv"))
     return best.x, u0
 
 
@@ -340,19 +334,19 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
                level: float = 0.95, time_kind: Optional[str] = None) -> dict:
     """Fit a twin to arrays. Returns {"twin": stored object, "report": what the caller sees}."""
     if model not in ("arx", "fopdt", "auto"):
-        raise TwinError("model must be 'arx', 'fopdt' or 'auto'")
+        raise TwinError(tx("tw.model_kind"))
     if not inputs:
-        raise TwinError("give at least one input (control) column")
+        raise TwinError(tx("tw.need_input"))
     if not outputs:
-        raise TwinError("give at least one output column")
+        raise TwinError(tx("tw.need_output"))
     if not 0.1 <= validation_fraction <= 0.5:
-        raise TwinError("validation_fraction must be between 0.1 and 0.5")
+        raise TwinError(tx("tw.valfrac"))
     if input_lag_start not in (0, 1, 2, 3):
-        raise TwinError("input_lag_start must be 0, 1, 2 or 3")
+        raise TwinError(tx("tw.lagstart"))
     single = len(outputs) == 1 and len(inputs) == 1
     if model in ("fopdt", "auto") and not single:
         if model == "fopdt":
-            raise TwinError("the first-order-plus-dead-time model needs exactly one input and one output")
+            raise TwinError(tx("tw.fopdt_siso"))
         model = "arx"
     prep = prepare_series(t, Y, U)
     t, Y, U, dt = prep["t"], prep["Y"], prep["U"], prep["dt"]
@@ -362,13 +356,13 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
     nval = max(MIN_VALID, int(round(n * validation_fraction)))
     ntr = n - nval
     if ntr < MIN_TRAIN:
-        raise TwinError(f"after holding out {nval} rows only {ntr} remain for fitting; need at least {MIN_TRAIN}")
+        raise TwinError(tx("tw.holdout", nval=nval, ntr=ntr, need=MIN_TRAIN))
     for j, nm in enumerate(inputs):
         if np.ptp(U[:ntr, j]) <= 1e-12:
-            raise TwinError(f"input {nm!r} does not vary in the fitting block: its effect cannot be identified")
+            raise TwinError(tx("tw.input_const", name=nm))
     for j, nm in enumerate(outputs):
         if np.ptp(Y[:ntr, j]) <= 1e-12:
-            raise TwinError(f"output {nm!r} is constant in the fitting block")
+            raise TwinError(tx("tw.output_const", name=nm))
     scale = float(np.abs(Y).max() + 1.0)
     out_rng = {o: [float(Y[:, j].min()), float(Y[:, j].max())] for j, o in enumerate(outputs)}
     in_rng = {o: [float(U[:, j].min()), float(U[:, j].max())] for j, o in enumerate(inputs)}
@@ -384,8 +378,7 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
         theta_tr, res_tr, H = _fit_arx(Y[:ntr], U[:ntr], p, s)
         poles = _companion_poles(theta_tr, p, no)
         if np.max(np.abs(poles)) >= 1:
-            warnings.append(f"The ARX model has a pole of magnitude {np.max(np.abs(poles)):.3f} (>= 1): it is unstable "
-                            "or integrating, so long simulations will diverge or drift.")
+            warnings.append(tx("tw.warn_pole", mag=float(np.max(np.abs(poles)))))
         Xv, Tv, Hv = _build(Y, U, p, s)
         rows = np.arange(Hv, n)
         sel = rows >= ntr
@@ -415,7 +408,7 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
         theta, res_all, H = _fit_arx(Y, U, p, s)
         draws, failed = _bootstrap_arx(theta, p, s, Y, U, res_all, n_boot, rng, scale)
         if len(draws) < max(10, n_boot // 5):
-            warnings.append(f"Only {len(draws)} of {n_boot} bootstrap refits were stable: parameter intervals are unreliable.")
+            warnings.append(tx("tw.warn_boot_stable", n=len(draws), total=n_boot))
         names = _regressor_names(outputs, inputs, p, s)
         pdraw = draws if len(draws) else theta[None]
         lo_q, hi_q = (1 - level) / 2 * 100, (1 + level) / 2 * 100
@@ -429,7 +422,7 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
         G = _gains(theta, p, no, ni)
         gains = []
         if G is None:
-            warnings.append("The steady-state gain is undefined (a pole at 1: the output integrates its input).")
+            warnings.append(tx("tw.warn_gain_undef"))
         else:
             gd = [g for g in (_gains(d, p, no, ni) for d in pdraw) if g is not None]
             for j, o in enumerate(outputs):
@@ -460,15 +453,14 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
         a_sc = math.inf if a_sc is None else a_sc
         f_sc = math.inf if f_sc is None else f_sc
         chosen = "fopdt" if f_sc <= a_sc * 1.05 else "arx"   # prefer the simpler model when it is about as good
-        warnings.append(f"Auto selection on the held-out block: ARX free-run NRMSE {a_sc:.4f}, FOPDT {f_sc:.4f}; "
-                        f"using {chosen.upper()} (the simpler model wins ties within 5%).")
+        warnings.append(tx("tw.warn_auto", a=a_sc, f=f_sc, chosen=chosen.upper()))
     twin: dict[str, Any] = {"model": chosen, "outputs": outputs, "inputs": inputs, "dt": dt, "time_kind": time_kind,
                             "level": level, "seed": seed,
                             "training": {"rows": n, "fit_rows": ntr, "validation_rows": nval, "input_range": in_rng,
                                          "output_range": out_rng, "t_first": float(t[0]), "t_last": float(t[-1])}}
     report: dict[str, Any] = {"model": chosen, "outputs": outputs, "inputs": inputs, "sampling": {**prep["info"], "dt": dt},
                               "split": {"fit_rows": ntr, "validation_rows": nval, "validation_fraction": validation_fraction},
-                              "nrmse_definition": NRMSE_DEF, "level": level, "caveat": CAVEAT}
+                              "nrmse_definition": tx("tw.nrmse_def"), "level": level, "caveat": tx("tw.caveat")}
     obs_val_series = Y[ntr:]
     t_val = t[ntr:]
     if chosen == "arx":
@@ -480,8 +472,8 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
                      "history": {"Y": Y[-H:].tolist(), "U": U[-H:].tolist()}})
         lb = r["lb_tr"]
         report.update({"structure": {"lag_order": r["p"], "input_lag_start": r["s"], "coefficients_per_output": len(r["names"]),
-                                     "form": "multi-output ARX (linear state-space in companion form)"},
-                       "lag_selection": {"criterion": "free-run NRMSE on a selection block kept apart from the held-out block",
+                                     "form": tx("tw.form_arx")},
+                       "lag_selection": {"criterion": tx("tw.criterion"),
                                          "candidates": r["lag_candidates"], "chosen": r["p"]},
                        "validation": r["val"], "parameters": r["params"], "gains": r["gains"],
                        "poles": [{"re": float(z.real), "im": float(z.imag), "magnitude": float(abs(z))} for z in r["poles"]],
@@ -497,14 +489,13 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
             chk[o] = {"fit_residuals": a, "validation_residuals": v, "ok": bool(ok_tr and ok_v)}
             resid_ok = resid_ok and chk[o]["ok"]
             if not chk[o]["ok"]:
-                warnings.append(f"Residuals of {o} are autocorrelated (Ljung-Box p={min(a['p_value'], 1 if v is None else v['p_value']):.3g}): "
-                                "the model misses dynamics or disturbances, so its intervals are too narrow.")
+                warnings.append(tx("tw.warn_resid_arx", out=o,
+                                   p=min(a["p_value"], 1 if v is None else v["p_value"])))
         report["residual_check"] = {"ok": resid_ok, "per_output": chk}
         if r["coverage"]:
             for o, c in r["coverage"].items():
                 if c < level - 0.15:
-                    warnings.append(f"The {int(level * 100)}% interval for {o} covered only {c:.0%} of the held-out block: "
-                                    "treat the what-if intervals as optimistic.")
+                    warnings.append(tx("tw.warn_coverage", level=int(level * 100), out=o, cov=c))
         # validation series for a chart
         ts = thin(list(range(nval)))
         report["validation_series"] = {"time": [float(t_val[i]) for i in ts],
@@ -525,29 +516,27 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
                                "residuals": r["res_all"][np.linspace(0, len(r["res_all"]) - 1, min(len(r["res_all"]), 400)).astype(int)].tolist()},
                      "history": {"Y": Y[-4:].tolist(), "U": U[-max(8, int(pall[3] // dt) + 6):].tolist()}})
         if len(dr) < 20:
-            warnings.append(f"Only {len(dr)} bootstrap refits converged: parameter intervals are unreliable.")
+            warnings.append(tx("tw.warn_boot_conv", n=len(dr)))
         params = [{"output": outputs[0], "term": nm, "estimate": float(pall[i]),
                    "std": float(dr[:, i].std(ddof=1)) if len(dr) > 1 else None,
                    "ci_low": float(np.percentile(dr[:, i], lo_q)) if len(dr) > 1 else None,
                    "ci_high": float(np.percentile(dr[:, i], hi_q)) if len(dr) > 1 else None} for i, nm in enumerate(names)]
         if pall[3] < dt:
-            warnings.append("The estimated dead time is shorter than one sampling step: it is not distinguishable from zero.")
+            warnings.append(tx("tw.warn_deadtime"))
         span = dt * (n - 1)
         if pall[2] > span / 3:
-            warnings.append("The time constant is longer than a third of the record: the response never settled, so "
-                            "the gain is extrapolated from an unfinished response.")
-        report.update({"structure": {"form": "first order plus dead time: y = offset + gain * (1 - exp(-(t - dead_time)/time_constant)) per unit input step"},
+            warnings.append(tx("tw.warn_tau"))
+        report.update({"structure": {"form": tx("tw.form_fopdt")},
                        "validation": {"free_run": {outputs[0]: r["val"]}}, "parameters": params,
                        "gains": [{"output": outputs[0], "input": inputs[0], "gain": float(pall[1]),
                                   "ci_low": params[1]["ci_low"], "ci_high": params[1]["ci_high"]}],
-                       "bootstrap": {"requested": min(n_boot, 100), "converged": int(len(dr)), "method": "moving-block residual bootstrap"}})
+                       "bootstrap": {"requested": min(n_boot, 100), "converged": int(len(dr)), "method": tx("tw.boot_method")}})
         lb = r["lb_tr"]
         ok = lb["p_value"] > 0.05
         report["residual_check"] = {"ok": bool(ok), "per_output": {outputs[0]: {"fit_residuals": lb, "validation_residuals": None, "ok": bool(ok)}},
-                                    "note": "free-run residuals (observed minus simulated response) over the fitting block"}
+                                    "note": tx("tw.resid_note")}
         if not ok:
-            warnings.append(f"Residuals of {outputs[0]} are autocorrelated (Ljung-Box p={lb['p_value']:.3g}): a first-order "
-                            "model with dead time leaves dynamics unexplained; consider the ARX model.")
+            warnings.append(tx("tw.warn_resid_fopdt", out=outputs[0], p=lb["p_value"]))
         ts = thin(list(range(nval)))
         report["validation_series"] = {"time": [float(t_val[i]) for i in ts],
                                        outputs[0]: {"observed": [float(obs_val_series[i, 0]) for i in ts],
@@ -558,10 +547,9 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
     heads = report["validation"]["free_run"]
     for o, m in heads.items():
         if m["nrmse"] is not None and m["nrmse"] > 0.2:
-            warnings.append(f"Free-run NRMSE for {o} on the held-out block is {m['nrmse']:.2f} (> 0.2): the twin is a poor "
-                            "predictor of this output beyond one step.")
+            warnings.append(tx("tw.warn_nrmse", out=o, v=m["nrmse"]))
         if m["r2"] is not None and m["r2"] < 0:
-            warnings.append(f"The twin predicts {o} worse than its mean on the held-out block (R2 {m['r2']:.2f}).")
+            warnings.append(tx("tw.warn_r2", out=o, v=m["r2"]))
     twin["validation_headline"] = {o: m["nrmse"] for o, m in heads.items()}
     twin["validation_horizon"] = nval
     report["warnings"] = warnings
@@ -575,7 +563,7 @@ def expand_profile(profile: Optional[dict], inputs: list[str], steps: int, defau
     profile = profile or {}
     unknown = [k for k in profile if k not in inputs]
     if unknown:
-        raise TwinError(f"unknown input {unknown[0]!r}; the twin's inputs are {inputs}")
+        raise TwinError(tx("tw.unknown_input", name=unknown[0], inputs=inputs))
     cols = []
     for nm in inputs:
         spec = profile.get(nm, defaults[nm])
@@ -583,7 +571,7 @@ def expand_profile(profile: Optional[dict], inputs: list[str], steps: int, defau
             col = np.full(steps, float(spec))
         elif isinstance(spec, list):
             if not spec:
-                raise TwinError(f"profile for {nm!r} is empty")
+                raise TwinError(tx("tw.profile_empty", name=nm))
             col = np.array([float(v) for v in spec], float)
             if len(col) < steps:
                 col = np.concatenate([col, np.full(steps - len(col), col[-1])])
@@ -596,11 +584,11 @@ def expand_profile(profile: Optional[dict], inputs: list[str], steps: int, defau
             rp = spec["ramp"]
             col = np.linspace(float(rp.get("from", defaults[nm])), float(rp["to"]), steps)
         else:
-            raise TwinError(f"profile for {nm!r}: use a number, a list, {{'step': {{'at','from','to'}}}} or {{'ramp': {{'from','to'}}}}")
+            raise TwinError(tx("tw.profile_form", name=nm))
         cols.append(col)
     out = np.column_stack(cols)
     if not np.isfinite(out).all():
-        raise TwinError("the input profile contains non-finite values")
+        raise TwinError(tx("tw.profile_finite"))
     return out
 
 
@@ -618,12 +606,10 @@ def check_extrapolation(twin: dict, Ufut: np.ndarray, max_excess: float, allow: 
     info = {"outside_training_range": bool(flagged), "inputs": flagged, "limit": max_excess, "allowed_by_caller": allow}
     if flagged and worst > max_excess and not allow:
         f = max(flagged, key=lambda x: x["max_excess_fraction_of_range"])
-        raise TwinError(f"refusing to extrapolate: input {f['input']!r} reaches "
-                        f"{f['max_requested'] if f['max_excess_fraction_of_range'] > 0 and f['max_requested'] > f['training_range'][1] else f['min_requested']:.6g}, "
-                        f"outside the training range {f['training_range'][0]:.6g} to {f['training_range'][1]:.6g} by "
-                        f"{f['max_excess_fraction_of_range']:.0%} of that range (limit {max_excess:.0%}). A linear model fitted "
-                        "inside the range says nothing reliable beyond it. Collect data there, or pass allow_extrapolation=true to "
-                        "see the (unreliable) result.")
+        reached = (f["max_requested"] if f["max_excess_fraction_of_range"] > 0
+                   and f["max_requested"] > f["training_range"][1] else f["min_requested"])
+        raise TwinError(tx("tw.no_extrapolate", name=f["input"], reached=reached, lo=f["training_range"][0],
+                           hi=f["training_range"][1], excess=f["max_excess_fraction_of_range"], limit=max_excess))
     return info
 
 
@@ -631,7 +617,7 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
             level: Optional[float] = None, n_paths: int = 300, seed: int = 0, allow_extrapolation: bool = False,
             max_extrapolation: float = 0.25, baseline: bool = True) -> dict:
     if steps is not None and not 1 <= steps <= 5000:
-        raise TwinError("steps must be between 1 and 5000")
+        raise TwinError(tx("tw.steps_range"))
     inputs, outputs = twin["inputs"], twin["outputs"]
     lens = [len(v) for v in (profile or {}).values() if isinstance(v, list)]
     steps = steps or (max(lens) if lens else 50)
@@ -646,7 +632,7 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
         oo = initial.get("outputs", {}) or {}
         for nm in list(io) + list(oo):
             if nm not in inputs + outputs:
-                raise TwinError(f"initial: unknown name {nm!r}")
+                raise TwinError(tx("tw.initial_unknown", name=nm))
         for j, nm in enumerate(inputs):
             if nm in io:
                 histU[:, j] = float(io[nm])
@@ -658,8 +644,7 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
     ext = check_extrapolation(twin, Uf, max_extrapolation, allow_extrapolation)
     warnings = []
     if ext["outside_training_range"]:
-        warnings.append("Some requested inputs lie outside the training range: the response there is extrapolated and "
-                        "its intervals understate the real uncertainty.")
+        warnings.append(tx("tw.warn_extrap"))
     lo_q, hi_q = (1 - level) / 2 * 100, (1 + level) / 2 * 100
 
     def run(Ufut):
@@ -710,17 +695,15 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
         lo_o, hi_o = twin["training"]["output_range"][o]
         w = max(hi_o - lo_o, 1e-12)
         if nominal[:, j].max() > hi_o + 0.1 * w or nominal[:, j].min() < lo_o - 0.1 * w:
-            warnings.append(f"The predicted {o} leaves the range seen in training ({lo_o:.6g} to {hi_o:.6g}) by more than 10%: "
-                            "the linear model is probably no longer adequate there.")
+            warnings.append(tx("tw.warn_leaves", out=o, lo=lo_o, hi=hi_o))
     if steps > twin.get("validation_horizon", steps):
-        warnings.append(f"The horizon ({steps} steps) is longer than the held-out block the twin was validated on "
-                        f"({twin['validation_horizon']} steps): coverage of the interval beyond it is untested.")
+        warnings.append(tx("tw.warn_horizon", steps=steps, val=twin["validation_horizon"]))
     if baseline:
         base_profile = {nm: float(last_in[nm]) for nm in inputs}
         Ub = expand_profile(base_profile, inputs, steps, last_in)
         bn, bp = run(Ub)
         bm = bp.mean(0)
-        out["baseline"] = {"description": "inputs held at their last value",
+        out["baseline"] = {"description": tx("tw.baseline_desc"),
                            "outputs": {o: {"nominal": [float(v) for v in bn[:, j]], "mean": [float(v) for v in bm[:, j]],
                                            "lo": [float(v) for v in np.percentile(bp, lo_q, axis=0)[:, j]],
                                            "hi": [float(v) for v in np.percentile(bp, hi_q, axis=0)[:, j]]}
@@ -731,7 +714,7 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
     out["interval_note"] = (f"{int(level * 100)}% interval over {len(paths)} simulated paths combining coefficient uncertainty "
                             "(bootstrap) and resampled residuals; it excludes structural error and changes in the process.")
     out["warnings"] = warnings
-    out["caveat"] = CAVEAT
+    out["caveat"] = tx("tw.caveat")
     return out
 
 
@@ -744,7 +727,7 @@ def _dir(services) -> Path:
 
 def _file(services, name: str) -> Path:
     if not isinstance(name, str) or not _NAME.match(name):
-        raise TwinError("twin name: 1-60 letters, digits, spaces, '_', '.' or '-'")
+        raise TwinError(tx("tw.name"))
     return _dir(services) / (name + ".json")
 
 
@@ -763,7 +746,7 @@ def list_twins(services) -> dict:
 def get_twin(services, name: str, full: bool = False) -> dict:
     f = _file(services, name)
     if not f.exists():
-        raise LookupError(f"unknown twin {name!r}; saved: {[t['name'] for t in list_twins(services)['twins']]}")
+        raise LookupError(tx("tw.unknown_saved", name=name, saved=[x["name"] for x in list_twins(services)["twins"]]))
     tw = json.loads(f.read_text(encoding="utf-8"))
     if not full:
         tw = {k: v for k, v in tw.items() if k not in ("draws", "residuals", "history", "theta", "fopdt")} | \
@@ -775,7 +758,7 @@ def delete_twin(services, name: str, source: str = "ui") -> dict:
     def do():
         f = _file(services, name)
         if not f.exists():
-            raise LookupError(f"unknown twin {name!r}")
+            raise LookupError(tx("tw.unknown", name=name))
         f.unlink()
         return {"name": name, "deleted": True, "_log_summary": f"deleted twin {name!r}"}
     return services._log("twin_delete", source, None, {"name": name}, do)
@@ -789,7 +772,7 @@ def fit_twin(services, dataset: str, time: Optional[str], outputs: list[str], in
         if time:
             spec[time] = "time"
         if len(set(outputs) & set(inputs)):
-            raise TwinError("a column cannot be both an input and an output")
+            raise TwinError(tx("tw.in_and_out"))
         cols, meta = load_frame(services, dataset, spec)
         n = meta["rows"]
         tt = to_float(cols[time]) if time else np.arange(n, dtype=float)
@@ -802,7 +785,7 @@ def fit_twin(services, dataset: str, time: Optional[str], outputs: list[str], in
         twin, report = res["twin"], res["report"]
         twin.update({"dataset": dataset, "time": time, "created": _time.time()})
         if not time:
-            report["warnings"].append("No time column given: rows are taken as equally spaced steps in the order stored.")
+            report["warnings"].append(tx("tw.warn_no_time"))
         if name:
             f = _file(services, name)
             report["replaced"] = f.exists()

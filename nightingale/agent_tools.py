@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .hoard_link import agentkit
 from .hoard_link.agentkit import Empty, Tool, ann as _ann, cap_result
 from .services import Services
+from .texts import use_lang
 
 AGENT_INSTRUCTIONS = (
     "Nightingale's Hoard is the user's own data workbench: ingest files/folders/URLs/pasted text into a local "
@@ -1141,12 +1142,22 @@ def tool_catalog() -> list[dict]:
     return agentkit.tool_catalog(TOOLS)
 
 
+#: tools whose human-readable messages can be asked for in Spanish with an extra `lang` argument
+LANG_TOOLS = frozenset({"data_workbook", "data_reconcile", "data_scenario", "data_migrate", "data_process", "data_twin",
+                        "data_experiment", "data_effect"})
+
+
 def call_tool_sync(services: Services, name: str, arguments: dict | None) -> Any:
     """Run a blocking tool: validate the arguments, call it and cap the result for the assistant's context
     (the shared kit). Raises ``UnknownTool`` (a ``KeyError``) for an unknown name and pydantic's ``ValidationError``
     for bad arguments."""
     if name in ASYNC_TOOLS:
         raise ValueError(f"{name} is async: use call_tool")
+    if name in LANG_TOOLS and arguments and "lang" in arguments:
+        # optional message language (en/es, default English) for the analysis tools; not part of their own arguments
+        arguments = dict(arguments)
+        with use_lang(arguments.pop("lang")):
+            return call_tool_sync(services, name, arguments)
     if name == "data_profile" and (arguments or {}).get("mode") == "frequencies":
         # A page must keep its complete values and rows so next_offset does not
         # skip groups. Other profile modes keep their existing preview cap.
@@ -1167,6 +1178,10 @@ async def call_tool(services: Services, name: str, arguments: dict | None) -> An
     """Run any tool from async code (the blocking ones run in place; use ``call_tool_sync`` in a worker thread)."""
     if name not in ASYNC_TOOLS:
         return call_tool_sync(services, name, arguments)
+    if name in LANG_TOOLS and arguments and "lang" in arguments:
+        arguments = dict(arguments)
+        with use_lang(arguments.pop("lang")):
+            return await call_tool(services, name, arguments)
     tool = TOOLS_BY_NAME[name]
     args = tool.input_model.model_validate(arguments or {})
     result = await tool.run(services, args)

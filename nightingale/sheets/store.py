@@ -10,6 +10,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ..texts import t as tx
+
 from .compiler import addr, load, parse_addr, to_json
 from .engine import Compiled, export_python
 from . import reference
@@ -32,10 +34,10 @@ class WorkbookStore:
     # -- catalogue --------------------------------------------------------
     def _dir(self, wid: str) -> Path:
         if not re.fullmatch(r"[0-9a-f]{12}", wid or ""):
-            raise LookupError(f"no compiled workbook {wid!r}")
+            raise LookupError(tx("wb.no_compiled", wid=wid))
         d = self.root / wid
         if not (d / "meta.json").exists():
-            raise LookupError(f"no compiled workbook {wid!r}")
+            raise LookupError(tx("wb.no_compiled", wid=wid))
         return d
 
     def _meta(self, wid: str) -> dict:
@@ -217,9 +219,9 @@ class WorkbookStore:
     def scenario_save(self, wid: str, name: str, inputs: dict[str, Any], note: str | None = None) -> dict:
         name = (name or "").strip()
         if not name or name.lower() == "base":
-            raise ValueError("give the scenario a name other than 'Base'")
+            raise ValueError(tx("wb.scn_name"))
         if not inputs:
-            raise ValueError("inputs are required: {cell address or label: value}")
+            raise ValueError(tx("wb.scn_inputs"))
         applied = self.compiled(wid).evaluate(inputs)["inputs"]  # validates every reference and value
         meta = self._meta(wid)
         meta.setdefault("scenarios", {})[name] = {"inputs": applied, **({"note": note} if note else {})}
@@ -229,7 +231,7 @@ class WorkbookStore:
     def scenario_delete(self, wid: str, name: str) -> dict:
         meta = self._meta(wid)
         if name not in (meta.get("scenarios") or {}):
-            raise LookupError(f"no scenario {name!r}")
+            raise LookupError(tx("wb.scn_unknown", name=name))
         del meta["scenarios"][name]
         self._save_meta(wid, meta)
         return {"workbook": wid, "deleted": name}
@@ -240,10 +242,10 @@ class WorkbookStore:
         if names:
             missing = [n for n in names if n not in sc]
             if missing:
-                raise LookupError(f"no scenario {missing[0]!r}")
+                raise LookupError(tx("wb.scn_unknown", name=missing[0]))
             sc = {n: sc[n] for n in names}
         if not sc:
-            raise ValueError("no scenarios saved yet; save one first")
+            raise ValueError(tx("wb.scn_none"))
         return {"workbook": wid, **explain.compare_scenarios(self.compiled(wid), {n: v["inputs"] for n, v in sc.items()})}
 
     def units_declared(self, wid: str) -> dict:
@@ -259,9 +261,9 @@ class WorkbookStore:
             key = c.resolve(ref)
             cell = c.model.cells.get(key)
             if cell is None:
-                raise LookupError(f"{ref} is empty")
+                raise LookupError(tx("wb.cell_empty", ref=ref))
             if cell.formula and not cell.frozen:
-                raise ValueError(f"{addr(key)} is a formula: its unit is inferred, declare the units of the inputs")
+                raise ValueError(tx("wb.unit_formula", addr=addr(key)))
             if text in (None, ""):
                 cur.pop(addr(key), None)
             else:

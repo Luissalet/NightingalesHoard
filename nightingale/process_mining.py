@@ -27,13 +27,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from . import scenarios as sc
+from .texts import t as tx
 
 MAX_EVENTS = 2_000_000
 BIG = 10_000  # "unlimited" servers for steps whose capacity cannot be estimated
 MIN_CASES = 5
 SMALL_LOG = 30
-CAVEAT = ("Descriptive results from the log as given; rehearsals are scenarios under the stated assumptions "
-          "(first-order routing, independent durations), not predictions.")
 TIME_UNITS = "hours"
 
 
@@ -42,6 +41,13 @@ class ProcessError(ValueError):
 
 
 # ----------------------------------------------------------------------- helpers
+def _dropped_warning(quality: dict) -> str:
+    reasons = {"missing case or activity": "pm.drop_no_case", "missing or unreadable timestamp": "pm.drop_no_time",
+               "missing or unreadable start": "pm.drop_no_start"}
+    shown = {(tx(reasons[k]) if k in reasons else k): v for k, v in quality["dropped"].items()}
+    return tx("pm.warn_dropped", total=quality["dropped_total"], detail=shown)
+
+
 def _q(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
@@ -82,20 +88,20 @@ def _table_columns(services, dataset: str):
 
 def _check_mapping(cols: list[str], mapping: dict) -> dict:
     if not isinstance(mapping, dict):
-        raise ProcessError("mapping: expected {case, activity, timestamp, start?, resource?, cost?}")
+        raise ProcessError(tx("pm.map_shape"))
     out = {}
     for key in ("case", "activity", "timestamp"):
         if not mapping.get(key):
-            raise ProcessError(f"mapping: {key!r} is required (use suggest to get proposals)")
+            raise ProcessError(tx("pm.map_required", key=key))
     for key in ("case", "activity", "timestamp", "start", "resource", "cost"):
         v = mapping.get(key)
         if v:
             if v not in cols:
-                raise ProcessError(f"mapping: column {v!r} not found for {key!r}; columns: {cols}")
+                raise ProcessError(tx("pm.map_notfound", col=v, key=key, cols=cols))
             out[key] = v
     used = [out[k] for k in ("case", "activity", "timestamp", "start") if k in out]
     if len(used) != len(set(used)):
-        raise ProcessError("mapping: case, activity, timestamp and start must be different columns")
+        raise ProcessError(tx("pm.map_distinct"))
     return out
 
 
@@ -110,7 +116,7 @@ def load_log(services, dataset: str, mapping: dict) -> tuple[list[tuple[str, lis
     with services.engine.lock() as conn:
         total = conn.execute(f"SELECT count(*) FROM {_q(table)}").fetchone()[0]
         if total > MAX_EVENTS:
-            raise ProcessError(f"{total:,} rows is above the {MAX_EVENTS:,}-event limit; filter the dataset first")
+            raise ProcessError(tx("pm.too_many_rows", total=total, limit=MAX_EVENTS))
         rows = conn.execute(
             f"SELECT * FROM (SELECT {', '.join(sel)}, row_number() OVER () AS rn FROM {_q(table)}) "
             "ORDER BY 1, 3, 7").fetchall()
@@ -146,7 +152,7 @@ def load_log(services, dataset: str, mapping: dict) -> tuple[list[tuple[str, lis
                "start_after_end": neg_dur, "has_start": "start" in m, "has_resource": "resource" in m,
                "has_cost": "cost" in m, "mapping": m}
     if not cases:
-        raise ProcessError("no usable events: check the mapping (case, activity, timestamp) and the timestamp format")
+        raise ProcessError(tx("pm.no_events"))
     return cases, quality
 
 
@@ -241,7 +247,7 @@ def suggest_mapping(services, dataset: str) -> dict:
     warnings = []
     for key in ("case", "activity", "timestamp"):
         if key not in chosen:
-            warnings.append(f"No column looks like {key}: pick it by hand.")
+            warnings.append(tx("pm.no_column", key=key))
     return {"dataset": dataset, "mapping": chosen, "candidates": cand, "rows": n, "warnings": warnings,
             "columns": [{"name": c, **info[c]} for c, _ in typed]}
 
@@ -398,10 +404,10 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
     if bottlenecks:
         b = bottlenecks[0]
         if b["wait_share"] >= 0.3:
-            verdict = (f"{b['activity']!r} concentrates {b['wait_share'] * 100:.0f}% of all waiting time "
-                       f"(median {b['wait_median_hours']:.2f} h, p90 {b['wait_p90_hours']:.2f} h before the step).")
+            verdict = tx("pm.verdict_concentrated", act=b["activity"], share=b["wait_share"] * 100,
+                        median=b["wait_median_hours"], p90=b["wait_p90_hours"])
         else:
-            verdict = "Waiting time is spread out: no single step holds 30% or more of it."
+            verdict = tx("pm.verdict_spread")
     # ---- rework
     loops = []
     for name, (n, cs) in selfloops.items():
@@ -424,18 +430,15 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
         resources.sort(key=lambda r: (-r["events"], r["resource"]))
     warnings = []
     if n_cases < SMALL_LOG:
-        warnings.append(f"Only {n_cases} cases: variant shares and waiting statistics are very uncertain.")
+        warnings.append(tx("pm.warn_few_cases", n=n_cases))
     if quality["dropped_total"]:
-        warnings.append(f"{quality['dropped_total']} rows were dropped ({quality['dropped']}).")
+        warnings.append(_dropped_warning(quality))
     if quality["start_after_end"]:
-        warnings.append(f"{quality['start_after_end']} events had a start after their end; their duration was set "
-                        "to 0.")
+        warnings.append(tx("pm.warn_start_after_end", n=quality["start_after_end"]))
     if overlaps:
-        warnings.append(f"{overlaps} steps overlapped the previous one (parallel work); their waiting time was set "
-                        "to 0.")
+        warnings.append(tx("pm.warn_overlaps", n=overlaps))
     if not has_start:
-        warnings.append("No start column: the time before a step is the whole elapsed time until it finished "
-                        "(waiting plus working), so bottlenecks mark slow steps, not only queues.")
+        warnings.append(tx("pm.warn_no_start"))
     return {
         "cases": n_cases, "events": n_events, "activities_count": len(activities), "variants_count": len(vlist),
         "span_hours": span_h, "time_unit": TIME_UNITS, "wait_includes_work": not has_start,
@@ -445,8 +448,7 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
         "end_activities": [{"activity": a, "count": c, "share": c / n_cases} for a, c in ends.most_common()],
         "graph": {"threshold": threshold, "min_count": min_count, "edges": graph,
                   "kept_edges": sum(1 for e in graph if e["kept"]),
-                  "method": "Heuristic-miner dependency (a>b - b>a)/(a>b + b>a + 1), self-loops n/(n+1); a pair is "
-                            "also kept when it forms a length-two loop with the same measure on a-b-a patterns."},
+                  "method": tx("pm.graph_method")},
         "activities": activities, "variants": vout[:max_variants], "variants_shown": min(len(vout), max_variants),
         "rework": {"loops": loops, "activities": [{"activity": a["activity"], "cases": a["repeat_cases"],
                                                    "extra_visits": a["extra_visits"]}
@@ -455,7 +457,7 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
                    "share_of_cases": sum(1 for _c, evs in cases if len({e[1] for e in evs}) < len(evs)) / n_cases},
         "bottlenecks": bottlenecks, "slowest_edges": top_edges, "bottleneck_verdict": verdict,
         "resources": resources, "quality": {k: v for k, v in quality.items() if k != "mapping"},
-        "warnings": warnings, "caveat": CAVEAT,
+        "warnings": warnings, "caveat": tx("pm.caveat"),
         "_cases": cases,
         "_variant_ids": {tuple(v["activities"]): v["id"] for v in vout},
         "_case_times": times, "_case_starts": case_starts,
@@ -465,7 +467,7 @@ def discover_log(cases: list[tuple[str, list[Event]]], quality: dict, threshold:
 # ------------------------------------------------------------------ conformance
 def _norm_steps(steps: Any) -> list[dict]:
     if not isinstance(steps, list) or not steps:
-        raise ProcessError("reference.steps: give an ordered list of steps")
+        raise ProcessError(tx("pm.ref_steps_list"))
     slots = []
     for i, s in enumerate(steps):
         if isinstance(s, str):
@@ -473,7 +475,7 @@ def _norm_steps(steps: Any) -> list[dict]:
         elif isinstance(s, dict) and "parallel" in s:
             mem = s["parallel"]
             if not isinstance(mem, list) or len(mem) < 2:
-                raise ProcessError(f"reference.steps[{i}]: 'parallel' needs a list of at least two activities")
+                raise ProcessError(tx("pm.ref_parallel", i=i))
             opt = bool(s.get("optional", False))
             members = []
             for m in mem:
@@ -482,36 +484,36 @@ def _norm_steps(steps: Any) -> list[dict]:
                 elif isinstance(m, dict) and m.get("activity"):
                     members.append({"activity": str(m["activity"]), "optional": opt or bool(m.get("optional", False))})
                 else:
-                    raise ProcessError(f"reference.steps[{i}]: parallel members are names or {{activity, optional}}")
+                    raise ProcessError(tx("pm.ref_member", i=i))
             slots.append({"parallel": True, "members": members})
         elif isinstance(s, dict) and s.get("activity"):
             slots.append({"parallel": False,
                           "members": [{"activity": str(s["activity"]), "optional": bool(s.get("optional", False))}]})
         else:
-            raise ProcessError(f"reference.steps[{i}]: expected a name, {{activity, optional}} or {{parallel: [...]}}")
+            raise ProcessError(tx("pm.ref_item", i=i))
     seen = set()
     for sl in slots:
         for m in sl["members"]:
             if m["activity"] in seen:
-                raise ProcessError(f"reference.steps: {m['activity']!r} appears twice; give each step once")
+                raise ProcessError(tx("pm.ref_twice", act=m["activity"]))
             seen.add(m["activity"])
     return slots
 
 
 def _norm_reference(ref: Any) -> dict:
     if not isinstance(ref, dict):
-        raise ProcessError("reference: expected {steps: [...]} or {transitions: [[a, b], ...], start?, end?}")
+        raise ProcessError(tx("pm.ref_shape"))
     if ref.get("steps") is not None:
         return {"kind": "steps", "slots": _norm_steps(ref["steps"])}
     if ref.get("transitions") is not None:
         tr = ref["transitions"]
         if not isinstance(tr, list) or not tr or not all(isinstance(x, (list, tuple)) and len(x) == 2 for x in tr):
-            raise ProcessError("reference.transitions: expected a list of [from, to] pairs")
+            raise ProcessError(tx("pm.ref_pairs"))
         pairs = {(str(a), str(b)) for a, b in tr}
         start = {str(x) for x in ref["start"]} if ref.get("start") else None
         end = {str(x) for x in ref["end"]} if ref.get("end") else None
         return {"kind": "transitions", "pairs": pairs, "start": start, "end": end}
-    raise ProcessError("reference: give 'steps' (ordered, with optional / parallel) or 'transitions'")
+    raise ProcessError(tx("pm.ref_give"))
 
 
 def _describe_reference(r: dict) -> dict:
@@ -547,7 +549,7 @@ def _check_steps(trace: tuple, r: dict) -> list[tuple[str, str]]:
     for i, x in enumerate(present):
         for y in present[i + 1:]:
             if slot_of[y] < slot_of[x]:
-                devs.append(("reordered", f"{x} before {y} (expected {y} first)"))
+                devs.append(("reordered", tx("pm.dev_reordered_before", x=x, y=y)))
     return devs
 
 
@@ -581,11 +583,11 @@ def _check_transitions(trace: tuple, r: dict, adj: dict, acts: set) -> list[tupl
         if (a, b) in r["pairs"] or a not in acts or b not in acts:
             continue
         if (b, a) in r["pairs"]:
-            devs.append(("reordered", f"{a} then {b} (expected {b} then {a})"))
+            devs.append(("reordered", tx("pm.dev_reordered_then", a=a, b=b)))
             continue
         path = _shortest_between(adj, a, b)
         if path and len(path) > 2:
-            devs.append(("skipped", f"between {a} and {b}: {', '.join(path[1:-1])}"))
+            devs.append(("skipped", tx("pm.dev_skipped_between", a=a, b=b, path=", ".join(path[1:-1]))))
         else:
             devs.append(("unexpected transition", f"{a} -> {b}"))
     if r["end"] and trace[-1] in acts and trace[-1] not in r["end"]:
@@ -645,16 +647,12 @@ def conform_log(cases: list[tuple[str, list[Event]]], reference: Any, max_exampl
         known = acts
     seen = {a for tr in by_trace for a in tr}
     if not (known & seen):
-        warnings.append("None of the reference activities appears in the log: check spelling and case.")
+        warnings.append(tx("pm.warn_ref_unknown"))
     return {"cases": n, "fitting_cases": fitting, "fitting_share": fitting / n, "deviating_cases": n - fitting,
             "deviation_types": dict(by_type), "deviations": devs_out, "variants": var_rows[:max_variants],
             "variants_total": len(var_rows), "reference": _describe_reference(r),
-            "method": ("Per case: skipped = required step missing; inserted = activity not in the reference; "
-                       "repeated = a reference step done more than once; reordered = steps in a different slot "
-                       "order (inside a parallel group any order fits). With transitions: a forbidden transition is "
-                       "labelled reordered when the reverse is allowed, skipped when allowed steps could fill "
-                       "the gap, otherwise unexpected."),
-            "warnings": warnings, "caveat": CAVEAT, "_per_case": per_case}
+            "method": tx("pm.conform_method"),
+            "warnings": warnings, "caveat": tx("pm.caveat"), "_per_case": per_case}
 
 
 # ------------------------------------------------------------- model for the scenario engine
@@ -676,7 +674,7 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
     """Scenario-engine model from the log, plus a description of how it was built."""
     n = len(cases)
     if n < MIN_CASES:
-        raise ProcessError(f"{n} cases are too few to build a model (need at least {MIN_CASES}).")
+        raise ProcessError(tx("pm.too_few_cases", n=n, min=MIN_CASES))
     has_start = quality["has_start"]
     names: list[str] = []
     dur: dict[str, list[float]] = defaultdict(list)
@@ -711,25 +709,23 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
         xs = dur.get(a) or []
         if not xs:
             xs = [0.0]
-            warnings.append(f"{a!r} never has a measurable duration (it is always the first step and there is no "
-                            "start column); it is modelled as instantaneous.")
+            warnings.append(tx("pm.warn_no_duration", act=a))
         capacity = has_start
         if has_start:
             servers = len(res[a]) if res[a] else max(1, _concurrency(spans[a]))
-            basis = "distinct resources" if res[a] else "maximum observed concurrency (a lower bound)"
+            basis = tx("pm.basis_resources") if res[a] else tx("pm.basis_concurrency")
         else:
-            servers, basis = BIG, "not modelled (no start column): the step is a pure delay"
+            servers, basis = BIG, tx("pm.basis_not_modelled")
         spec = {"dist": "empirical", "values": sc.thin(xs, 500)}
         stations.append({"name": a, "servers": servers, "service": spec})
         notes.append({"activity": a, "servers": servers if capacity else None, "capacity_modelled": capacity,
                       "capacity_basis": basis, "duration_samples": len(xs),
                       "duration_mean_hours": sum(xs) / len(xs)})
         if len(xs) < SMALL_LOG:
-            warnings.append(f"{a!r}: only {len(xs)} duration samples; its distribution is uncertain.")
+            warnings.append(tx("pm.warn_few_samples", act=a, n=len(xs)))
     shared = sorted(r for r, acts_ in res_acts.items() if len(acts_) > 1)
     if shared:
-        warnings.append(f"{len(shared)} resources work on several activities; each activity is modelled with its own "
-                        "pool, which overstates capacity when they are shared.")
+        warnings.append(tx("pm.warn_shared", n=len(shared)))
     routing = {"start": {a: c / n for a, c in start.items()},
                "next": {a: {b: c / sum(cn.values()) for b, c in cn.items()} for a, cn in nxt.items()},
                "max_visits": max(2, min(8, max_visits + 2))}
@@ -738,24 +734,22 @@ def build_model(cases: list[tuple[str, list[Event]]], quality: dict, replication
     gaps = [(b - a) / 3600.0 for a, b in zip(t0s, t0s[1:])]
     span = (t0s[-1] - t0s[0]) / 3600.0
     if span <= 0:
-        raise ProcessError("all cases start at the same moment: the arrival rate cannot be estimated.")
+        raise ProcessError(tx("pm.same_moment"))
     rate = (n - 1) / span
     g = sc.describe(gaps)
     if g["cv"] is not None and 0.8 <= g["cv"] <= 1.25:
         arrivals = {"type": "poisson", "rate": rate}
-        arr_note = f"Poisson at {rate:.4g} cases/hour (inter-arrival CV {g['cv']:.2f}, close to 1)"
+        arr_note = tx("pm.arr_poisson", rate=rate, cv=g["cv"])
     else:
         arrivals = {"type": "empirical", "values": sc.thin(gaps, 500)}
-        arr_note = f"measured inter-arrival times resampled (CV {g['cv']:.2f}, not close to 1)" if g["cv"] is not None \
-            else "measured inter-arrival times"
+        arr_note = tx("pm.arr_resampled", cv=g["cv"]) if g["cv"] is not None else tx("pm.arr_measured")
     horizon = min(max(span, 300 / rate), 1500 / rate)
     model = {"horizon_hours": horizon, "warmup_hours": 0.05 * horizon, "replications": replications, "seed": seed,
              "arrivals": arrivals, "stations": stations, "routing": routing, "costs": {}}
     if n < SMALL_LOG:
-        warnings.append(f"Only {n} cases: the model rests on very little data.")
+        warnings.append(tx("pm.warn_small_model", n=n))
     if not has_start:
-        warnings.append("No start column: capacity is not modelled, so adding a resource has no effect; map a start "
-                        "column to rehearse capacity changes.")
+        warnings.append(tx("pm.warn_no_start_model"))
     desc = {"arrivals": arr_note, "arrival_rate_per_hour": rate, "horizon_hours": horizon, "activities": notes,
             "cases_used": n, "warnings": warnings}
     return model, desc
@@ -770,50 +764,49 @@ def _idx(model: dict, activity: str) -> int:
     for i, s in enumerate(model["stations"]):
         if s["name"] == activity:
             return i
-    raise ProcessError(f"unknown activity {activity!r}; activities: {[s['name'] for s in model['stations']]}")
+    raise ProcessError(tx("pm.unknown_activity", act=activity, acts=[s["name"] for s in model["stations"]]))
 
 
 def describe_change(ch: dict) -> str:
     t = ch.get("type")
     if t == "add_resource":
         if ch.get("servers") is not None:
-            return f"set {ch['activity']} to {ch['servers']} resources"
-        return f"add {ch.get('count', 1)} resource(s) at {ch['activity']}"
+            return tx("pm.ch_set_servers", act=ch["activity"], n=ch["servers"])
+        return tx("pm.ch_add", n=ch.get("count", 1), act=ch["activity"])
     if t == "remove_step":
-        return f"remove step {ch['activity']}"
+        return tx("pm.ch_remove", act=ch["activity"])
     if t == "set_routing":
-        return f"send {ch['share'] * 100:.0f}% of {ch['from']} to {ch['to']}"
+        return tx("pm.ch_route", share=ch["share"] * 100, src=ch["from"], dst=ch["to"])
     if t == "scale_duration":
-        return f"scale {ch['activity']} durations by {ch['factor']}"
+        return tx("pm.ch_scale", act=ch["activity"], factor=ch["factor"])
     return str(t)
 
 
 def apply_change(model: dict, ch: dict) -> None:
     """Edit the model in place for one change."""
     if not isinstance(ch, dict) or "type" not in ch:
-        raise ProcessError("change: expected {type: add_resource|remove_step|set_routing|scale_duration, ...}")
+        raise ProcessError(tx("pm.change_shape"))
     t = ch["type"]
     if t == "add_resource":
         i = _idx(model, ch.get("activity"))
         st = model["stations"][i]
         if st["servers"] >= BIG:
-            raise ProcessError(f"capacity of {st['name']!r} is not modelled (no start column in the log), so adding a "
-                               "resource would change nothing; map a start column.")
+            raise ProcessError(tx("pm.cap_not_modelled", act=st["name"]))
         if ch.get("servers") is not None:
             new = int(ch["servers"])
         else:
             new = st["servers"] + int(ch.get("count", 1))
         if new < 1:
-            raise ProcessError(f"add_resource: {st['name']!r} would have {new} resources; need at least 1")
+            raise ProcessError(tx("pm.add_min", act=st["name"], new=new))
         st["servers"] = new
     elif t == "scale_duration":
         i = _idx(model, ch.get("activity"))
         try:
             f = float(ch.get("factor"))
         except (TypeError, ValueError):
-            raise ProcessError("scale_duration: 'factor' must be a number") from None
+            raise ProcessError(tx("pm.scale_number")) from None
         if not f > 0 or not math.isfinite(f):
-            raise ProcessError("scale_duration: factor must be greater than 0 (0.7 = 30% shorter)")
+            raise ProcessError(tx("pm.scale_positive"))
         spec = model["stations"][i]["service"]
         spec["values"] = [v * f for v in spec["values"]]
     elif t == "set_routing":
@@ -822,14 +815,14 @@ def apply_change(model: dict, ch: dict) -> None:
         try:
             share = float(ch.get("share"))
         except (TypeError, ValueError):
-            raise ProcessError("set_routing: 'share' must be a number between 0 and 1") from None
+            raise ProcessError(tx("pm.route_number")) from None
         if not 0 <= share <= 1:
-            raise ProcessError("set_routing: 'share' must be between 0 and 1")
+            raise ProcessError(tx("pm.route_range"))
         cur = _norm(dict(model["routing"]["next"].get(a, {"END": 1.0})))
         others = {k: v for k, v in cur.items() if k != b}
         rest = sum(others.values())
         if rest <= 0 and share < 1:
-            raise ProcessError(f"set_routing: {a!r} has no other destination to take the remaining {1 - share:.0%}")
+            raise ProcessError(tx("pm.route_no_other", act=a, rest=1 - share))
         new = {k: v / rest * (1 - share) for k, v in others.items()} if rest > 0 else {}
         new[b] = share
         model["routing"]["next"][a] = new
@@ -839,7 +832,7 @@ def apply_change(model: dict, ch: dict) -> None:
         nx = _norm(dict(model["routing"]["next"].get(x, {"END": 1.0})))
         selfp = nx.get(x, 0.0)
         if selfp >= 1:
-            raise ProcessError(f"remove_step: {x!r} only loops to itself")
+            raise ProcessError(tx("pm.remove_selfloop", act=x))
         succ = {y: p / (1 - selfp) for y, p in nx.items() if y != x}
 
         def redirect(shares: dict) -> dict:
@@ -850,7 +843,7 @@ def apply_change(model: dict, ch: dict) -> None:
             return shares
         start = redirect(model["routing"]["start"])
         if not start or sum(start.values()) <= 0 or set(start) <= {"END"}:
-            raise ProcessError(f"remove_step: removing {x!r} leaves no step to start with")
+            raise ProcessError(tx("pm.remove_no_start", act=x))
         model["routing"]["start"] = {k: v for k, v in start.items() if k != "END"}
         for p in list(model["routing"]["next"]):
             if p == x:
@@ -858,12 +851,12 @@ def apply_change(model: dict, ch: dict) -> None:
             model["routing"]["next"][p] = redirect(model["routing"]["next"][p])
         model["routing"]["next"].pop(x, None)
     else:
-        raise ProcessError(f"unknown change type {t!r}; use add_resource, remove_step, set_routing or scale_duration")
+        raise ProcessError(tx("pm.unknown_change", type=ch["type"]))
 
 
 def variant_overrides(base: dict, changes: list[dict]) -> dict:
     if not isinstance(changes, list) or not changes:
-        raise ProcessError("each variant needs a non-empty 'changes' list")
+        raise ProcessError(tx("pm.variant_changes"))
     m = copy.deepcopy(base)
     for ch in changes:
         apply_change(m, ch)
@@ -890,11 +883,7 @@ def validate_baseline(cases_times: list[float], arrival_rate: float, run: dict, 
             row("throughput_time_p90_hours", obs["p90"], sim_p90, 2 * tolerance),
             row("cases_per_hour", arrival_rate, sim_x, tolerance)]
     ok = rows[0]["ok"] and rows[2]["ok"] and rows[3]["ok"]
-    note = ("The baseline model reproduces the observed throughput time within tolerance, so its what-ifs are worth "
-            "reading." if ok else
-            "The baseline model does NOT reproduce the observed log within tolerance: it is not representative "
-            "(typical causes: a step that depends on previous steps, work calendars, shared resources, or too "
-            "little data). Treat the rehearsal results as illustrative only.")
+    note = tx("pm.baseline_ok") if ok else tx("pm.baseline_bad")
     return {"representative": ok, "tolerance": tolerance, "rows": rows, "note": note}
 
 
@@ -916,7 +905,7 @@ def discover_process(services, dataset: str, mapping: dict, threshold: float = 0
                      max_variants: int = 20, save_as: Optional[str] = None, source: str = "ui") -> dict:
     def do():
         if not 0 <= threshold <= 1:
-            raise ProcessError("threshold must be between 0 and 1")
+            raise ProcessError(tx("pm.threshold_range"))
         cases, quality = load_log(services, dataset, mapping)
         res = discover_log(cases, quality, threshold, max(1, int(min_count)), max(1, int(max_variants)))
         if save_as:
@@ -972,7 +961,7 @@ def conform_process(services, dataset: str, mapping: dict, reference: dict, max_
         res["dataset"] = dataset
         res["quality"] = {k: v for k, v in quality.items() if k != "mapping"}
         if quality["dropped_total"]:
-            res["warnings"].append(f"{quality['dropped_total']} rows were dropped ({quality['dropped']}).")
+            res["warnings"].append(_dropped_warning(quality))
         res["_log_summary"] = (f"conformance in {dataset}: {res['fitting_cases']}/{res['cases']} cases fit, "
                                f"{len(res['deviations'])} kinds of deviation")
         return res
@@ -987,9 +976,9 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
                      save_as: Optional[str] = None, model_name: Optional[str] = None, source: str = "ui") -> dict:
     def do():
         if not 1 <= int(replications) <= 100:
-            raise ProcessError("replications must be between 1 and 100")
+            raise ProcessError(tx("pm.replications_range"))
         if not 0 < tolerance < 1:
-            raise ProcessError("tolerance must be between 0 and 1 (0.15 = 15%)")
+            raise ProcessError(tx("pm.tolerance_range"))
         cases, quality = load_log(services, dataset, mapping)
         model, desc = build_model(cases, quality, int(replications), int(seed))
         times = [case_span(evs)[1] - case_span(evs)[0] for _c, evs in cases]
@@ -998,14 +987,14 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
         names = set()
         for i, v in enumerate(variants or []):
             if not isinstance(v, dict):
-                raise ProcessError("variants: expected [{name, changes: [...]}]")
-            name = str(v.get("name") or f"variant {i + 1}")
+                raise ProcessError(tx("pm.variants_shape"))
+            name = str(v.get("name") or tx("pm.variant_default_name", i=i + 1))
             if name in names:
-                raise ProcessError(f"variant names must be unique ({name!r})")
+                raise ProcessError(tx("pm.variant_unique", name=name))
             names.add(name)
             ch = v.get("changes")
             if not isinstance(ch, list) or not ch:
-                raise ProcessError(f"variant {name!r}: give a non-empty 'changes' list")
+                raise ProcessError(tx("pm.variant_give", name=name))
             vlist.append({"name": name, "overrides": variant_overrides(model, ch),
                           "changes": [describe_change(c) for c in ch], "raw": ch})
         try:
@@ -1017,7 +1006,7 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
                 cmp_ = None
                 base_run = sc._public(sc.run_model(model, int(replications), int(seed)))
         except sc.ScenarioError as exc:
-            raise ProcessError(f"the discovered model could not be simulated: {exc}") from None
+            raise ProcessError(tx("pm.sim_failed", exc=exc)) from None
         validation = validate_baseline(times, desc["arrival_rate_per_hour"], base_run, float(tolerance))
         warnings = list(desc["warnings"]) + list(base_run["warnings"])
         if not validation["representative"]:
@@ -1030,13 +1019,11 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
                      and r["metric"].split(":", 1)[1] in touched)]
             head = next(r for r in cv["rows"] if r["metric"] == "lead_time_mean")
             if head["distinguishable"]:
-                direction = "shorter" if head["delta"] < 0 else "longer"
-                summary = (f"Mean throughput time {direction}: {head['base']:.2f} h -> {head['variant']:.2f} h "
-                           f"({head['delta_pct']:+.0f}%, paired 95% interval [{head['delta_ci_low']:.2f}, "
-                           f"{head['delta_ci_high']:.2f}] h)")
+                summary = tx("pm.sum_shorter" if head["delta"] < 0 else "pm.sum_longer", base=head["base"],
+                            variant=head["variant"], pct=head["delta_pct"], lo=head["delta_ci_low"],
+                            hi=head["delta_ci_high"])
             else:
-                summary = (f"Mean throughput time is not distinguishable from the baseline "
-                           f"(paired 95% interval of the difference includes 0)")
+                summary = tx("pm.sum_same")
             outs.append({"name": v["name"], "changes": v["changes"], "rows": keep, "summary": summary,
                          "headline": {"metric": "lead_time_mean", "base": head["base"], "variant": head["variant"],
                                       "delta": head["delta"], "delta_pct": head["delta_pct"],
@@ -1053,11 +1040,8 @@ def rehearse_process(services, dataset: str, mapping: dict, variants: Optional[l
                          "stations": base_run["stations"], "checks": base_run["checks"]},
             "observed": {**stats(times), "cases_per_hour": desc["arrival_rate_per_hour"]},
             "validation": validation, "variants": outs, "warnings": warnings,
-            "method": ("The log gives an empirical routing chain, per-step duration samples, resource pools and "
-                       "arrival times; the scenario engine simulates it over replications. Variants share the seed "
-                       "(common random numbers), so differences are paired by replication; 'distinguishable' means "
-                       "their 95% interval excludes 0."),
-            "caveat": CAVEAT}
+            "method": tx("pm.rehearse_method"),
+            "caveat": tx("pm.caveat")}
         if model_name:
             res["scenario_model"] = sc.save_model(services, model_name, model, source=source)["name"]
         if save_as:

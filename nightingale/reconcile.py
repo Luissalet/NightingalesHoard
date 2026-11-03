@@ -14,6 +14,8 @@ import re
 import unicodedata
 from typing import Any, Optional
 
+from .texts import t as tx
+
 SEP = "\x1f"
 NUMERIC = ("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT",
            "FLOAT", "DOUBLE", "REAL", "DECIMAL")
@@ -129,20 +131,19 @@ def suggest(conn, left: str, right: str, max_values: int = 5000, top: int = 3) -
             rc = next(c for c in rp if c["name"] == cand["right"])
             if cand["containment"] >= 0.5 and lc["family"] != "number":
                 strong = lc["unique"] and rc["unique"]
-                issues = [f"{side} side: {c['missing']} missing, {c['rows'] - c['missing'] - c['distinct']} repeated"
+                issues = [tx("rc.issue", side=tx("rc.side_" + side), missing=c["missing"],
+                             repeated=c["rows"] - c["missing"] - c["distinct"])
                           for side, c in (("left", lc), ("right", rc)) if not c["unique"]]
                 keys.append({"left": lc["name"], "right": rc["name"], "containment": cand["containment"],
                              "shared_values": cand["shared_values"], "strength": "strong" if strong else "weak",
                              "issues": issues,
-                             "note": "unique and complete on both sides; confirm before using it" if strong else
-                             "shares values but has missing or repeated keys: those rows will stay unpaired and listed"})
+                             "note": tx("rc.note_strong" if strong else "rc.note_weak")})
     # Shared values first; repeated or missing keys cost a quarter of the score,
     # they do not disqualify (those rows stay listed as ambiguous or keyless).
     keys.sort(key=lambda k: -(k["containment"] - (0.25 if k["strength"] == "weak" else 0.0)))
     return {"left": {"table": left, "columns": lp}, "right": {"table": right, "columns": rp},
             "mapping": mapping, "key_candidates": keys,
-            "note": "Suggestions only. A shared value is evidence, not proof that two columns mean the same thing; "
-                    "no key is applied until you choose it."}
+            "note": tx("rc.suggest_note")}
 
 
 def _cat_sql(lv: str, rv: str, numeric: bool, tol: float) -> str:
@@ -168,25 +169,25 @@ def reconcile(conn, left: str, right: str, keys: list[dict], compare: Optional[l
     same-named non-key columns; options: trim, case_insensitive, numeric,
     empty_as_missing (all off unless asked) and tolerance (numbers)."""
     if not keys:
-        raise ReconcileError("choose at least one key pair; keys are never guessed")
+        raise ReconcileError(tx("rc.need_key"))
     opts = dict(options or {})
     tol = float(opts.get("tolerance") or 0.0)
     if tol < 0:
-        raise ReconcileError("tolerance must be >= 0")
+        raise ReconcileError(tx("rc.tolerance"))
     lcols = {c["name"]: c for c in _columns(conn, left)}
     rcols = {c["name"]: c for c in _columns(conn, right)}
     for k in keys:
         if k.get("left") not in lcols:
-            raise ReconcileError(f"left table has no column {k.get('left')!r}")
+            raise ReconcileError(tx("rc.no_left", c=k.get("left")))
         if k.get("right") not in rcols:
-            raise ReconcileError(f"right table has no column {k.get('right')!r}")
+            raise ReconcileError(tx("rc.no_right", c=k.get("right")))
     key_l = [k["left"] for k in keys]
     key_r = [k["right"] for k in keys]
     if compare is None:
         compare = [{"left": n, "right": n} for n in lcols if n in rcols and n not in key_l and n not in key_r]
     for c in compare:
         if c.get("left") not in lcols or c.get("right") not in rcols:
-            raise ReconcileError(f"cannot compare {c.get('left')!r} with {c.get('right')!r}: column missing")
+            raise ReconcileError(tx("rc.cannot_compare", a=c.get("left"), b=c.get("right")))
     sample = max(0, min(int(sample), 200))
     lk, rk = _key_expr("l", key_l, opts), _key_expr("r", key_r, opts)
     base = (f"WITH L AS (SELECT l.*, row_number() OVER () AS __row, {lk} AS __k FROM {q(left)} l), "
@@ -243,18 +244,17 @@ def reconcile(conn, left: str, right: str, keys: list[dict], compare: Optional[l
         res = conn.execute(base + f"SELECT __row, {sel} FROM {side} WHERE __status = '{status}' ORDER BY __row LIMIT {sample}").fetchall()
         return [{"row": int(r[0]), **{c: _js(v) for c, v in zip(cols, r[1:])}} for r in res]
 
+    norm_opts = [k for k in ("trim", "case_insensitive", "numeric", "empty_as_missing") if opts.get(k)]
     explanation = [
-        f"Key: left {key_l} = right {key_r}"
-        + (f", normalised with {', '.join(k for k in ('trim', 'case_insensitive', 'numeric', 'empty_as_missing') if opts.get(k))}"
-           if any(opts.get(k) for k in ('trim', 'case_insensitive', 'numeric', 'empty_as_missing')) else ", compared exactly as text")
-        + ". A missing key component never matches.",
-        "A key present more than once on either side is ambiguous: its rows are not paired with each other, so no "
-        "duplicate is multiplied by the comparison.",
-        "Rows with a key on one side only are kept and listed; nothing is dropped.",
-        "Cell categories keep zero and missing apart (zero_vs_missing), and empty text apart from missing.",
+        tx("rc.exp_key", left=key_l, right=key_r)
+        + (tx("rc.exp_norm", opts=", ".join(norm_opts)) if norm_opts else tx("rc.exp_exact"))
+        + tx("rc.exp_missing_key"),
+        tx("rc.exp_ambiguous"),
+        tx("rc.exp_kept"),
+        tx("rc.exp_cells"),
     ]
     if tol:
-        explanation.append(f"Numbers within ±{tol} count as equal_within_tolerance, separately from exact equality.")
+        explanation.append(tx("rc.exp_tol", tol=tol))
     balance_l = total_l == sum(lcount.get(s, 0) for s in ("paired", "only_left", "ambiguous", "missing_key"))
     balance_r = total_r == sum(rcount.get(s, 0) for s in ("paired", "only_right", "ambiguous", "missing_key"))
     return {
