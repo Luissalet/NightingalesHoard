@@ -25,6 +25,103 @@ from nightingale.sheets.reference import engines, make_cases, recalc, verify
 A = rt.Area
 
 
+@pytest.mark.parametrize("mac", [False, True])
+def test_workbook_date_epoch_survives_evaluation_and_export(tmp_path, mac):
+    from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, to_excel
+    wb = openpyxl.Workbook()
+    wb.epoch = MAC_EPOCH if mac else WINDOWS_EPOCH
+    ws = wb.active
+    ws.title = "Dates"
+    ws.append([2026, 11, 3, "=DATE(A1,B1,C1)"])
+    ws["D1"].number_format = "yyyy-mm-dd"
+    ws["A2"] = dt.datetime(2026, 11, 3, 12)
+    ws["B2"] = "=YEAR(A2)"
+    ws["C2"] = "=A2+1"
+    ws["C2"].number_format = "yyyy-mm-dd"
+    ws["D2"] = "=EDATE(A2,1)"
+    ws["E2"] = "=EOMONTH(A2,0)"
+    ws["F2"] = "=WORKDAY(A2,1)"
+    ws["G2"] = "=TODAY()"
+    ws["H2"] = "=DATE(2026,11,3)"  # folded at compilation, not just runtime
+    ws["I2"] = "=H2+1"
+    path = tmp_path / f"dates-{mac}.xlsx"
+    wb.save(path)
+    model = load(path)
+    compiled = Compiled(model)
+    moment = dt.datetime(2026, 11, 3, 12)
+    values = compiled.evaluate(as_of=moment)["values"]
+    expected = float(to_excel(dt.datetime(2026, 11, 3), wb.epoch))
+    assert model.summary()["date_system"] == ("1904" if mac else "1900")
+    assert model.describe(("Dates", 2, 1))["display"] == "2026-11-03"
+    assert values[("Dates", 1, 4)] == expected
+    assert values[("Dates", 2, 2)] == 2026
+    assert values[("Dates", 2, 3)] == expected + 1.5
+    assert values[("Dates", 2, 4)] == float(to_excel(dt.date(2026, 12, 3), wb.epoch))
+    assert values[("Dates", 2, 5)] == float(to_excel(dt.date(2026, 11, 30), wb.epoch))
+    assert values[("Dates", 2, 6)] == expected + 1
+    assert values[("Dates", 2, 7)] == expected
+    assert values[("Dates", 2, 9)] == expected + 1
+    exported = {}
+    exec(export_python(model), exported)
+    assert exported["compute"](as_of=moment) == {
+        row["cell"]: row["value"] for row in compiled.evaluate(as_of=moment)["results"]}
+    # An interleaved calculation with the other epoch cannot change this model.
+    other = openpyxl.Workbook()
+    other.active.append([2026, "=DATE(A1,11,3)"])
+    other_path = tmp_path / "other.xlsx"
+    other.save(other_path)
+    other_compiled = Compiled(load(other_path))
+    other_compiled.evaluate()
+    assert compiled.evaluate(as_of=moment)["values"][("Dates", 1, 4)] == expected
+    from concurrent.futures import ThreadPoolExecutor
+    def calculate(i):
+        if i % 2:
+            return compiled.evaluate(as_of=moment)["values"][("Dates", 1, 4)] == expected
+        return other_compiled.evaluate()["values"][("Sheet", 1, 2)] == float(to_excel(dt.date(2026, 11, 3), WINDOWS_EPOCH))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert all(pool.map(calculate, range(40)))
+
+
+def test_literal_text_starting_equals_is_not_a_formula(tmp_path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws["A1"] = "=1+2"
+    ws["A1"].data_type = "s"
+    ws["B1"] = '=A1&"!"'
+    path = tmp_path / "literal.xlsx"
+    wb.save(path)
+    model = load(path)
+    assert model.cells[("Sheet", 1, 1)].formula is None
+    assert Compiled(model).evaluate()["results"][0]["value"] == "=1+2!"
+    exported = {}
+    exec(export_python(model), exported)
+    assert exported["compute"]()["Sheet!B1"] == "=1+2!"
+    from nightingale.sheets.reference import _write_case
+    destination = tmp_path / "overrides.xlsx"
+    _write_case(path, destination, model, Compiled(model), {"Sheet!A1": {"error": "#N/A"}})
+    cell = openpyxl.load_workbook(destination).active["A1"]
+    assert cell.value == "#N/A" and cell.data_type == "e"
+
+
+def test_empty_reference_verification_is_inconclusive_without_recalculation(tmp_path, monkeypatch):
+    from nightingale.sheets import reference
+    wb = openpyxl.Workbook()
+    wb.active.append([1, "=A1+1"])
+    path = tmp_path / "empty.xlsx"
+    wb.save(path)
+    model = load(path)
+    monkeypatch.setattr(reference, "engines", lambda: ["excel"])
+    def unexpected(*args):
+        pytest.fail("An empty verification must not start the reference engine")
+    monkeypatch.setattr(reference, "recalc", unexpected)
+    for cases, n in [([], 12), (None, 0)]:
+        result = reference.verify(model, path, cases=cases, n=n, engine="excel")
+        assert result["status"] == "inconclusive" and result["compared"] == 0
+    model.cells[("Sheet", 1, 2)].frozen = "unsupported"
+    result = reference.verify(model, path, cases=[{}], engine="excel")
+    assert result["status"] == "inconclusive" and result["compared"] == 0
+
+
 # --- parser ---------------------------------------------------------------
 
 @pytest.mark.parametrize("text,expected", [
@@ -303,3 +400,28 @@ def test_agent_tool_and_http(client, tmp_path):
     assert client.get(f"/api/sheets/{up['id']}").status_code == 404
     assert client.get("/api/sheets/..%2F..%2Fetc").status_code == 404
     assert client.get("/api/sheets/abc").status_code == 404
+
+
+@need_engine
+@pytest.mark.parametrize("mac", [False, True])
+def test_epoch_and_literal_overrides_against_independent_engine(tmp_path, mac):
+    from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, to_excel
+    wb = openpyxl.Workbook()
+    wb.epoch = MAC_EPOCH if mac else WINDOWS_EPOCH
+    ws = wb.active
+    ws.append([2026, 11, 3, "=DATE(A1,B1,C1)"])
+    ws["A2"] = dt.datetime(2026, 11, 3, 12)
+    ws["B2"] = "=A2+1"
+    ws["B2"].number_format = "yyyy-mm-dd hh:mm"
+    ws["C2"] = "=YEAR(A2)"
+    ws["D2"] = "=EDATE(A2,1)"
+    ws["A3"] = "=1+2"
+    ws["A3"].data_type = "s"
+    ws["B3"] = '=A3&"!"'
+    path = tmp_path / f"independent-{mac}.xlsx"
+    wb.save(path)
+    model = load(path)
+    serial = float(to_excel(dt.datetime(2026, 11, 8, 12), wb.epoch))
+    result = verify(model, path, cases=[{}, {"Sheet!A2": serial, "Sheet!A3": "=9+1"}])
+    assert result["status"] == "agree", result
+    assert result["compared"] == 10 and result["agree"] == 10

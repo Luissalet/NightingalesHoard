@@ -26,6 +26,7 @@ dependencies = [
   "scikit-learn>=1.4",
   "sympy>=1.14",
   "Pint>=0.25",
+  "PyYAML>=6",
   "holidays>=0.105",
   "tzdata>=2026.4",
   "vl-convert-python>=1.9",

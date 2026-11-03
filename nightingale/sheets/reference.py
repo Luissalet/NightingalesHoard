@@ -144,10 +144,14 @@ def _write_case(src: Path, dst: Path, model: Model, compiled: Compiled, case: di
         if cell is not None:
             from .compiler import is_date_format
             if isinstance(val, float) and is_date_format(cell.number_format):
-                val = rt.from_serial(val)
-        if isinstance(val, rt.XlError):
+                val = rt.from_serial(val, model.date_system)
+        is_error = isinstance(val, rt.XlError)
+        if is_error:
             val = val.code
-        wb[key[0]].cell(key[1], key[2]).value = val
+        target = wb[key[0]].cell(key[1], key[2])
+        target.value = val
+        if isinstance(val, str) and not is_error:
+            target.data_type = "s"
     wb.save(dst)
 
 
@@ -162,6 +166,12 @@ def verify(model: Model, source: Path, *, cases: list[dict] | None = None, n: in
     compiled = Compiled(model)
     cases = cases if cases is not None else make_cases(model, n, seed)
     frozen_up = compiled.frozen_upstream()
+    eligible = [k for k in model.results
+                if not model.cells[k].frozen and not model.cells[k].volatile and k not in frozen_up]
+    if not cases or not eligible:
+        return {"status": "inconclusive", "engine": engine, "cases": len(cases),
+                "compared": 0, "agree": 0, "report": [],
+                "reason": "No hay casos o resultados comparables: no se ha verificado ninguna equivalencia."}
     from .compiler import _plain
     with tempfile.TemporaryDirectory(prefix="nightingale-ref-") as tmp:
         tmp = Path(tmp)
@@ -183,11 +193,9 @@ def verify(model: Model, source: Path, *, cases: list[dict] | None = None, n: in
             wb = openpyxl.load_workbook(p, data_only=True)
             mine = compiled.evaluate(case)["values"]
             diffs = []
-            for k in model.results:
+            for k in eligible:
                 c = model.cells[k]
-                if c.frozen or c.volatile or k in frozen_up:
-                    continue
-                ref = _plain(wb[k[0]].cell(k[1], k[2]).value)
+                ref = _plain(wb[k[0]].cell(k[1], k[2]).value, model.date_system)
                 got = mine.get(k)
                 totals["compared"] += 1
                 if _close(got, ref):
@@ -200,5 +208,6 @@ def verify(model: Model, source: Path, *, cases: list[dict] | None = None, n: in
     note = "Resultados congelados, volátiles o que dependen de celdas congeladas no se comparan."
     if engine == "libreoffice":
         note += " LibreOffice no es Excel: trata VERDADERO/FALSO como números y algunos códigos de error difieren."
-    return {"status": "agree" if not bad else "differences", "engine": engine, **totals,
+    status = "inconclusive" if not totals["compared"] else "differences" if bad else "agree"
+    return {"status": status, "engine": engine, **totals,
             "cases_with_differences": len(bad), "report": report, "note": note}

@@ -11,6 +11,9 @@ Nightingale compila un libro `.xlsx`/`.xlsm` en un cálculo ejecutable: lee las 
 - **Comprobar** (`check`): recalcula el libro tal como está y compara cada fórmula con el valor que guardó Excel.
 - **Verificar** (`verify`): genera casos nuevos con semilla (opciones de validación, booleanos, fechas ±60 días, números ×0,3–2,5), los recalcula con **Excel** (COM, si está instalado) o **LibreOffice**, y compara cada resultado. LibreOffice no es Excel: trata VERDADERO/FALSO como números y algunos códigos de error difieren.
 - **Exportar** (`export`): un módulo Python autónomo (solo biblioteca estándar) con `compute({celda o etiqueta: valor})`, ejecutable también desde consola.
+- **Fechas**: conserva el sistema1900/1904 del libro en el resumen y lo usa al cargar fechas, calcular fórmulas, mostrar resultados, preparar casos de referencia y exportarPython. Cada cálculo tiene su propio contexto de fechas, también en concurrencia.
+- **Texto literal**: un texto que empieza por `=` conserva su tipo; solo el tipo de celda fórmula se compila. Al escribir los casos de referencia se distinguen textos literales y valores de error.
+- **Verificación vacía**: cero casos o cero resultados comparables producen `inconclusive` y cero comparaciones. No se arranca el motor de referencia ni se declara acuerdo.
 
 ## Lo que no se ejecuta
 
@@ -23,6 +26,7 @@ Funciones soportadas: aritmética y comparación con las reglas de tipos de Exce
 - Fuzz con fórmulas aleatorias anidadas (blancos, textos, booleanos, errores, búsquedas aproximadas sobre datos desordenados) recalculadas por **Excel**: 3.073 de 3.093 fórmulas iguales (99,35 %). Lo que difiere son combinaciones raras de códigos de error y booleanos en funciones de redondeo. `tests/sheets_fuzz.py`, `tests/run_fuzz_excel.py`.
 - Búsqueda aproximada: algoritmo ajustado con 400 observaciones de Excel sobre datos desordenados y mixtos (`tests/match_probe.py`): descendente 200/200, ascendente 198/200.
 - `tests/test_sheets.py`: semántica, modelo, congelación, ciclos, exportación ejecutada en un proceso aparte, verificación contra el motor instalado, API y herramienta.
+- Correcciones2006:37pruebas positivas, con recálculo independiente porExcel instalado de ambos sistemas de fechas y cambios de fechas/texto literal; cálculo concurrente y exportación autónoma. MCPstdio y navegador comprobados con un libro inventado. Candidato pendiente de revisión e integración.
 
 ## Límites
 

@@ -25,13 +25,14 @@ def _close(a, b, rel=1e-9, abs_=1e-9) -> bool:
     return a == b
 
 
-def literal_value(ast):
+def literal_value(ast, *, date_system="1900"):
     """Value of a reference-free formula, or None when it raises or yields an area."""
     from .compiler import _Gen
     ns: dict[str, Any] = {}
     exec("from nightingale.sheets.runtime import *", ns)
     try:
-        v = eval(_Gen().expr(ast), ns)
+        with rt.date_context(date_system):
+            v = eval(_Gen().expr(ast), ns)
     except Exception:
         return None
     v = rt.normalise(v)
@@ -83,7 +84,7 @@ class Compiled:
             c = self.model.cells.get(k)
             v = out.get(k)
             if c is not None and isinstance(v, float) and is_date_format(c.number_format):
-                fmt[k] = rt.from_serial(v).date().isoformat()
+                fmt[k] = rt.from_serial(v, self.model.date_system).date().isoformat()
         return {
             "inputs": applied,
             "results": [
