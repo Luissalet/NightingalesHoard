@@ -305,7 +305,7 @@ In Charts, **Use as a starting point** loads a saved chart's dataset, kind, axes
 
 ## Excel workbooks as calculations
 
-Compile an `.xlsx` into an executable calculation (parameters, lookup tables, results), run it with new values, trace a result to its inputs, check it against Excel's saved values, recalculate seeded new cases in Excel or LibreOffice and export a standalone Python module. Unsupported formulas are frozen with Excel's value and listed. Page **Workbooks**, API `/api/sheets/*`, agent tool `data_workbook`. Details: `docs/WORKBOOK-COMPILER.md`.
+Compile an `.xlsx` into an executable calculation (parameters, lookup tables, results), run it with new values, trace a result to its inputs, check it against Excel's saved values, recalculate seeded new cases in Excel or LibreOffice and export a standalone Python module. Unsupported formulas are frozen with Excel's value and listed. Page **Workbooks**, API `/api/sheets/*`, agent tool `data_workbook`. It also explains the calculation: a sensitivity ranking (tornado) of the numeric parameters for any output, named scenarios saved with the workbook and compared against the base, and unit checking (declared units plus currency and percent number formats, propagated through the formulas with Pint, reporting unit errors such as metres plus euros). These are extra actions of `data_workbook`, are logged, and the tool count is unchanged. Details: `docs/WORKBOOK-COMPILER.md`.
 
 ## Reconciling two datasets
 

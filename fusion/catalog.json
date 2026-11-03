@@ -1763,7 +1763,7 @@
       "properties": {
         "action": {
           "default": "list",
-          "description": "compile a .xlsx/.xlsm (path); list/get compiled workbooks; evaluate with new parameter values (inputs); check = recompute and compare every formula with the value Excel saved; verify = new seeded cases recalculated by Excel (COM) or LibreOffice and compared result by result; trace a result back to its parameters (cell); export a standalone Python module; delete.",
+          "description": "compile a .xlsx/.xlsm (path); list/get compiled workbooks; evaluate with new parameter values (inputs); check = recompute and compare every formula with the value Excel saved; verify = new seeded cases recalculated by Excel (COM) or LibreOffice and compared result by result; trace a result back to its parameters (cell); export a standalone Python module; delete; sensitivity = rank the numeric parameters by how much they move an output (tornado); scenarios = named sets of parameter values saved with the workbook (op); units = declare units of input cells and get the inferred unit of every formula plus unit errors.",
           "enum": [
             "compile",
             "list",
@@ -1773,7 +1773,10 @@
             "verify",
             "trace",
             "export",
-            "delete"
+            "delete",
+            "sensitivity",
+            "scenarios",
+            "units"
           ],
           "title": "Action",
           "type": "string"
@@ -1904,6 +1907,119 @@
           "description": "verify: seed of the generated cases",
           "title": "Seed",
           "type": "integer"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sensitivity: result cell address or label (default: every labelled result)",
+          "title": "Output"
+        },
+        "delta": {
+          "default": 0.1,
+          "description": "sensitivity: relative change applied to each parameter, 0.1 = ±10%",
+          "exclusiveMinimum": 0,
+          "title": "Delta",
+          "type": "number"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sensitivity: absolute step per parameter {cell or label: step}; overrides delta for that parameter",
+          "title": "Steps"
+        },
+        "op": {
+          "default": "list",
+          "description": "scenarios: list, save (scenario + inputs), delete (scenario), compare (scenario_names, default all)",
+          "enum": [
+            "list",
+            "save",
+            "delete",
+            "compare"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "scenario": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scenarios save/delete: scenario name (inputs = its parameter values)",
+          "title": "Scenario"
+        },
+        "scenario_names": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scenarios compare: which scenarios (default all)",
+          "title": "Scenario Names"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scenarios save: free text",
+          "title": "Note"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "units: {input cell or label: unit, e.g. 'EUR/h', 'h', 'm', '%'}; null removes. Omit to only report. Currency symbols €/$ are read from number formats.",
+          "title": "Units"
         }
       },
       "title": "WorkbookArgs",

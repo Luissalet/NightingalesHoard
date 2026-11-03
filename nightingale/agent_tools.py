@@ -601,11 +601,14 @@ def _run_ask(s: Services, a: AskArgs):
 
 
 class WorkbookArgs(BaseModel):
-    action: Literal["compile", "list", "get", "evaluate", "check", "verify", "trace", "export", "delete"] = Field(
+    action: Literal["compile", "list", "get", "evaluate", "check", "verify", "trace", "export", "delete",
+                    "sensitivity", "scenarios", "units"] = Field(
         "list", description="compile a .xlsx/.xlsm (path); list/get compiled workbooks; evaluate with new parameter "
         "values (inputs); check = recompute and compare every formula with the value Excel saved; verify = new seeded "
         "cases recalculated by Excel (COM) or LibreOffice and compared result by result; trace a result back to its "
-        "parameters (cell); export a standalone Python module; delete.")
+        "parameters (cell); export a standalone Python module; delete; sensitivity = rank the numeric parameters by how much "
+        "they move an output (tornado); scenarios = named sets of parameter values saved with the workbook (op); "
+        "units = declare units of input cells and get the inferred unit of every formula plus unit errors.")
     path: Optional[str] = Field(None, description="compile: workbook path (absolute, or relative to the data folder)")
     name: Optional[str] = Field(None, description="compile: display name")
     workbook_id: Optional[str] = Field(None, description="id returned by compile/list")
@@ -617,6 +620,17 @@ class WorkbookArgs(BaseModel):
     cases: Optional[list[dict[str, Any]]] = Field(None, description="verify: explicit cases ({address: value}); default seeded random cases")
     n: int = Field(12, ge=1, le=200, description="verify: number of generated cases")
     seed: int = Field(7, description="verify: seed of the generated cases")
+    output: Optional[str] = Field(None, description="sensitivity: result cell address or label (default: every labelled result)")
+    delta: float = Field(0.1, gt=0, description="sensitivity: relative change applied to each parameter, 0.1 = ±10%")
+    steps: Optional[dict[str, float]] = Field(None, description="sensitivity: absolute step per parameter {cell or label: step}; "
+                                              "overrides delta for that parameter")
+    op: Literal["list", "save", "delete", "compare"] = Field("list", description="scenarios: list, save (scenario + inputs), "
+                                                             "delete (scenario), compare (scenario_names, default all)")
+    scenario: Optional[str] = Field(None, description="scenarios save/delete: scenario name (inputs = its parameter values)")
+    scenario_names: Optional[list[str]] = Field(None, description="scenarios compare: which scenarios (default all)")
+    note: Optional[str] = Field(None, description="scenarios save: free text")
+    units: Optional[dict[str, Optional[str]]] = Field(None, description="units: {input cell or label: unit, e.g. 'EUR/h', 'h', 'm', '%'}; "
+                                                      "null removes. Omit to only report. Currency symbols €/$ are read from number formats.")
 
 
 def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
@@ -652,6 +666,9 @@ def _run_workbook(s: Services, a: WorkbookArgs) -> dict:
         return st.trace(need(), a.cell)
     if a.action == "export":
         return st.export(need())
+    if a.action in ("sensitivity", "scenarios", "units"):
+        from .sheets import explain_ops
+        return explain_ops.run(s, st, need(), a, source="agent")
     return st.delete(need())
 
 

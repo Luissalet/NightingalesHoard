@@ -65,6 +65,12 @@ class Compiled:
         default = next(iter(m.sheets)) if len(m.sheets) == 1 else None
         return parse_addr(ref, default)
 
+    def raw(self, overrides: dict | None = None, as_of=None) -> dict:
+        """Evaluate with {cell key: runtime value} overrides; returns {cell key: value} for every cell (errors included)."""
+        values = dict(self.base)
+        values.update(overrides or {})
+        return self._evaluate(values, as_of)
+
     def evaluate(self, overrides: dict[str, Any] | None = None, *, as_of=None, include: str = "results") -> dict:
         values = dict(self.base)
         applied = {}

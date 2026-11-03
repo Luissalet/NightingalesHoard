@@ -188,3 +188,78 @@ class WorkbookStore:
                 params.add(k)
         return {"workbook": wid, "cell": addr(key), "label": m.labels.get(key), "formulas": chain,
                 "parameters": [m.describe(k) for k in sorted(params)]}
+
+    # -- explain: sensitivity, scenarios, units ------------------------------------
+    def sensitivity(self, wid: str, output: str | None = None, delta: float = 0.1,
+                    steps: dict[str, float] | None = None) -> dict:
+        from . import explain
+        return {"workbook": wid, **explain.sensitivity(self.compiled(wid), output, delta, steps)}
+
+    def scenarios(self, wid: str) -> dict:
+        return dict(self._meta(wid).get("scenarios") or {})
+
+    def scenario_list(self, wid: str) -> dict:
+        sc = self.scenarios(wid)
+        return {"workbook": wid, "scenarios": [{"name": n, **v} for n, v in sc.items()]}
+
+    def scenario_save(self, wid: str, name: str, inputs: dict[str, Any], note: str | None = None) -> dict:
+        name = (name or "").strip()
+        if not name or name.lower() == "base":
+            raise ValueError("give the scenario a name other than 'Base'")
+        if not inputs:
+            raise ValueError("inputs are required: {cell address or label: value}")
+        applied = self.compiled(wid).evaluate(inputs)["inputs"]  # validates every reference and value
+        meta = self._meta(wid)
+        meta.setdefault("scenarios", {})[name] = {"inputs": applied, **({"note": note} if note else {})}
+        self._save_meta(wid, meta)
+        return {"workbook": wid, "saved": name, "inputs": applied}
+
+    def scenario_delete(self, wid: str, name: str) -> dict:
+        meta = self._meta(wid)
+        if name not in (meta.get("scenarios") or {}):
+            raise LookupError(f"no scenario {name!r}")
+        del meta["scenarios"][name]
+        self._save_meta(wid, meta)
+        return {"workbook": wid, "deleted": name}
+
+    def scenario_compare(self, wid: str, names: list[str] | None = None) -> dict:
+        from . import explain
+        sc = self.scenarios(wid)
+        if names:
+            missing = [n for n in names if n not in sc]
+            if missing:
+                raise LookupError(f"no scenario {missing[0]!r}")
+            sc = {n: sc[n] for n in names}
+        if not sc:
+            raise ValueError("no scenarios saved yet; save one first")
+        return {"workbook": wid, **explain.compare_scenarios(self.compiled(wid), {n: v["inputs"] for n, v in sc.items()})}
+
+    def units_declared(self, wid: str) -> dict:
+        return dict(self._meta(wid).get("units") or {})
+
+    def units_set(self, wid: str, units: dict[str, str | None]) -> dict:
+        """Merge declared units into the workbook ({cell: unit}); None or '' removes one."""
+        from . import explain
+        c = self.compiled(wid)
+        meta = self._meta(wid)
+        cur = dict(meta.get("units") or {})
+        for ref, text in units.items():
+            key = c.resolve(ref)
+            cell = c.model.cells.get(key)
+            if cell is None:
+                raise LookupError(f"{ref} is empty")
+            if cell.formula and not cell.frozen:
+                raise ValueError(f"{addr(key)} is a formula: its unit is inferred, declare the units of the inputs")
+            if text in (None, ""):
+                cur.pop(addr(key), None)
+            else:
+                explain.parse_unit(text)
+                cur[addr(key)] = text
+        meta["units"] = cur
+        self._save_meta(wid, meta)
+        return self.units_report(wid)
+
+    def units_report(self, wid: str) -> dict:
+        from . import explain
+        return {"workbook": wid, "declared": self.units_declared(wid),
+                **explain.check_units(self.compiled(wid), self.units_declared(wid))}

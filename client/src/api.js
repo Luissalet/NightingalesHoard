@@ -22,6 +22,7 @@ async function request(method, path, { params, body } = {}) {
 
 const get = (path, params) => request("GET", path, { params });
 const post = (path, body) => request("POST", path, { body: body ?? {} });
+const put = (path, body) => request("PUT", path, { body: body ?? {} });
 const del = (path, params) => request("DELETE", path, { params });
 async function download(path, body) {
   const url = new URL(import.meta.env.BASE_URL + path, window.location.origin);
@@ -74,6 +75,13 @@ export const api = {
   workbookVerify: (id, body) => post(`/api/sheets/${id}/verify`, body),
   workbookTrace: (id, cell) => get(`/api/sheets/${id}/trace`, { cell }),
   workbookDelete: (id) => del(`/api/sheets/${id}`),
+  workbookSensitivity: (id, body) => post(`/api/sheets/${id}/sensitivity`, body),
+  workbookScenarios: (id) => get(`/api/sheets/${id}/scenarios`),
+  workbookScenarioSave: (id, name, inputs, note) => put(`/api/sheets/${id}/scenarios/${encodeURIComponent(name)}`, { inputs, note }),
+  workbookScenarioDelete: (id, name) => del(`/api/sheets/${id}/scenarios/${encodeURIComponent(name)}`),
+  workbookScenarioCompare: (id, scenarios) => post(`/api/sheets/${id}/scenarios/compare`, { scenarios }),
+  workbookUnits: (id) => get(`/api/sheets/${id}/units`),
+  workbookUnitsSave: (id, units) => put(`/api/sheets/${id}/units`, { units }),
 
   reconcileSuggest: (left, right) => post("/api/reconcile/suggest", { left, right }),
   reconcileRun: (body) => post("/api/reconcile/run", body),
