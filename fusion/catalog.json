@@ -1751,6 +1751,167 @@
     "module": "data"
   },
   {
+    "name": "data_workbook",
+    "description": "Compile an Excel workbook into an executable calculation; run it with new values, verify it and export it.\nReads formulas and cached values (.xlsx/.xlsm; macros are never run), separates parameters, lookup tables and results with their labels, and executes the supported formula subset with Excel's semantics. Anything outside it is frozen with Excel's saved value and listed with the reason; results that depend on it are flagged uses_frozen. check compares every formula with Excel's saved value; verify recalculates new seeded cases in Excel (or LibreOffice) and compares each result; export writes a standalone Python module (standard library only).\nSinónimos: compilar excel, convertir hoja de cálculo en aplicación, hoja de cotización, ejecutar fórmulas, recalcular excel, motor de cálculo del excel, comparar con excel, exportar cálculo a python, trazar fórmula.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "default": "list",
+          "description": "compile a .xlsx/.xlsm (path); list/get compiled workbooks; evaluate with new parameter values (inputs); check = recompute and compare every formula with the value Excel saved; verify = new seeded cases recalculated by Excel (COM) or LibreOffice and compared result by result; trace a result back to its parameters (cell); export a standalone Python module; delete.",
+          "enum": [
+            "compile",
+            "list",
+            "get",
+            "evaluate",
+            "check",
+            "verify",
+            "trace",
+            "export",
+            "delete"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "compile: workbook path (absolute, or relative to the data folder)",
+          "title": "Path"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "compile: display name",
+          "title": "Name"
+        },
+        "workbook_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "id returned by compile/list",
+          "title": "Workbook Id"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "evaluate: {cell address like 'Hoja!B3', label or defined name: value}. Errors as {\"error\": \"#N/A\"}; dates as Excel serial numbers.",
+          "title": "Inputs"
+        },
+        "as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "evaluate: ISO date-time used by TODAY()/NOW()",
+          "title": "As Of"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "trace: cell address or label",
+          "title": "Cell"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "enum": [
+                "excel",
+                "libreoffice"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "verify: reference engine (default: Excel if installed)",
+          "title": "Engine"
+        },
+        "cases": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "verify: explicit cases ({address: value}); default seeded random cases",
+          "title": "Cases"
+        },
+        "n": {
+          "default": 12,
+          "description": "verify: number of generated cases",
+          "maximum": 200,
+          "minimum": 1,
+          "title": "N",
+          "type": "integer"
+        },
+        "seed": {
+          "default": 7,
+          "description": "verify: seed of the generated cases",
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "title": "WorkbookArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_log",
     "description": "Search the analysis log (every operation, with its N-000123 id, input and result).\nSinónimos: historial, registro de análisis, qué se ha hecho.",
     "annotations": {

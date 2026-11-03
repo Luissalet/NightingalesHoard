@@ -274,3 +274,7 @@ Las instrucciones anteriores de adopción in-place describen una importación op
 ## Reutilizar la configuración de un gráfico
 
 En Gráficos, **Usar como base** carga en el constructor editable el conjunto de datos, tipo, ejes, agregación, color, filtro de filas y título de un gráfico guardado. Identifica el origen y enfoca el título. Cargar los campos no guarda nada; **Guardar gráfico** crea otro ID y conserva el original. Los campos permanecen tras guardar o un error, incluidas las ediciones posteriores al envío. Refrescar la lista no vuelve a aplicar la configuración de origen. Reutiliza las API de lectura/creación y las acciones de `data_chart` en MCP; las43 herramientas siguen intactas. Consulta las filas actuales del conjunto, sin duplicar datos, imágenes históricas, dashboards o historial de análisis.
+
+## Libros de Excel como cálculo
+
+Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. Detalle: `docs/WORKBOOK-COMPILER.es.md`.

@@ -58,6 +58,23 @@ export const api = {
   datasetDependents: (name) => get(`/api/datasets/${encodeURIComponent(name)}/dependents`),
   datasetDelete: (name, force) => del(`/api/datasets/${encodeURIComponent(name)}`, force ? { force: "true" } : undefined),
 
+  workbooks: () => get("/api/sheets"),
+  workbook: (id) => get(`/api/sheets/${id}`),
+  workbookCompile: (body) => post("/api/sheets/compile", body),
+  workbookUpload: async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const r = await fetch(new URL(import.meta.env.BASE_URL + "api/sheets/upload", window.location.origin), { method: "POST", body: form });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+    return data;
+  },
+  workbookEvaluate: (id, inputs, as_of) => post(`/api/sheets/${id}/evaluate`, { inputs, as_of }),
+  workbookCheck: (id) => post(`/api/sheets/${id}/check`),
+  workbookVerify: (id, body) => post(`/api/sheets/${id}/verify`, body),
+  workbookTrace: (id, cell) => get(`/api/sheets/${id}/trace`, { cell }),
+  workbookDelete: (id) => del(`/api/sheets/${id}`),
+
   query: (sql, limit) => post("/api/query", { sql, limit }),
 
   qualityDefine: (name, body) => post(`/api/datasets/${encodeURIComponent(name)}/quality`, body),
