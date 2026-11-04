@@ -485,3 +485,33 @@ def test_initial_state_flat_names_apply_and_unknown_names_fail():
         tw.predict(twin, {"u": 0.0}, steps=3, initial={"zz": 1})
     with pytest.raises(tw.TwinError, match="unknown name"):
         tw.predict(twin, {"u": 0.0}, steps=3, initial={"y": "high"})
+
+
+def _coverage_of_whatif(seed, level=0.9, n=500, sd=0.4, horizon=20, futures=1000, calibrated=True):
+    rng = np.random.default_rng(seed)
+    u = np.zeros(n)
+    for t in range(n):
+        u[t] = 5.0 if t >= n - 60 else (rng.uniform(1, 9) if t % 25 == 0 else u[t - 1])
+    y = np.zeros(n)
+    for t in range(1, n):
+        y[t] = 0.8 * y[t - 1] + 0.6 * u[t - 1] + rng.normal() * sd
+    twin = tw.fit_series(np.arange(n, dtype=float), y, u, ["y"], ["u"], "arx", n_boot=100, seed=seed)["twin"]
+    if not calibrated:
+        twin.pop("calibration", None)
+    out = tw.predict(twin, {"u": 5.0}, steps=horizon, level=level, n_paths=600, seed=seed, baseline=False)
+    lo, hi = np.array(out["outputs"]["y"]["lo"]), np.array(out["outputs"]["y"]["hi"])
+    x = np.full(futures, y[-1])
+    cov = []
+    for k in range(horizon):
+        x = 0.8 * x + 3.0 + rng.normal(size=futures) * sd
+        cov.append(np.mean((x >= lo[k]) & (x <= hi[k])))
+    return float(np.mean(cov)), "calibration" in twin
+
+
+def test_twin_interval_is_calibrated_to_the_nominal_level():
+    runs = [_coverage_of_whatif(s) for s in range(30)]
+    assert all(c for _, c in runs)
+    mean = float(np.mean([v for v, _ in runs]))
+    assert abs(mean - 0.90) <= 0.02, mean                       # a single fit varies with its held-out block; the average holds
+    plain = float(np.mean([_coverage_of_whatif(s, calibrated=False)[0] for s in range(30)]))
+    assert abs(mean - 0.90) <= abs(plain - 0.90) + 0.005         # calibration does not make it worse than the raw bootstrap band
