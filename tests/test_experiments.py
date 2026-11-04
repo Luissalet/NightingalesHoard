@@ -472,3 +472,16 @@ def test_effect_service_api_and_tool(client):
         return await call_tool(client.services, "data_effect", {"method": "adjust", "dataset": "panel", "outcome": "sales", "treatment": "grp",
                                                                  "treated_value": "treated", "confounders": ["period"]})
     assert asyncio.run(go())["method"] == "adjust"
+
+
+def test_initial_state_flat_names_apply_and_unknown_names_fail():
+    twin = fit_arx()["twin"]
+    nested = tw.predict(twin, {"u": 0.0}, steps=3, initial={"outputs": {"y": 0.9}}, baseline=False)
+    flat = tw.predict(twin, {"u": 0.0}, steps=3, initial={"y": 0.9}, baseline=False)
+    assert flat["outputs"]["y"]["nominal"] == nested["outputs"]["y"]["nominal"]
+    default = tw.predict(twin, {"u": 0.0}, steps=3, baseline=False)
+    assert flat["outputs"]["y"]["nominal"][0] != default["outputs"]["y"]["nominal"][0]       # the initial state is really used
+    with pytest.raises(tw.TwinError, match="unknown name"):
+        tw.predict(twin, {"u": 0.0}, steps=3, initial={"zz": 1})
+    with pytest.raises(tw.TwinError, match="unknown name"):
+        tw.predict(twin, {"u": 0.0}, steps=3, initial={"y": "high"})

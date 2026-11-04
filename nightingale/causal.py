@@ -74,6 +74,14 @@ register({
                       "es": "estimaciones de {lo:.4g} a {hi:.4g}; el {share:.0%} del mismo signo"},
     "cg.warn_not_identified": {"en": "The effect is not identified under the stated graph: the number shown is still confounded. See what is missing.",
                                "es": "El efecto no está identificado con el grafo indicado: la cifra mostrada sigue confundida. Mira qué falta."},
+    "cg.same": {"en": "the treatment and the outcome are the same variable ({node}); choose a cause and a different outcome",
+                "es": "el tratamiento y el resultado son la misma variable ({node}); elige una causa y un resultado distinto"},
+    "cg.no_path": {"en": "The graph has no directed path from {t} to {y}: under it the treatment does not affect the outcome, so any non-zero estimate is confounding or noise.",
+                   "es": "El grafo no tiene ningún camino dirigido de {t} a {y}: según él, el tratamiento no afecta al resultado, así que cualquier estimación distinta de cero es confusión o ruido."},
+    "cg.name_hint": {"en": "{node} is not a column and is treated as unobserved; did you mean the column {col}? Names are case-sensitive.",
+                     "es": "{node} no es una columna y se trata como no observada; ¿querías decir la columna {col}? Los nombres distinguen mayúsculas."},
+    "cg.r_null": {"en": "no effect distinguishable from zero (the test is not informative)",
+                  "es": "no hay un efecto distinguible de cero (la prueba no es informativa)"},
     "cg.warn_refuted": {"en": "A refutation test failed: {names}.", "es": "Falló una prueba de refutación: {names}."},
 })
 
@@ -185,6 +193,8 @@ def _backdoor_ok(g: Graph, t: str, y: str, z: set[str]) -> bool:
 
 def identify(edges, treatment: str, outcome: str, observed: Iterable[str], listed: Optional[list[str]] = None) -> dict:
     observed = set(observed)
+    if treatment == outcome:
+        raise GraphError(tx("cg.same", node=treatment))
     g = Graph(edges, [treatment, outcome])
     desc = g.descendants(treatment)
     mediators = {n for n in desc if outcome in g.descendants(n)} - {outcome}
@@ -194,7 +204,14 @@ def identify(edges, treatment: str, outcome: str, observed: Iterable[str], liste
     unobserved = sorted(n for n in g.nodes if n not in observed)
     candidates = (g.ancestors({treatment, outcome}) & observed) - desc - {treatment, outcome}
     out: dict = {"treatment": treatment, "outcome": outcome, "edges": [list(e) for e in g.edges], "unobserved": unobserved,
-                 "forbidden": forbidden, "missing": [], "instruments": []}
+                 "forbidden": forbidden, "missing": [], "instruments": [], "notes": []}
+    if outcome not in desc:
+        out["no_path"] = True
+        out["notes"].append(tx("cg.no_path", t=treatment, y=outcome))
+    lower = {c.lower(): c for c in observed}
+    for n in unobserved:
+        if n.lower() in lower and lower[n.lower()] != n:
+            out["notes"].append(tx("cg.name_hint", node=n, col=lower[n.lower()]))
     if _backdoor_ok(g, treatment, outcome, candidates):
         z = set(candidates)
         for n in sorted(candidates, key=lambda n: (-len(g.descendants(n)), n)):
@@ -236,7 +253,7 @@ def _treat_coef(y, treat, X) -> float:
     return float(coef_table(f, ["i", "t"] + [f"x{j}" for j in range(XA.shape[1] - 2)], 0.95)[1]["estimate"])
 
 
-def refute(y, treat, X, estimate: float, seed: int = 7, k: int = 50) -> dict:
+def refute(y, treat, X, estimate: float, seed: int = 7, k: int = 50, se: Optional[float] = None) -> dict:
     """Placebo treatment, random common cause and random-subset checks on a regression-adjusted estimate."""
     y = np.asarray(y, float); treat = np.asarray(treat, float)
     X = X if X.size else np.empty((len(y), 0))
@@ -244,14 +261,20 @@ def refute(y, treat, X, estimate: float, seed: int = 7, k: int = 50) -> dict:
     y, treat, X = y[keep], treat[keep], X[keep]
     rng = np.random.default_rng(seed)
     n = len(y)
+    # an estimate that is indistinguishable from zero cannot be told apart from a placebo or flip sign across subsets
+    null = bool(se and se > 0 and abs(estimate) < 1.96 * se)
     plac = np.array([_treat_coef(y, rng.permutation(treat), X) for _ in range(k)])
     share = float(np.mean(np.abs(plac) >= abs(estimate))) if estimate else 1.0
     placebo = {"name": tx("cg.r_placebo", k=k), "mean": float(plac.mean()), "share_as_large": share,
-               "passed": bool(share < 0.05), "detail": tx("cg.r_placebo_d", mean=float(plac.mean()), share=share)}
+               "passed": bool(share < 0.05 or null), "detail": tx("cg.r_placebo_d", mean=float(plac.mean()), share=share)}
+    if null:
+        placebo["not_informative"] = True
+        placebo["detail"] += "; " + tx("cg.r_null")
     Xr = np.column_stack([X, rng.normal(size=n)]) if X.shape[1] else rng.normal(size=(n, 1))
     new = _treat_coef(y, treat, Xr)
     rel = (new - estimate) / abs(estimate) if estimate else 0.0
-    random_cc = {"name": tx("cg.r_random"), "estimate": new, "relative_change": rel, "passed": bool(abs(rel) < 0.1),
+    random_cc = {"name": tx("cg.r_random"), "estimate": new, "relative_change": rel,
+                 "passed": bool(abs(rel) < 0.1 or (null and abs(new - estimate) < 0.25 * se)),
                  "detail": tx("cg.r_random_d", new=new, old=estimate, rel=rel)}
     sub = []
     for _ in range(20):
@@ -263,6 +286,9 @@ def refute(y, treat, X, estimate: float, seed: int = 7, k: int = 50) -> dict:
     sub = np.array(sub) if sub else np.array([estimate])
     same = float(np.mean(np.sign(sub) == np.sign(estimate))) if estimate else 1.0
     subset = {"name": tx("cg.r_subset", k=len(sub)), "low": float(sub.min()), "high": float(sub.max()), "same_sign": same,
-              "passed": bool(same >= 0.9), "detail": tx("cg.r_subset_d", lo=float(sub.min()), hi=float(sub.max()), share=same)}
+              "passed": bool(same >= 0.9 or null), "detail": tx("cg.r_subset_d", lo=float(sub.min()), hi=float(sub.max()), share=same)}
+    if null:
+        subset["not_informative"] = True
+        subset["detail"] += "; " + tx("cg.r_null")
     tests = [placebo, random_cc, subset]
     return {"tests": tests, "passed": all(t_["passed"] for t_ in tests), "failed": [t_["name"] for t_ in tests if not t_["passed"]]}

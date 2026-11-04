@@ -85,3 +85,29 @@ def test_refutation_flags_a_spurious_effect():
     y = rng.normal(0, 1, n)
     r = causal.refute(y, t, np.empty((n, 0)), 0.01)
     assert r["tests"][0]["share_as_large"] > 0.3 and r["tests"][0]["passed"] is False
+
+
+def test_same_variable_as_treatment_and_outcome_is_refused():
+    with pytest.raises(causal.GraphError):
+        causal.identify(causal.parse_graph("a -> y"), "y", "y", {"a", "y"})
+
+
+def test_notes_for_missing_path_and_case_mismatch():
+    r = causal.identify(causal.parse_graph("y -> t"), "t", "y", {"t", "y"})
+    assert r["no_path"] is True and r["notes"]
+    r = causal.identify(causal.parse_graph("A -> t, A -> y, t -> y"), "t", "y", {"a", "t", "y"})
+    assert r["identified"] is False and any("a" in n and "case" in n for n in r["notes"])
+
+
+def test_refutation_does_not_fail_a_true_null_effect():
+    rng = np.random.default_rng(9)
+    n = 1500
+    z = rng.normal(size=n)
+    t = (z + rng.normal(size=n) > 0).astype(float)
+    y = 2 * z + rng.normal(size=n)                        # the true effect of t is zero
+    X = z[:, None]
+    est = float(np.linalg.lstsq(np.column_stack([np.ones(n), t, z]), y, rcond=None)[0][1])
+    r = causal.refute(y, t, X, est, se=0.06)  # roughly the standard error with n=1500
+    assert r["passed"] is True and r["tests"][0].get("not_informative")
+    assert causal.refute(y, t, X, est)["tests"][0]["passed"] in (True, False)        # without a se the old rule applies
+

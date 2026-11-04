@@ -579,8 +579,10 @@ def estimate(services, method: str, dataset: str, outcome: str, time: Optional[s
                 res["assumptions"].insert(1, _assume("graph", "not_testable", tx("ef.d_graph")))
                 if not ident["identified"]:
                     res["warnings"].insert(0, tx("cg.warn_not_identified"))
+                for note in reversed(ident.get("notes") or []):
+                    res["warnings"].insert(0, note)
             if refute:
-                rf = causal.refute(to_float(cols[outcome]), tvec, Xc, res["effect"]["estimate"])
+                rf = causal.refute(to_float(cols[outcome]), tvec, Xc, res["effect"]["estimate"], se=res["effect"].get("se"))
                 res["refutation"] = rf
                 res["assumptions"].append(_assume("refutation", "passed" if rf["passed"] else "failed",
                                                   "; ".join(f"{x['name']}: {x['detail']}" for x in rf["tests"])))
