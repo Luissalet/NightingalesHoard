@@ -628,8 +628,23 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
     histY = np.array(hist["Y"], float)
     last_in = {nm: float(histU[-1, j]) for j, nm in enumerate(inputs)}
     if initial:
-        io = initial.get("inputs", {}) or {}
-        oo = initial.get("outputs", {}) or {}
+        # {"inputs": {...}, "outputs": {...}} or flat {"T": 15, "u": 3}; anything else is an error, never silently dropped
+        io = dict(initial.get("inputs", {}) or {})
+        oo = dict(initial.get("outputs", {}) or {})
+        for nm, v in initial.items():
+            if nm in ("inputs", "outputs"):
+                continue
+            if nm in outputs:
+                oo[nm] = v
+            elif nm in inputs:
+                io[nm] = v
+            else:
+                raise TwinError(tx("tw.initial_unknown", name=nm))
+        for nm, v in list(io.items()) + list(oo.items()):
+            try:
+                float(v)
+            except (TypeError, ValueError):
+                raise TwinError(tx("tw.initial_unknown", name=f"{nm} = {v!r}"))
         for nm in list(io) + list(oo):
             if nm not in inputs + outputs:
                 raise TwinError(tx("tw.initial_unknown", name=nm))
