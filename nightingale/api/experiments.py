@@ -151,10 +151,13 @@ class EffectBody(BaseModel):
     placebo_outcome: Optional[str] = None
     season_period: Optional[int] = Field(None, ge=2, le=366)
     level: float = Field(0.95, gt=0.5, lt=1)
+    graph: Optional[Any] = None
+    refute: bool = False
 
 
 @router.post("/effect/estimate")
 @api_errors
 def effect_estimate(request: Request, b: EffectBody):
     return ef.estimate(services(request), b.method, b.dataset, b.outcome, b.time, b.intervention, b.group, b.treated_value, b.unit,
-                       b.confounders, b.treatment, b.placebo_time, b.placebo_outcome, b.season_period, b.level)
+                       b.confounders, b.treatment, b.placebo_time, b.placebo_outcome, b.season_period, b.level,
+                       graph=b.graph, refute=b.refute)

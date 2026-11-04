@@ -8,7 +8,9 @@ Three designs, each with the assumptions it needs and the checks that can be run
                AR(1) errors when the residuals are autocorrelated, a linearity check on the pre-period and placebo dates.
 * ``adjust`` - regression adjustment for listed confounders, with balance, overlap, stability of the estimate as
                confounders are added, a robustness value against an unmeasured confounder and an optional placebo
-               outcome.
+               outcome. With a causal ``graph`` (``nightingale/causal.py``) the adjustment set is identified by the
+               back-door criterion (or the effect is declared not identified, with what is missing), and ``refute``
+               re-estimates with a placebo treatment, a random common cause and random subsets.
 
 An estimate is never presented as established causation: the assumptions are listed with their status, the
 untestable ones are named, and a failed testable one turns the verdict into a warning.
@@ -498,12 +500,28 @@ def adjust_effect(y, treat, X, x_names: list[str], placebo_y=None, treat_is_bina
 
 
 # ---------------------------------------------------------------- service wrappers
+def _columns(services, dataset: str) -> list[str]:
+    from .linfit import q
+    table = services._resolve_table_by_name(dataset)
+    with services.engine.lock() as conn:
+        return [r[0] for r in conn.execute(f"DESCRIBE {q(table)}").fetchall()]
+
+
 def estimate(services, method: str, dataset: str, outcome: str, time: Optional[str] = None, intervention=None, group: Optional[str] = None,
              treated_value=None, unit: Optional[str] = None, confounders: Optional[list] = None, treatment: Optional[str] = None,
              placebo_time=None, placebo_outcome: Optional[str] = None, season_period: Optional[int] = None, level: float = 0.95,
-             source: str = "ui") -> dict:
+             source: str = "ui", graph=None, refute: bool = False) -> dict:
     def do():
         conf = list(confounders or [])
+        ident = None
+        if graph and method == "adjust":
+            from . import causal
+            if not treatment:
+                raise EffectError(tx("ef.need_treatment"))
+            ident = causal.identify(causal.parse_graph(graph), treatment, outcome, _columns(services, dataset),
+                                    listed=conf if conf else None)
+            if not conf:
+                conf = list(ident["adjustment_set"])
         if method == "did":
             for need, v in (("time", time), ("intervention", intervention), ("group", group)):
                 if v is None or v == "":
@@ -550,6 +568,26 @@ def estimate(services, method: str, dataset: str, outcome: str, time: Optional[s
             Xc, cn, notes = _design_from_columns({c: cols[c] for c in conf}) if conf else (np.empty((len(tvec), 0)), [], [])
             res = adjust_effect(to_float(cols[outcome]), tvec, Xc, cn, to_float(cols[placebo_outcome]) if placebo_outcome else None, binary, level)
             res["warnings"].extend(notes)
+            if ident is not None or refute:
+                from . import causal
+            if ident is not None:
+                res["identification"] = ident
+                lc = ident.get("listed_check")
+                ok = ident["identified"] and (lc is None or lc["valid"])
+                res["assumptions"].insert(0, _assume("identification", "passed" if ok else "failed",
+                                                     ident["text"] + (" " + lc["text"] if lc else "")))
+                res["assumptions"].insert(1, _assume("graph", "not_testable", tx("ef.d_graph")))
+                if not ident["identified"]:
+                    res["warnings"].insert(0, tx("cg.warn_not_identified"))
+            if refute:
+                rf = causal.refute(to_float(cols[outcome]), tvec, Xc, res["effect"]["estimate"])
+                res["refutation"] = rf
+                res["assumptions"].append(_assume("refutation", "passed" if rf["passed"] else "failed",
+                                                  "; ".join(f"{x['name']}: {x['detail']}" for x in rf["tests"])))
+                if not rf["passed"]:
+                    res["warnings"].append(tx("cg.warn_refuted", names=", ".join(rf["failed"])))
+            if ident is not None or refute:
+                res["causal_claim"] = _verdict(res["effect"], res["assumptions"])
         else:
             raise EffectError(tx("ef.method"))
         res["dataset"] = dataset

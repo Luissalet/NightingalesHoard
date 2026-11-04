@@ -1067,12 +1067,19 @@ class EffectArgs(BaseModel):
     placebo_outcome: Optional[str] = Field(None, description="adjust: an outcome the change cannot affect, to test for hidden bias")
     season_period: Optional[int] = Field(None, ge=2, le=366, description="its: seasonal period in steps (adds seasonal dummies)")
     level: float = Field(0.95, gt=0.5, lt=1)
+    graph: Optional[Any] = Field(None, description="adjust: causal hypothesis as edges 'a -> b' (lines, commas or a list of "
+                                 "pairs); nodes that are not columns are unobserved. Finds the back-door adjustment set "
+                                 "(used when confounders is empty), names variables that must not be adjusted for, and "
+                                 "says what is missing when the effect is not identified.")
+    refute: bool = Field(False, description="adjust: re-estimate with a placebo (shuffled) treatment, a random common cause "
+                         "and random 80% subsets")
 
 
 def _run_effect(s: Services, a: EffectArgs) -> dict:
     from . import effects as ef
     return ef.estimate(s, a.method, a.dataset, a.outcome, a.time, a.intervention, a.group, a.treated_value, a.unit, a.confounders,
-                       a.treatment, a.placebo_time, a.placebo_outcome, a.season_period, a.level, source="agent")
+                       a.treatment, a.placebo_time, a.placebo_outcome, a.season_period, a.level, source="agent",
+                       graph=a.graph, refute=a.refute)
 
 
 TOOLS: list[Tool] = [
@@ -1260,9 +1267,12 @@ TOOLS: list[Tool] = [
     Tool("data_effect", "Estimate the effect of a change from data: difference-in-differences, interrupted time series, adjustment.\n"
          "Gives the effect with a confidence interval, the assumptions the design needs with their status (parallel pre-trends, "
          "placebo dates, pre-trend linearity, balance and overlap, robustness to an unmeasured confounder) and explicit warnings "
-         "when a testable assumption fails. Never claims causation: untestable assumptions are named.\n"
+         "when a testable assumption fails. Never claims causation: untestable assumptions are named. With a causal graph "
+         "(adjust): identification by the back-door criterion, variables not to adjust for, what is missing when not "
+         "identified; refute=true adds placebo-treatment, random-common-cause and subset checks.\n"
          "Sinónimos: efecto de una intervención, diferencias en diferencias, serie temporal interrumpida, antes y después, "
-         "grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its.",
+         "grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its, grafo causal, "
+         "puerta trasera, identificación, refutar, placebo.",
          EffectArgs, _ann(False, False, False), _run_effect, capped=False),
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",

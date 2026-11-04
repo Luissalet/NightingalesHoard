@@ -412,7 +412,7 @@ function DesignTab() {
 function EffectTab() {
   const { t, lang, datasets, act } = useApp();
   const names = useMemo(() => datasets.map((d) => d.name), [datasets]);
-  const [f, setF] = useState({ method: "did", dataset: "", outcome: "", time: "", intervention: "", group: "", treated: "", unit: "", confounders: "", treatment: "", placeboOutcome: "", season: "" });
+  const [f, setF] = useState({ method: "did", dataset: "", outcome: "", time: "", intervention: "", group: "", treated: "", unit: "", confounders: "", treatment: "", placeboOutcome: "", season: "", graph: "", refute: true });
   const cols = useColumns(f.dataset);
   const [res, setRes] = useState(null);
   const { busy, error, run } = useRunner();
@@ -421,7 +421,8 @@ function EffectTab() {
   const doRun = () => run("eff", async () => {
     setRes(await act(() => api.effectEstimate({ method: f.method, dataset: f.dataset, outcome: f.outcome, time: f.time || null, intervention: f.intervention === "" ? null : (Number.isNaN(Number(f.intervention)) ? f.intervention : Number(f.intervention)),
       group: f.group || null, treated_value: f.treated === "" ? null : f.treated, unit: f.unit || null, confounders: split(f.confounders), treatment: f.treatment || null,
-      placebo_outcome: f.placeboOutcome || null, season_period: f.season ? Number(f.season) : null })));
+      placebo_outcome: f.placeboOutcome || null, season_period: f.season ? Number(f.season) : null,
+      graph: f.method === "adjust" && f.graph.trim() ? f.graph : null, refute: f.method === "adjust" && f.refute })));
   });
   const inp = (key, label, id, extra = {}) => <Field label={label} id={id}><input id={id} list="ex-ef-cols" className="field" value={f[key]} onChange={(e) => set(key, e.target.value)} {...extra} /></Field>;
 
@@ -470,6 +471,13 @@ function EffectTab() {
           {f.method === "its" && <Field label={t("ex_season")} id="ex-ef-season"><input id="ex-ef-season" className="field num" style={{ width: 80 }} type="number" min="2" value={f.season} onChange={(e2) => set("season", e2.target.value)} /></Field>}
           <button className="btn btn-primary" onClick={doRun} disabled={!f.dataset || !f.outcome || !!busy}>{busy === "eff" ? t("sc_working") : t("ex_estimate_btn")}</button>
         </div>
+        {f.method === "adjust" && (
+          <div className="flex flex-col gap-2" data-testid="ex-ef-graph-box">
+            <Field label={t("ex_graph")} id="ex-ef-graph"><textarea id="ex-ef-graph" className="field" rows={3} placeholder="season -> discount, season -> sales, discount -> sales" value={f.graph} onChange={(e2) => set("graph", e2.target.value)} /></Field>
+            <p className="help">{t("ex_graph_help")}</p>
+            <label className="text-[13px] flex items-center gap-2"><input type="checkbox" id="ex-ef-refute" checked={f.refute} onChange={(e2) => set("refute", e2.target.checked)} /> {t("ex_refute")}</label>
+          </div>
+        )}
       </div>
 
       {res && (
@@ -482,6 +490,22 @@ function EffectTab() {
             <p className="text-[13px]" data-testid="ex-causal"><Chip tone={res.causal_claim.assumptions_failed.length ? "warn" : undefined}>{res.causal_claim.assumptions_failed.length ? t("ex_assump_failed") : t("ex_not_causal")}</Chip> {res.causal_claim.text}</p>
           </div>
           <Warnings items={res.warnings} />
+          {res.identification && (
+            <div className="panel flex flex-col gap-1" data-testid="ex-identification">
+              <h3 className="font-medium">{t("ex_identification")}</h3>
+              <p className="text-[13px]"><Chip tone={res.identification.identified ? "ok" : "warn"}>{res.identification.identified ? t("ex_identified") : t("ex_not_identified")}</Chip> {res.identification.text}</p>
+              {res.identification.listed_check && <p className="text-[13px]"><Chip tone={res.identification.listed_check.valid ? "ok" : "warn"}>{t("ex_listed_set")}</Chip> {res.identification.listed_check.text} {res.identification.listed_check.note}</p>}
+              {res.identification.forbidden.length > 0 && <ul className="text-[13px] list-disc pl-5">{res.identification.forbidden.map((x) => <li key={x.node}>{x.text}</li>)}</ul>}
+              {res.identification.unobserved.length > 0 && <p className="help">{t("ex_unobserved")}: {res.identification.unobserved.join(", ")}</p>}
+              {res.identification.missing.length > 0 && <div><b className="text-[13px]">{t("ex_missing")}</b><ul className="text-[13px] list-disc pl-5" data-testid="ex-missing">{res.identification.missing.map((m) => <li key={m}>{m}</li>)}</ul></div>}
+            </div>
+          )}
+          {res.refutation && (
+            <div className="panel overflow-x-auto" data-testid="ex-refutation">
+              <h3 className="font-medium mb-1">{t("ex_refutation")}</h3>
+              <table className="w-full text-[13px]"><tbody>{res.refutation.tests.map((x) => <tr key={x.name}><td><Chip tone={x.passed ? "ok" : "warn"}>{x.passed ? t("ex_st_passed") : t("ex_st_failed")}</Chip></td><td>{x.name}</td><td className="help">{x.detail}</td></tr>)}</tbody></table>
+            </div>
+          )}
           <div className="panel flex flex-col gap-1" data-testid="ex-assumptions">
             <h3 className="font-medium">{t("ex_assumptions")}</h3>
             {res.assumptions.map((a) => (
