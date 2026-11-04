@@ -3608,7 +3608,7 @@
   },
   {
     "name": "data_effect",
-    "description": "Estimate the effect of a change from data: difference-in-differences, interrupted time series, adjustment.\nGives the effect with a confidence interval, the assumptions the design needs with their status (parallel pre-trends, placebo dates, pre-trend linearity, balance and overlap, robustness to an unmeasured confounder) and explicit warnings when a testable assumption fails. Never claims causation: untestable assumptions are named.\nSinónimos: efecto de una intervención, diferencias en diferencias, serie temporal interrumpida, antes y después, grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its.",
+    "description": "Estimate the effect of a change from data: difference-in-differences, interrupted time series, adjustment.\nGives the effect with a confidence interval, the assumptions the design needs with their status (parallel pre-trends, placebo dates, pre-trend linearity, balance and overlap, robustness to an unmeasured confounder) and explicit warnings when a testable assumption fails. Never claims causation: untestable assumptions are named. With a causal graph (adjust): identification by the back-door criterion, variables not to adjust for, what is missing when not identified; refute=true adds placebo-treatment, random-common-cause and subset checks.\nSinónimos: efecto de una intervención, diferencias en diferencias, serie temporal interrumpida, antes y después, grupo de control, ajuste por confusores, causal, impacto de un cambio, did, its, grafo causal, puerta trasera, identificación, refutar, placebo.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -3771,6 +3771,23 @@
           "exclusiveMinimum": 0.5,
           "title": "Level",
           "type": "number"
+        },
+        "graph": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "adjust: causal hypothesis as edges 'a -> b' (lines, commas or a list of pairs); nodes that are not columns are unobserved. Finds the back-door adjustment set (used when confounders is empty), names variables that must not be adjusted for, and says what is missing when the effect is not identified.",
+          "title": "Graph"
+        },
+        "refute": {
+          "default": false,
+          "description": "adjust: re-estimate with a placebo (shuffled) treatment, a random common cause and random 80% subsets",
+          "title": "Refute",
+          "type": "boolean"
         }
       },
       "required": [
