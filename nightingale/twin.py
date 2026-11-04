@@ -27,7 +27,14 @@ import numpy as np
 from scipy import optimize, signal
 
 from .linfit import FitError, ljung_box, load_frame, thin, to_float
-from .texts import t as tx
+from .texts import register, t as tx
+
+register({
+    "tw.warn_uncalibrated": {"en": "The prediction interval could not be calibrated on the held-out block (too few rows); its coverage is not guaranteed.",
+                             "es": "El intervalo de predicción no se pudo calibrar en el bloque reservado (muy pocas filas); su cobertura no está garantizada."},
+    "tw.calib_method": {"en": "split-conformal width per horizon on free-run errors from every origin of the held-out block",
+                        "es": "anchura conformal por horizonte con los errores en simulación libre desde cada origen del bloque reservado"},
+})
 
 
 class TwinError(FitError):
@@ -189,6 +196,66 @@ def _bootstrap_arx(theta, p, s, Y, U, res, B, rng, scale):
             continue
         draws.append(th)
     return (np.array(draws) if draws else np.empty((0,) + theta.shape)), failed
+
+
+CAL_LEVELS = [0.5, 0.8, 0.9, 0.95, 0.99]
+
+
+def _calibrate_arx(th_draws, res_tr, p, s, H, Y, U, ntr, n, rng, max_h: int = 30, min_origins: int = 25):
+    """Split-conformal calibration of the simulated interval per horizon on the held-out block.
+
+    From each origin in the held-out block the model is run forward on the measured inputs; the observed future is
+    scored against the simulated mean in units of the simulated interval half-width (lower or upper side). The
+    (finite-sample corrected) quantile of those scores, per horizon and level, is the factor that widens (or narrows)
+    the interval so that its coverage on data like the held-out block matches the nominal level."""
+    no = Y.shape[1]
+    hmax = min(max_h, (n - ntr) // 3)
+    origins = list(range(ntr, n - 2))
+    if hmax < 3 or len(origins) < min_origins or len(th_draws) < 20:
+        return None
+    scores = [[[] for _ in range(no)] for _ in range(hmax)]
+    for o in origins:
+        h = min(hmax, n - o)
+        idx = rng.integers(0, len(res_tr), size=(len(th_draws), h))
+        paths = _simulate(th_draws, p, s, Y[o - H:o], U[o - H:o], U[o:o + h], res_tr[idx])
+        mid = paths.mean(0)
+        lo = np.percentile(paths, 5, axis=0)       # a wide-enough reference band; scores are ratios to the 90 % half-widths
+        hi = np.percentile(paths, 95, axis=0)
+        for k in range(h):
+            for j in range(no):
+                y = Y[o + k, j]
+                d = y - mid[k, j]
+                w = (hi[k, j] - mid[k, j]) if d >= 0 else (mid[k, j] - lo[k, j])
+                if w > 1e-12:
+                    scores[k][j].append(abs(d) / w)
+    scale = np.ones((len(CAL_LEVELS), hmax, no))
+    for k in range(hmax):
+        for j in range(no):
+            pool = [v for kk in range(max(0, k - 2), min(hmax, k + 3)) for v in scores[kk][j]]   # neighbouring horizons share the noise
+            if len(pool) < min_origins:
+                return None
+            arr = np.sort(np.array(pool))
+            for li, lv in enumerate(CAL_LEVELS):
+                q = min(1.0, math.ceil((len(arr) + 1) * lv) / len(arr))
+                scale[li, k, j] = float(np.quantile(arr, q))
+    # the reference band is the 90 % one: scores are relative to its half-width, so a level-L interval is c_L * halfwidth(90 %)
+    return {"levels": CAL_LEVELS, "horizon": hmax, "origins": len(origins), "scale": scale.tolist(), "reference_level": 0.9}
+
+
+def _apply_calibration(calib, level, mean, lo, hi, nominal_level):
+    """Rebuild lo/hi around the mean from the calibrated half-width quantile at `level` (reference band = 90 %)."""
+    sc = np.array(calib["scale"], float)                  # (levels, horizon, outputs)
+    T, no = mean.shape
+    out_lo, out_hi = lo.copy(), hi.copy()
+    # half-widths of the 90 % reference band from the paths: recover them from lo/hi at `nominal_level` is not exact,
+    # so predict() passes the 90 % band in lo/hi (see predict)
+    for k in range(T):
+        kk = min(k, sc.shape[1] - 1)
+        for j in range(no):
+            c = float(np.interp(level, calib["levels"], sc[:, kk, j]))
+            out_lo[k, j] = mean[k, j] - c * (mean[k, j] - lo[k, j])
+            out_hi[k, j] = mean[k, j] + c * (hi[k, j] - mean[k, j])
+    return out_lo, out_hi
 
 
 def metrics(obs: np.ndarray, pred: np.ndarray) -> dict:
@@ -397,6 +464,9 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
         th_draws, failed_tr = _bootstrap_arx(theta_tr, p, s, Y[:ntr], U[:ntr], res_tr, Btr, rng, scale)
         cover = None
         sim_lo = sim_hi = None
+        calib = _calibrate_arx(th_draws, res_tr, p, s, H, Y, U, ntr, n, np.random.default_rng(seed + 17)) if len(th_draws) >= 20 else None
+        if calib is None:
+            warnings.append(tx("tw.warn_uncalibrated"))
         if len(th_draws) >= 20:
             idx = rng.integers(0, len(res_tr), size=(len(th_draws), nval))
             paths = _simulate(th_draws, p, s, Y[ntr - H:ntr], U[ntr - H:ntr], U[ntr:], res_tr[idx])
@@ -437,7 +507,7 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
                   for j, o in enumerate(outputs)}
         results["arx"] = {"p": p, "s": s, "theta": theta, "theta_tr": theta_tr, "names": names, "val": val, "params": params,
                           "gains": gains, "poles": poles_all, "lag_candidates": cands, "lb_tr": lb_tr, "lb_val": lb_val,
-                          "draws": pdraw, "res_all": res_all, "coverage": cover, "sim": sim, "sim_lo": sim_lo, "sim_hi": sim_hi,
+                          "draws": pdraw, "res_all": res_all, "coverage": cover, "calib": calib, "sim": sim, "sim_lo": sim_lo, "sim_hi": sim_hi,
                           "failed": failed, "stable": bool(np.max(np.abs(poles_all)) < 1), "H": H}
     # ---- FOPDT
     if model in ("fopdt", "auto"):
@@ -470,6 +540,10 @@ def fit_series(t, Y, U, outputs: list[str], inputs: list[str], model: str = "arx
                      "draws": r["draws"][:200].tolist(),
                      "residuals": r["res_all"][np.linspace(0, len(r["res_all"]) - 1, min(len(r["res_all"]), 400)).astype(int)].tolist(),
                      "history": {"Y": Y[-H:].tolist(), "U": U[-H:].tolist()}})
+        if r.get("calib"):
+            twin["calibration"] = r["calib"]
+            report["interval_calibration"] = {"method": tx("tw.calib_method"), "origins": r["calib"]["origins"],
+                                              "horizon": r["calib"]["horizon"]}
         lb = r["lb_tr"]
         report.update({"structure": {"lag_order": r["p"], "input_lag_start": r["s"], "coefficients_per_output": len(r["names"]),
                                      "form": tx("tw.form_arx")},
@@ -692,10 +766,17 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
             paths[k, :, 0] = _fopdt_predict(pk, hu, ylast, Ufut[:, 0], dt, u0) + res[rng.integers(0, len(res), len(Ufut))]
         return nominal, paths
 
+    calib = twin.get("calibration") if twin["model"] == "arx" else None
+
+    def band(pths):
+        m = pths.mean(0)
+        if calib:   # held-out calibrated width per horizon (split-conformal); the 5-95 % band is the reference
+            return _apply_calibration(calib, level, m, np.percentile(pths, 5, axis=0), np.percentile(pths, 95, axis=0), level)
+        return np.percentile(pths, lo_q, axis=0), np.percentile(pths, hi_q, axis=0)
+
     nominal, paths = run(Uf)
     mean = paths.mean(0)
-    lo = np.percentile(paths, lo_q, axis=0)
-    hi = np.percentile(paths, hi_q, axis=0)
+    lo, hi = band(paths)
     t_last = twin["training"]["t_last"]
     times = [t_last + twin["dt"] * (k + 1) for k in range(steps)]
     out: dict[str, Any] = {"steps": steps, "dt": twin["dt"], "level": level, "paths": int(len(paths)), "time": times,
@@ -718,16 +799,19 @@ def predict(twin: dict, profile: Optional[dict] = None, steps: Optional[int] = N
         Ub = expand_profile(base_profile, inputs, steps, last_in)
         bn, bp = run(Ub)
         bm = bp.mean(0)
+        blo, bhi = band(bp)
         out["baseline"] = {"description": tx("tw.baseline_desc"),
                            "outputs": {o: {"nominal": [float(v) for v in bn[:, j]], "mean": [float(v) for v in bm[:, j]],
-                                           "lo": [float(v) for v in np.percentile(bp, lo_q, axis=0)[:, j]],
-                                           "hi": [float(v) for v in np.percentile(bp, hi_q, axis=0)[:, j]]}
+                                           "lo": [float(v) for v in blo[:, j]],
+                                           "hi": [float(v) for v in bhi[:, j]]}
                                        for j, o in enumerate(outputs)}}
         out["delta_vs_baseline"] = {o: {"final_nominal": float(nominal[-1, j] - bn[-1, j]),
                                         "max_abs_nominal": float(np.max(np.abs(nominal[:, j] - bn[:, j])))}
                                     for j, o in enumerate(outputs)}
     out["interval_note"] = (f"{int(level * 100)}% interval over {len(paths)} simulated paths combining coefficient uncertainty "
-                            "(bootstrap) and resampled residuals; it excludes structural error and changes in the process.")
+                            "(bootstrap) and resampled residuals"
+                            + ("; its width per horizon is calibrated on the held-out block so that coverage matches the level for data like it; "
+                               if calib else "; ") + "it excludes structural error and changes in the process.")
     out["warnings"] = warnings
     out["caveat"] = tx("tw.caveat")
     return out
