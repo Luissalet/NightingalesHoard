@@ -276,6 +276,34 @@ Las instrucciones anteriores de adopción in-place describen una importación op
 
 En Gráficos, **Usar como base** carga en el constructor editable el conjunto de datos, tipo, ejes, agregación, color, filtro de filas y título de un gráfico guardado. Identifica el origen y enfoca el título. Cargar los campos no guarda nada; **Guardar gráfico** crea otro ID y conserva el original. Los campos permanecen tras guardar o un error, incluidas las ediciones posteriores al envío. Refrescar la lista no vuelve a aplicar la configuración de origen. Reutiliza las API de lectura/creación y las acciones de `data_chart` en MCP; las43 herramientas siguen intactas. Consulta las filas actuales del conjunto, sin duplicar datos, imágenes históricas, dashboards o historial de análisis.
 
+## Relato con los datos
+
+**Relato** convierte un conjunto ya cargado en una lista ordenada de hallazgos, del más fuerte al más
+débil, cada uno con su gráfico, una frase que dice la cifra exacta que muestra el gráfico y la consulta
+que lo produce. Se calculan cinco clases con las operaciones que la aplicación ya tiene: tendencia
+(correlación de Pearson de la serie por periodo contra su índice, al menos cinco periodos, p < 0,05),
+comparación entre grupos (prueba t de Welch entre la media más alta y la más baja, al menos dos grupos
+de cinco filas, p < 0,05 y una diferencia de al menos el 10 %), valores atípicos (filas fuera de 1,5 IQR,
+al menos uno y como mucho el 10 % de los valores), concentración (la categoría mayor reúne al menos el
+40 % de las filas, con tres categorías o más) y cambio entre periodos (prueba t de Welch entre las dos
+mitades del intervalo temporal, al menos diez filas en cada una, p < 0,05 y un cambio de al menos el
+10 %). El hallazgo que no alcanza su umbral se queda fuera, y un conjunto que no sostiene nada produce
+un relato vacío en lugar de una frase sin respaldo.
+
+El modelo de la familia solo reescribe frases sobre cifras ya calculadas: cada número del texto se
+vuelve a leer y se compara con las cifras del hallazgo, y la frase con cualquier otra cifra se descarta
+y queda la plantilla. El gráfico se dibuja a partir de la misma agregación que cita la frase, así que no
+pueden separarse. Los hallazgos se reordenan, se quitan y su frase se edita (con la misma comprobación),
+y el relato se exporta como un único archivo HTML autónomo —frases, cifras, gráficos PNG incrustados y
+las consultas, sin script y sin red— o, cuando Cicero's Hoard responde por el Hub, como presentación con
+un hallazgo por diapositiva construida con las herramientas de Cicero. Si Cicero no está disponible, el
+HTML se escribe igualmente y la respuesta lo dice.
+
+Página **Relato**, API `/api/story/*` (`build`, `stories`, `stories/{id}`, `stories/{id}/export`,
+`download`), herramientas `story_build`, `story_get`, `story_list`, `story_update`, `story_export`. Cada
+generación, edición y exportación queda en el registro de análisis. El catálogo combinado pasa a 57
+herramientas (35 Datos, 20 Cálculo y dos controles).
+
 ## Libros de Excel como cálculo
 
 Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. También explica el cálculo: una ordenación de sensibilidad (tornado) de los parámetros numéricos para cualquier salida, escenarios con nombre guardados con el libro y comparados con la base, y comprobación de unidades (unidades declaradas más formatos de moneda y porcentaje, propagadas por las fórmulas con Pint, con errores como sumar metros y euros). Son acciones adicionales de `data_workbook`, quedan en el registro y el número de herramientas no cambia. Detalle: `docs/WORKBOOK-COMPILER.es.md`.
@@ -315,4 +343,4 @@ Una página con tres pestañas, respaldada por `/api/twin/*`, `/api/experiment/*
 
 ## Skills para los agentes que se conectan
 
-Esta app lleva procedimientos de la biblioteca de skills del espacio de trabajo de la familia para los agentes que se conectan: `data-cleaning-with-lineage`, `measured-improvement`, `verification-loop`. Aparecen en lo que el agente lee al conectarse, se leen con `skills_list` y `skill_read`, se buscan y asignan con `skills_library` y `skills_assign`, y se ofrecen como prompts. Se eligen en la página de skills (`/api/agent/skills/page`) o en la pestaña Skills del hub; el bloque `skills` de `faustus-plugin.json` guarda lo que la app pide por defecto.
+Esta app lleva procedimientos de la biblioteca de skills del espacio de trabajo de la familia para los agentes que se conectan: `data-cleaning-with-lineage`, `measured-improvement`, `verification-loop`, `story-from-data`. Aparecen en lo que el agente lee al conectarse, se leen con `skills_list` y `skill_read`, se buscan y asignan con `skills_library` y `skills_assign`, y se ofrecen como prompts. Se eligen en la página de skills (`/api/agent/skills/page`) o en la pestaña Skills del hub; el bloque `skills` de `faustus-plugin.json` guarda lo que la app pide por defecto.
