@@ -123,6 +123,7 @@ export default function ProcessPage() {
   const [confSave, setConfSave] = useState("");
   const [variants, setVariants] = useState([{ name: "Variant 1", changes: [{ type: "add_resource", activity: "", count: 1, factor: 0.8, from: "", to: "", share: 0.1 }] }]);
   const [reps, setReps] = useState(20);
+  const [seasonal, setSeasonal] = useState("auto");
   const [rehSave, setRehSave] = useState("");
   const [modelName, setModelName] = useState("");
   const [reh, setReh] = useState(null);
@@ -184,14 +185,14 @@ export default function ProcessPage() {
     setReh(await act(() => api.processRehearse({ dataset, mapping: cleanMap(), variants: vs, replications: Number(reps), save_as: rehSave || null, model_name: modelName || null }), rehSave ? t("pr_saved") : null));
   });
   const runCalibrate = (edits) => guard("calibrate", async () => {
-    const body = { ...logBody(), holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: vsBody(), model_name: calModel || null };
+    const body = { ...logBody(), holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: vsBody(), model_name: calModel || null, seasonal_arrivals: seasonal };
     if (edits && Object.keys(edits).length) body.model_edits = edits;
     setCal(await act(() => api.processCalibrate(body), calModel ? t("pr_model_saved") : null));
     setLastEdits(edits && Object.keys(edits).length ? edits : null);
   })();
   const doCalibrate = () => runCalibrate(null);
   const doExport = (withCal) => guard("export", async () => {
-    const r = await api.processExport({ ...logBody(), with_calibration: withCal, holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: withCal ? vsBody() : [], ...(withCal && lastEdits ? { model_edits: lastEdits } : {}) });
+    const r = await api.processExport({ ...logBody(), with_calibration: withCal, holdout: Number(holdout), replications: Number(reps), seed: Number(seed), variants: withCal ? vsBody() : [], seasonal_arrivals: seasonal, ...(withCal && lastEdits ? { model_edits: lastEdits } : {}) });
     downloadJson(r.recipe, r.filename);
   })();
   const setChange = (vi, ci, patch) => setVariants(variants.map((v, i) => (i !== vi ? v : { ...v, changes: v.changes.map((c, j) => (j !== ci ? c : { ...c, ...patch })) })));
@@ -315,6 +316,8 @@ export default function ProcessPage() {
                   <button className="btn btn-sm" onClick={() => setVariants([...variants, { name: `Variant ${variants.length + 1}`, changes: [blankChange()] }])}>{t("pr_add_variant")}</button>
                   <label className="text-[13px]">{t("el_holdout")}<input className="field num" style={{ width: 80 }} type="number" min="0.05" max="0.8" step="0.05" value={holdout} onChange={(e) => setHoldout(e.target.value)} data-testid="pr-holdout" /></label>
                   <label className="text-[13px]">{t("pr_reps")}<input className="field num" style={{ width: 80 }} type="number" min="1" max="100" value={reps} onChange={(e) => setReps(e.target.value)} /></label>
+                  <label className="text-[13px]">{t("sn_mode")}<select className="field" value={seasonal} onChange={(e) => setSeasonal(e.target.value)} data-testid="pr-seasonal">
+                    {["auto", "on", "off"].map((m) => <option key={m} value={m}>{t("sn_mode_" + m)}</option>)}</select></label>
                   <label className="text-[13px]">{t("el_seed")}<input className="field num" style={{ width: 80 }} type="number" value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
                   <label className="text-[13px]">{t("pr_model_name")}<input className="field" value={calModel} onChange={(e) => setCalModel(e.target.value)} /></label>
                   <button className="btn btn-primary" onClick={doCalibrate} disabled={!!busy} data-testid="pr-run-calibrate">{busy === "calibrate" ? t("pr_working") : t("el_run_calibrate")}</button>
