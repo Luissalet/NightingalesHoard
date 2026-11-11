@@ -86,5 +86,12 @@ async def main():
         await app.run(reader, writer, app.create_initialization_options())
 
 
+try:  # the skills this app carries, for the agent that connects
+    from nightingale.hoard_link import skills as _family_skills
+    _family_skills.attach(app, 'nightingale', root=__file__)
+except Exception:  # noqa: BLE001 - the bridge works without them
+    pass
+
+
 if __name__ == "__main__":
     asyncio.run(main())
