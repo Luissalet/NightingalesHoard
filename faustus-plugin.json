@@ -101,5 +101,6 @@
     "skills": [
       "fusion/skills/exact-numbers/SKILL.md"
     ]
-  }
+  },
+  "skills": {"slugs": ["data-cleaning-with-lineage", "measured-improvement", "verification-loop"], "limit": 3}
 }
