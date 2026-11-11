@@ -2235,3 +2235,73 @@ register({
     "fq.insp_unreachable": {"en": "could not reach Vulcan through the Hub: {detail}", "es": "no se pudo llegar a Vulcan por el Hub: {detail}"},
     "fq.insp_failed": {"en": "Vulcan did not return an inspection: {detail}", "es": "Vulcan no devolvió la inspección: {detail}"},
 })
+
+# ======================================================================= story (story.*)
+register({
+    "story.title_trend": {"en": "Trend of {y} over {x}", "es": "Tendencia de {y} a lo largo de {x}"},
+    "story.title_groups": {"en": "Average {y} by {x}", "es": "Media de {y} por {x}"},
+    "story.title_outliers": {"en": "Outliers in {y}", "es": "Valores atípicos en {y}"},
+    "story.title_concentration": {"en": "Concentration of {x}", "es": "Concentración de {x}"},
+    "story.title_change": {"en": "Change in {y} between the two halves of the period", "es": "Cambio de {y} entre las dos mitades del periodo"},
+    "story.trend_up": {
+        "en": "The average {y} per {grain} rises from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "La media de {y} por {grain} sube de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+    "story.trend_down": {
+        "en": "The average {y} per {grain} falls from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "La media de {y} por {grain} baja de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+    "story.groups": {
+        "en": "The average {y} is {highest} in {high} and {lowest} in {low}: a gap of {gap} ({relative} %; Welch p <= {p}, {groups} groups).",
+        "es": "La media de {y} es {highest} en {high} y {lowest} en {low}: una diferencia de {gap} ({relative} %; p de Welch <= {p}, {groups} grupos)."},
+    "story.outliers": {
+        "en": "{outliers} of {rows} values of {y} ({share} %) lie outside 1.5 IQR above the third quartile ({q3}); the largest is {max}.",
+        "es": "{outliers} de {rows} valores de {y} ({share} %) quedan fuera de 1,5 IQR por encima del tercer cuartil ({q3}); el mayor es {max}."},
+    "story.concentration": {
+        "en": "{top} holds {share} % of the rows ({top_count} of {rows}); the three largest {x} values hold {top_three} % ({groups} categories).",
+        "es": "{top} concentra el {share} % de las filas ({top_count} de {rows}); los tres valores mayores de {x} suman el {top_three} % ({groups} categorías)."},
+    "story.change_up": {
+        "en": "The average {y} goes from {before} in the first half of the period to {after} in the second ({relative} %; Welch p <= {p}).",
+        "es": "La media de {y} pasa de {before} en la primera mitad del periodo a {after} en la segunda ({relative} %; p de Welch <= {p})."},
+    "story.change_down": {
+        "en": "The average {y} falls from {before} in the first half of the period to {after} in the second ({relative} %; Welch p <= {p}).",
+        "es": "La media de {y} baja de {before} en la primera mitad del periodo a {after} en la segunda ({relative} %; p de Welch <= {p})."},
+    "story.half_before": {"en": "first half", "es": "primera mitad"},
+    "story.half_after": {"en": "second half", "es": "segunda mitad"},
+    "story.grain_day": {"en": "day", "es": "día"},
+    "story.grain_month": {"en": "month", "es": "mes"},
+    "story.grain_year": {"en": "year", "es": "año"},
+    "story.no_numeric": {"en": "this dataset has no numeric column to summarise", "es": "este conjunto no tiene ninguna columna numérica que resumir"},
+    "story.too_few_rows": {"en": "{rows} rows is below the {minimum} a finding needs", "es": "{rows} filas no llegan a las {minimum} que necesita un hallazgo"},
+    "story.no_findings": {
+        "en": "No finding clears the minimum support: no trend, group difference, outlier, concentration or change reaches the stated threshold. Nothing is written rather than something unsupported.",
+        "es": "Ningún hallazgo alcanza el soporte mínimo: ni tendencia, ni diferencia entre grupos, ni valor atípico, ni concentración, ni cambio llegan al umbral indicado. Se deja sin escribir antes que escribir algo sin respaldo."},
+    "story.unknown": {"en": "unknown story: {id}", "es": "relato desconocido: {id}"},
+    "story.unknown_finding": {"en": "the story has no finding {id}", "es": "el relato no tiene el hallazgo {id}"},
+    "story.statement_rejected": {
+        "en": "the sentence was discarded because these numbers are not among the finding's figures: {numbers}. The template stays.",
+        "es": "se descartó la frase porque estas cifras no están entre las del hallazgo: {numbers}. Queda la plantilla."},
+    "story.statement_kept": {"en": "the sentence was checked against the finding's figures and kept", "es": "la frase se comprobó contra las cifras del hallazgo y se conserva"},
+    "story.no_model": {"en": "no language model is available: the sentences stay as the templates", "es": "no hay ningún modelo de lenguaje disponible: las frases quedan como las plantillas"},
+    "story.cicero_unavailable": {
+        "en": "Cicero's Hoard is not available through the Hub, so the presentation was not built; the HTML export is ready.",
+        "es": "Cicero's Hoard no está disponible por el Hub, así que no se construyó la presentación; la exportación HTML está lista."},
+    "story.cicero_failed": {"en": "Cicero's Hoard answered with an error: {detail}", "es": "Cicero's Hoard respondió con un error: {detail}"},
+    "story.cicero_deck": {"en": "presentation {deck_id} in Cicero's Hoard", "es": "presentación {deck_id} en Cicero's Hoard"},
+    "story.export_empty": {"en": "the story has no findings to export", "es": "el relato no tiene hallazgos que exportar"},
+    "story.export_query": {"en": "Query that produces this finding", "es": "Consulta que produce este hallazgo"},
+    "story.export_rows": {"en": "rows", "es": "filas"},
+    "story.export_note": {
+        "en": "Every figure comes from the query shown with its finding, run over the dataset's current version. A finding that did not reach the stated minimum support was left out.",
+        "es": "Cada cifra sale de la consulta que acompaña a su hallazgo, ejecutada sobre la versión actual del conjunto. Se dejó fuera todo hallazgo que no alcanzó el soporte mínimo indicado."},
+    "story.cicero_brief": {
+        "en": "Findings computed from the dataset {dataset} ({rows} rows) in Nightingale's Hoard, one per slide, each with the sentence that states its figure and the chart of the same numbers.",
+        "es": "Hallazgos calculados sobre el conjunto {dataset} ({rows} filas) en Nightingale's Hoard, uno por diapositiva, cada uno con la frase que dice su cifra y el gráfico de esos mismos números."},
+    "story.cicero_notes": {
+        "en": "Figure and chart come from this query over the dataset's current version: {sql}",
+        "es": "La cifra y el gráfico salen de esta consulta sobre la versión actual del conjunto: {sql}"},
+    "story.rewrite_unavailable": {
+        "en": "the sentences stay as the templates: {detail}",
+        "es": "las frases quedan como las plantillas: {detail}"},
+    "story.rewrite_prompt": {
+        "en": "Rewrite each sentence in {lang} so it reads naturally, using only the figures given. Do not add, round differently or invent any number, name or date. Answer with one line per finding: the id, a tab, the sentence.",
+        "es": "Reescribe cada frase en {lang} para que se lea con naturalidad, usando solo las cifras dadas. No añadas, redondees de otra forma ni inventes ninguna cifra, nombre o fecha. Responde una línea por hallazgo: el id, un tabulador y la frase."},
+})
