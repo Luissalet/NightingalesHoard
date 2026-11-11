@@ -1118,6 +1118,57 @@ def _run_effect(s: Services, a: EffectArgs) -> dict:
                        graph=a.graph, refute=a.refute)
 
 
+class StoryBuildArgs(BaseModel):
+    dataset: str = Field(..., description="The dataset to read (its current version).")
+    rewrite: bool = Field(False, description="Ask the family's model to reword each sentence. A sentence whose numbers "
+                         "are not the finding's own is discarded and the template stays.")
+
+
+class StoryGetArgs(BaseModel):
+    story_id: int = Field(..., ge=1, description="The story (from story_build or story_list).")
+
+
+class StoryListArgs(BaseModel):
+    dataset: Optional[str] = Field(None, description="Only the stories of this dataset.")
+
+
+class StoryUpdateArgs(BaseModel):
+    story_id: int = Field(..., ge=1)
+    order: Optional[list[str]] = Field(None, description="Every finding id, in the new order.")
+    remove: Optional[list[str]] = Field(None, description="Finding ids to drop.")
+    statements: Optional[dict[str, str]] = Field(None, description="{finding id: sentence}; an empty sentence restores "
+                                                    "the template. A sentence with a number that is not one of the "
+                                                    "finding's figures is rejected and the template stays.")
+    title: Optional[str] = Field(None, max_length=200, description="New story title.")
+
+
+class StoryExportArgs(BaseModel):
+    story_id: int = Field(..., ge=1)
+    format: Literal["html", "presentation"] = Field("html", description="html is one self-contained file; presentation "
+                                                    "builds one slide per finding in Cicero's Hoard through the Hub, and "
+                                                    "says so when Cicero is not available.")
+
+
+def _run_story_build(s: Services, a: StoryBuildArgs) -> dict:
+    return s.story_build(a.dataset, rewrite=a.rewrite, source="agent")
+
+
+def _run_story_get(s: Services, a: StoryGetArgs) -> dict:
+    return s.story_get(a.story_id)
+
+
+def _run_story_list(s: Services, a: StoryListArgs) -> dict:
+    return s.story_list(a.dataset)
+
+
+def _run_story_update(s: Services, a: StoryUpdateArgs) -> dict:
+    return s.story_update(a.story_id, a.order, a.remove, a.statements, a.title, source="agent")
+
+
+def _run_story_export(s: Services, a: StoryExportArgs) -> dict:
+    return s.story_export(a.story_id, a.format, source="agent")
+
+
 TOOLS: list[Tool] = [
     Tool("data_ingest", "Load a file, folder, URL, text or another app's data as a dataset; or delete one. Cargar/borrar datos.\n"
          "Writes a new dataset; action='delete' permanently removes a dataset and everything derived from it "
@@ -1319,6 +1370,30 @@ TOOLS: list[Tool] = [
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
+    Tool("story_build", "Turn a dataset into a story: ordered findings, each with its chart, one sentence with the "
+         "exact figure and the query that produces it. Relato con los datos.\n"
+         "Only findings that clear a stated minimum of support enter (trend, group difference, outlier, "
+         "concentration, change between periods); nothing is invented. rewrite=true asks the model to reword the "
+         "sentences, and a sentence whose numbers are not the finding's own is discarded.\n"
+         "Sinónimos: relato, historia con los datos, hallazgos, contar lo que dicen los datos, narrativa, "
+         "story, findings, narrative.",
+         StoryBuildArgs, _ann(False, False, False), _run_story_build, capped=False),
+    Tool("story_get", "One saved story with its findings, sentences, figures, charts and queries. Leer un relato.\n"
+         "Sinónimos: ver relato, abrir historia, hallazgos guardados, story.",
+         StoryGetArgs, _ann(True), _run_story_get, capped=False),
+    Tool("story_list", "List the saved stories with their dataset and number of findings. Listar relatos.\n"
+         "Sinónimos: relatos guardados, historias, stories.",
+         StoryListArgs, _ann(True), _run_story_list),
+    Tool("story_update", "Reorder or drop findings of a story, or edit one sentence. Editar un relato.\n"
+         "A sentence with a number that is not one of the finding's figures is rejected and the template stays.\n"
+         "Sinónimos: reordenar hallazgos, quitar hallazgo, editar frase, cambiar el texto del relato.",
+         StoryUpdateArgs, _ann(False, False, True), _run_story_update, capped=False),
+    Tool("story_export", "Export a story as one standalone HTML file, or as a presentation in Cicero's Hoard. "
+         "Exportar el relato.\n"
+         "The presentation has one finding per slide and is built with Cicero's own tools through the Hub; when "
+         "Cicero is not available the HTML is still written and the answer says so.\n"
+         "Sinónimos: exportar relato, html, presentación, diapositivas, deck, export story.",
+         StoryExportArgs, _ann(False, False, False), _run_story_export, capped=False),
     Tool("data_ask", "Ask your data a question in plain language; one SQL query, shown. Pregunta a mis datos.\n"
          "A shared language model writes one SQL query, shown before running (needs a resolved language model).\nSinónimos: pregunta a mis datos, ask my data, analiza esto por mí.",
          AskArgs, _ann(True), _run_ask),

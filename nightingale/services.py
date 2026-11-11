@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import json
 import os
 import secrets
 import sqlite3
@@ -27,6 +28,7 @@ from .hoard_link import fam_web, tokens
 from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
 from .config import Config
+from .texts import t
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
 from .dac import spec as dac_spec
@@ -49,6 +51,8 @@ from .workbench import models as model_engine
 from .workbench.quality import QualityError, RULE_KINDS, build_check
 from .workbench.steps import StepError, STEP_KINDS, step_parameter_catalog
 from . import workbook_export
+from . import story as story_mod
+from . import story_export
 
 log = logging.getLogger("nightingale")
 
@@ -1696,6 +1700,178 @@ class Services:
         if row is None:
             raise NotFoundError(f"unknown log entry: {op_id}")
         return dict(row)
+
+    # ---- story: relato con los datos ------------------------------------------
+    def _story_row(self, story_id: int) -> sqlite3.Row:
+        row = self.meta.get_story(int(story_id))
+        if row is None:
+            raise NotFoundError(t("story.unknown", None, id=story_id))
+        return row
+
+    def _story_spec(self, row: sqlite3.Row) -> dict:
+        return json.loads(row["spec_json"])
+
+    def story_build(self, dataset_name: str, lang: str = "en", rewrite: bool = False,
+                    source: str = "ui") -> dict:
+        """Compute the findings of a dataset's current version and keep them as a story.
+
+        ``rewrite`` asks the family's model to reword each sentence; a sentence
+        whose numbers are not the finding's own is discarded and the template
+        stays, so the text can never say something the query did not.
+        """
+        dataset_row = self._dataset_row(dataset_name)
+
+        def do():
+            version = self._version_row(dataset_row)
+            columns = json.loads(version["columns_json"])
+            built = story_mod.build_findings(self.engine, dataset_row["name"], columns, lang)
+            built["version"] = version["version"]
+            built["title"] = dataset_row["name"]
+            notes = self._story_rewrite(built, lang) if rewrite else []
+            story_id = self.meta.add_story(dataset_row["id"], dataset_row["name"], dataset_row["name"], built)
+            out = {"story_id": story_id, **story_mod.render_story(built, lang), "notes": notes,
+                   "_log_summary": f"story for {dataset_row['name']!r}: {len(built['findings'])} finding(s)"}
+            return out
+
+        return self._log("story_build", source, dataset_row["name"], {"rewrite": rewrite},
+                          lambda: self.run_heavy(do, timeout=MAX_LAB_TIMEOUT_S))
+
+    def _story_rewrite(self, built: dict, lang: str) -> list[str]:
+        """Ask the model to reword the sentences; keep only the ones whose numbers check out."""
+        findings = built.get("findings") or []
+        if not findings:
+            return []
+        rendered = [story_mod.render_finding(finding, lang) for finding in findings]
+        lines = [f"{finding['id']}\t{finding['template']}" for finding in rendered]
+        messages = [
+            {"role": "system", "content": t("story.rewrite_prompt", lang, lang=lang)},
+            {"role": "user", "content": "\n".join(lines)},
+        ]
+        try:
+            answer = self.link.sync.chat(messages, capability="llm", temperature=0.0, max_tokens=900)
+        except Exception as exc:  # noqa: BLE001 - no model is a normal state, not a failure of the story
+            return [t("story.rewrite_unavailable", lang, detail=str(exc))]
+        by_id = {finding["id"]: finding for finding in findings}
+        notes = []
+        for line in str(getattr(answer, "text", "") or "").splitlines():
+            if "\t" not in line:
+                continue
+            key, _, sentence = line.partition("\t")
+            finding = by_id.get(key.strip())
+            sentence = sentence.strip()
+            if finding is None or not sentence:
+                continue
+            check = story_mod.verify_statement(sentence, finding.get("figures", []), lang,
+                                               finding.get("extra_texts", []))
+            if check["ok"]:
+                finding["statement"] = sentence
+                finding["statement_source"] = "model"
+                finding["statement_lang"] = lang
+            else:
+                finding["statement"] = None
+                finding["statement_source"] = "template"
+                notes.append(t("story.statement_rejected", lang, numbers=", ".join(check["unsupported"])))
+        return notes
+
+    def story_get(self, story_id: int, lang: str = "en") -> dict:
+        row = self._story_row(story_id)
+        spec = self._story_spec(row)
+        return {"story_id": row["id"], "title": row["title"], "created_at": row["created_at"],
+                "updated_at": row["updated_at"], **story_mod.render_story(spec, lang)}
+
+    def story_list(self, dataset_name: Optional[str] = None) -> dict:
+        rows = self.meta.list_stories(dataset_name)
+        return {"stories": [{"story_id": row["id"], "dataset": row["dataset"], "title": row["title"],
+                             "findings": len(self._story_spec(row).get("findings", [])),
+                             "created_at": row["created_at"], "updated_at": row["updated_at"]}
+                            for row in rows]}
+
+    def story_update(self, story_id: int, order: Optional[list[str]] = None,
+                     remove: Optional[list[str]] = None, statements: Optional[dict[str, str]] = None,
+                     title: Optional[str] = None, lang: str = "en", source: str = "ui") -> dict:
+        """Reorder, drop findings or edit a sentence. A sentence whose numbers are
+        not the finding's own is discarded and the template stays."""
+        row = self._story_row(story_id)
+
+        def do():
+            spec = self._story_spec(row)
+            findings = spec.get("findings", [])
+            by_id = {finding["id"]: finding for finding in findings}
+            if remove:
+                unknown = [key for key in remove if key not in by_id]
+                if unknown:
+                    raise ValueError(t("story.unknown_finding", lang, id=unknown[0]))
+                findings = [finding for finding in findings if finding["id"] not in set(remove)]
+            if order:
+                unknown = [key for key in order if key not in {f["id"] for f in findings}]
+                if unknown:
+                    raise ValueError(t("story.unknown_finding", lang, id=unknown[0]))
+                position = {key: index for index, key in enumerate(order)}
+                findings.sort(key=lambda finding: position.get(finding["id"], len(position)))
+            rejected = []
+            for key, sentence in (statements or {}).items():
+                finding = by_id.get(key)
+                if finding is None:
+                    raise ValueError(t("story.unknown_finding", lang, id=key))
+                text = str(sentence or "").strip()
+                if not text:
+                    finding["statement"] = None
+                    finding["statement_source"] = "template"
+                    continue
+                check = story_mod.verify_statement(text, finding.get("figures", []), lang,
+                                                   finding.get("extra_texts", []))
+                if check["ok"]:
+                    finding["statement"] = text
+                    finding["statement_source"] = "edited"
+                    finding["statement_lang"] = lang
+                else:
+                    finding["statement"] = None
+                    finding["statement_source"] = "template"
+                    rejected.append({"id": key, "numbers": check["unsupported"],
+                                     "message": t("story.statement_rejected", lang,
+                                                  numbers=", ".join(check["unsupported"]))})
+            spec["findings"] = findings
+            self.meta.update_story(row["id"], spec, title)
+            out = {"story_id": row["id"], "title": title or row["title"], "rejected": rejected,
+                   **story_mod.render_story(spec, lang)}
+            out["_log_summary"] = f"story {row['id']} updated: {len(findings)} finding(s)"
+            return out
+
+        return self._log("story_update", source, row["dataset"],
+                          {"order": bool(order), "remove": remove or [], "statements": list((statements or {}))}, do)
+
+    def story_export(self, story_id: int, fmt: str = "html", lang: str = "en", source: str = "ui") -> dict:
+        """Write the story as one standalone HTML file, or build a presentation in Cicero's Hoard."""
+        row = self._story_row(story_id)
+        if fmt not in ("html", "presentation"):
+            raise ValueError("format must be 'html' or 'presentation'")
+
+        def do():
+            spec = self._story_spec(row)
+            if not spec.get("findings"):
+                raise ValueError(t("story.export_empty", lang))
+            if fmt == "presentation":
+                result = story_export.build_presentation({**spec, "title": row["title"]}, lang, row["title"])
+                return {**result, "_log_summary": f"story {row['id']} -> presentation {result.get('deck_id') or 'not built'}"}
+            path = self.config.exports_dir / f"story_{row['id']}_{int(self.now())}.html"
+            story_export.write_html(path, {**spec, "title": row["title"]}, lang)
+            return {"ok": True, "path": str(path), "filename": path.name,
+                    "_log_summary": f"story {row['id']} -> {path.name}"}
+
+        return self._log("story_export", source, row["dataset"], {"format": fmt}, do)
+
+    def story_export_path(self, path: str) -> Path:
+        """Resolve an exported story to a real file inside the exports folder."""
+        exports_dir = self.config.exports_dir.resolve()
+        candidate = Path(path).resolve()
+        if exports_dir not in candidate.parents or not candidate.is_file():
+            raise LookupError(f"story file not found: {path!r}")
+        return candidate
+
+    def story_delete(self, story_id: int, source: str = "ui") -> dict:
+        row = self._story_row(story_id)
+        self.meta.delete_story(row["id"])
+        return {"ok": True, "story_id": row["id"]}
 
     # ---- ask your data ---------------------------------------------------------
     async def ask(self, question: str, datasets: Optional[list[str]] = None, source: str = "ui") -> dict:
