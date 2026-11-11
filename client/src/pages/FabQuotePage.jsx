@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useApp } from "../App.jsx";
 import { Chip } from "../components/ui.jsx";
+import { CalibratePanel, InspectPanel, ToolpathPanel } from "../components/FabQuoteTools.jsx";
 import { formatNumber } from "../format.js";
 
 const PROCESSES = ["fdm", "cnc_laser", "concrete"];
-const SOURCES = ["user", "assumed", "measured", "rate card"];
+const SOURCES = ["user", "assumed", "measured", "rate card", "calibrated"];
 const CATS = ["geometric_material", "process_material", "setup", "labour", "machine", "waste", "margin"];
 
 function save(blob, name) {
@@ -254,6 +255,10 @@ export default function FabQuotePage() {
               </table>
             )}
           </div>
+
+          <CalibratePanel name={name} quote={quote} reload={reload} setError={setError} t={t} fmt={fmt} />
+          <ToolpathPanel name={name} process={quote.process} reload={reload} setError={setError} t={t} fmt={fmt} />
+          {quote.process === "fdm" && <InspectPanel name={name} quote={quote} reload={reload} setError={setError} t={t} />}
         </>
       )}
     </div>
