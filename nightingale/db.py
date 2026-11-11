@@ -148,10 +148,28 @@ CREATE INDEX IF NOT EXISTS idx_dashboard_actions ON dashboard_actions(dashboard_
 """
 
 
+#: migration 3: the stories ("relato con los datos") — the findings computed from one dataset version,
+#: kept as JSON so the screen, the export and the agent read the same numbers.
+_STORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS stories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_id INTEGER REFERENCES datasets(id) ON DELETE CASCADE,
+    dataset TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    spec_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_stories_dataset ON stories(dataset_id);
+"""
+
+
 def connect(data_dir: Path) -> sqlkit.Database:
     """Open (and migrate) the metadata database in ``data_dir``. Databases made before the shared layer have no
     ``schema_version`` table: the one migration is idempotent (``CREATE ... IF NOT EXISTS``), so they open unchanged."""
-    return sqlkit.Database(Path(data_dir) / "nightingale-meta.sqlite", migrations=[_SCHEMA, _ACTIONS_SCHEMA], foreign_keys=True)
+    return sqlkit.Database(Path(data_dir) / "nightingale-meta.sqlite",
+                           migrations=[_SCHEMA, _ACTIONS_SCHEMA, _STORY_SCHEMA], foreign_keys=True)
 
 
 def now_iso() -> str:
@@ -375,6 +393,32 @@ class Meta:
     def next_log_id(self) -> str:
         row = self.db.one("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM log")
         return f"N-{row['n']:06d}"
+
+    # ---- stories ----
+    def add_story(self, dataset_id: int | None, dataset: str, title: str, spec: dict) -> int:
+        return self.db.execute(
+            "INSERT INTO stories (dataset_id, dataset, title, spec_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (dataset_id, dataset, title, json.dumps(spec, default=str), now_iso(), now_iso()),
+        ).lastrowid
+
+    def get_story(self, story_id: int) -> Optional[sqlite3.Row]:
+        return self.db.one("SELECT * FROM stories WHERE id=?", (story_id,))
+
+    def list_stories(self, dataset: str | None = None) -> list[sqlite3.Row]:
+        if dataset:
+            return self.db.query("SELECT * FROM stories WHERE dataset=? ORDER BY id DESC", (dataset,))
+        return self.db.query("SELECT * FROM stories ORDER BY id DESC")
+
+    def update_story(self, story_id: int, spec: dict, title: str | None = None) -> None:
+        if title is None:
+            self.db.execute("UPDATE stories SET spec_json=?, updated_at=? WHERE id=?",
+                            (json.dumps(spec, default=str), now_iso(), story_id))
+        else:
+            self.db.execute("UPDATE stories SET spec_json=?, title=?, updated_at=? WHERE id=?",
+                            (json.dumps(spec, default=str), title, now_iso(), story_id))
+
+    def delete_story(self, story_id: int) -> None:
+        self.db.execute("DELETE FROM stories WHERE id=?", (story_id,))
 
     def log(self, op: str, source: str, dataset: str | None, input_data: Any, output_summary: str,
              ok: bool, error: str | None, elapsed_ms: float) -> str:
