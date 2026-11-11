@@ -9,6 +9,7 @@ from .reconcile import router as reconcile_router
 from .scenarios import router as scenarios_router
 from .sheets import router as sheets_router
 from .status import router as status_router
+from .story import router as story_router
 from .ui import router as ui_router
 
-ROUTERS = [status_router, agent_router, ui_router, lab_router, dac_router, sheets_router, reconcile_router, migrate_router, scenarios_router, process_router, experiments_router, fabquote_router]
+ROUTERS = [status_router, agent_router, ui_router, lab_router, dac_router, sheets_router, reconcile_router, migrate_router, scenarios_router, process_router, experiments_router, fabquote_router, story_router]
