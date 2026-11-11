@@ -178,6 +178,14 @@ export const api = {
   chartGet: (id, image, lang) => get(`/api/charts/${id}`, { image, lang }),
   chartDelete: (id) => del(`/api/charts/${id}`),
 
+  storyBuild: (dataset, rewrite) => post("/api/story/build", { dataset, rewrite: !!rewrite }),
+  storyList: (dataset) => get("/api/story/stories", { dataset }),
+  storyGet: (id) => get(`/api/story/stories/${id}`),
+  storyUpdate: (id, body) => put(`/api/story/stories/${id}`, body),
+  storyDelete: (id) => del(`/api/story/stories/${id}`),
+  storyExport: (id, format) => post(`/api/story/stories/${id}/export?format=${encodeURIComponent(format)}`),
+  storyDownloadUrl: (path) => `${import.meta.env.BASE_URL}api/story/download?path=${encodeURIComponent(path)}`,
+
   dashboardCreate: (body) => post("/api/dashboards", body),
   dashboardList: () => get("/api/dashboards"),
   dashboardGet: (id) => get(`/api/dashboards/${id}`),
