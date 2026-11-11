@@ -8,6 +8,7 @@ import SourcesPage from "./pages/SourcesPage.jsx";
 import DatasetsPage from "./pages/DatasetsPage.jsx";
 import QualityPage from "./pages/QualityPage.jsx";
 import ChartsPage from "./pages/ChartsPage.jsx";
+import StoryPage from "./pages/StoryPage.jsx";
 import DashboardsPage from "./pages/DashboardsPage.jsx";
 import DashboardCodePage from "./pages/DashboardCodePage.jsx";
 import ModelsPage from "./pages/ModelsPage.jsx";
@@ -27,6 +28,7 @@ const PAGES = [
   { path: "datasets", labelKey: "nav_datasets", icon: "M4 5h16v4H4zM4 11h16v8H4zM8 15h8", component: DatasetsPage },
   { path: "quality", labelKey: "nav_quality", icon: "M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z", component: QualityPage },
   { path: "charts", labelKey: "nav_charts", icon: "M4 20V10m5 10V4m5 16v-8m5 8V7", component: ChartsPage },
+  { path: "story", labelKey: "nav_story", icon: "M4 5h16M4 10h10M4 15h13M4 20h7", component: StoryPage },
   { path: "dashboards", labelKey: "nav_dashboards", icon: "M4 4h7v7H4zM13 4h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z", component: DashboardsPage },
   { path: "dashboards-code", labelKey: "nav_dashboards_code", icon: "M8 4l-5 8 5 8M16 4l5 8-5 8M13 3l-2 18", component: DashboardCodePage, hidden: true },
   { path: "workbooks", labelKey: "nav_workbooks", icon: "M4 4h16v16H4zM4 9h16M4 14h16M9 4v16M14 4v16", component: WorkbooksPage },
