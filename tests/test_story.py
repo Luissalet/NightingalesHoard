@@ -119,6 +119,25 @@ def test_a_sentence_with_an_invented_figure_is_rejected():
     assert check["unsupported"] == ["999,00"]
 
 
+def test_a_sentence_without_any_figure_is_rejected():
+    # the sentence has to state the figure the chart shows; a text that quotes
+    # none of them says nothing that can be checked
+    figures = [{"key": "first", "value": 100.0, "decimals": 2}]
+    check = story_mod.verify_statement("Los valores suben con el tiempo.", figures, "es")
+    assert check["ok"] is False
+    assert check["checked"] == 0
+
+
+def test_an_edited_sentence_without_a_figure_falls_back_to_the_template(client, ds):
+    body = client.post("/api/story/build", json={"dataset": ds}).json()
+    finding = body["findings"][0]
+    updated = client.put(f"/api/story/stories/{body['story_id']}",
+                         json={"statements": {finding["id"]: "Los valores suben con el tiempo."}}).json()
+    assert updated["rejected"][0]["id"] == finding["id"]
+    kept = next(item for item in updated["findings"] if item["id"] == finding["id"])
+    assert kept["statement"] == kept["template"]
+
+
 def test_a_period_label_is_allowed_as_extra_text():
     figures = [{"key": "first", "value": 100.0, "decimals": 2}]
     check = story_mod.verify_statement("En 2024-03 llega a 100,00.", figures, "es", extra=["2024-03"])

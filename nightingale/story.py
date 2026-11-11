@@ -103,6 +103,10 @@ def verify_statement(text: str, figures: Iterable[dict], lang: str = "en",
     whose numbers are allowed too (period labels such as ``2024-01``). Returns
     ``{"ok": bool, "checked": int, "unsupported": [tokens]}`` — a rewrite with
     any unsupported number is discarded and the template stays.
+
+    A sentence with no number at all is rejected too: the finding's sentence has
+    to state the figure the chart shows, and a text that quotes none of them
+    says nothing that can be checked.
     """
     allowed: set[float] = set()
     for figure in figures:
@@ -123,7 +127,7 @@ def verify_statement(text: str, figures: Iterable[dict], lang: str = "en",
         checked += 1
         if round(parsed, 4) not in allowed:
             unsupported.append(token)
-    return {"ok": not unsupported, "checked": checked, "unsupported": unsupported}
+    return {"ok": not unsupported and checked > 0, "checked": checked, "unsupported": unsupported}
 
 
 # ---- column roles ------------------------------------------------------------
