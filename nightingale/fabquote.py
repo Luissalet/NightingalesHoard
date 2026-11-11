@@ -33,7 +33,7 @@ from .sheets.explain import parse_unit, registry
 from .texts import t as tx
 
 CATEGORIES = ("geometric_material", "process_material", "setup", "labour", "machine", "waste", "margin")
-SOURCES = ("user", "assumed", "measured", "rate card")
+SOURCES = ("user", "assumed", "measured", "rate card", "calibrated")
 PROCESSES = ("fdm", "cnc_laser", "concrete")
 POLICIES = ("coarse", "block")
 VULCAN_DEFAULT = "http://127.0.0.1:5186"
@@ -191,6 +191,11 @@ def build_template(process: str, currency: str = "EUR") -> dict:
             "travel_overhead_pct": _p(15, "%"), "slicer_time_h": _p(None, "h", "user", "print time reported by a slicer"),
             "coarse_throughput_cm3_h": _p(12, "cm**3/h", "assumed", "only used for a coarse volume-only estimate"),
             "coarse_fill_fraction_pct": _p(35, "%", "assumed", "only used when the surface is not known"),
+            "top_layers": _p(4, "1"), "bottom_layers": _p(4, "1"),
+            "top_bottom_area_cm2": _p(None, "cm**2", "measured", "projected area of the faces that look up or down; with it the solid top and bottom layers are a line item of their own"),
+            "slicer_extruded_cm3": _p(None, "cm**3", "measured", "filament volume of the part (without support, skirt or purge) from a slicer G-code"),
+            "slicer_skin_cm3": _p(None, "cm**3", "measured", "volume of the solid top and bottom layers from a slicer G-code"),
+            "slicer_support_cm3": _p(None, "cm**3", "measured", "volume of support material from a slicer G-code"),
             "density_g_cm3": _p(1.24, "g/cm**3"), "material_price_eur_kg": _p(22, f"{cur}/kg", "rate card", note_rate),
             "support_pct": _p(10, "%"), "purge_g": _p(5, "g"),
             "setup_time_h": _p(0.5, "h"), "postprocess_time_h": _p(0.25, "h"),
@@ -200,8 +205,14 @@ def build_template(process: str, currency: str = "EUR") -> dict:
         derived = [
             _der("shell_cm3", "Perimeter shell volume", "cm**3",
                  [_alt("min(volume_cm3, surface_cm2 * perimeters * line_width_mm)")]),
-            _der("extruded_cm3", "Printed volume (shell + infill)", "cm**3", [
-                _alt("shell_cm3 + infill_pct * (volume_cm3 - shell_cm3)"),
+            _der("skin_cm3", "Solid top and bottom layers (0 until the top/bottom area or a slicer value is given: "
+                 "then the infill percentage covers the whole interior)", "cm**3", [
+                _alt("slicer_skin_cm3"),
+                _alt("min(top_bottom_area_cm2 * (top_layers + bottom_layers) * layer_height_mm, volume_cm3 - shell_cm3)"),
+                _alt("0 * volume_cm3", "exact", "fq.warn_skin_not_separated")]),
+            _der("extruded_cm3", "Printed volume (shell + skin + infill)", "cm**3", [
+                _alt("slicer_extruded_cm3"),
+                _alt("shell_cm3 + skin_cm3 + infill_pct * (volume_cm3 - shell_cm3 - skin_cm3)"),
                 _alt("volume_cm3 * coarse_fill_fraction_pct", "coarse", "fq.warn_coarse_fill")]),
             _der("print_time_h", "Print time", "h", [
                 _alt("slicer_time_h"),
@@ -210,17 +221,21 @@ def build_template(process: str, currency: str = "EUR") -> dict:
                 _alt("volume_cm3 / coarse_throughput_cm3_h", "coarse", "fq.warn_coarse_time")]),
         ]
         items = [
-            _item("mat_geo", "geometric_material", "Material in the printed geometry",
-                  "extruded_cm3 * density_g_cm3 * material_price_eur_kg", cur),
-            _item("mat_supports", "process_material", "Support material", "mat_geo * support_pct", cur),
+            _item("mat_geo", "geometric_material", "Material in walls and infill",
+                  "(extruded_cm3 - skin_cm3) * density_g_cm3 * material_price_eur_kg", cur),
+            _item("mat_skin", "geometric_material", "Material in the solid top and bottom layers",
+                  "skin_cm3 * density_g_cm3 * material_price_eur_kg", cur),
+            _item("mat_supports", "process_material", "Support material", None, cur,
+                  alts=[_alt("slicer_support_cm3 * density_g_cm3 * material_price_eur_kg"),
+                        _alt("(mat_geo + mat_skin) * support_pct")]),
             _item("mat_purge", "process_material", "Purge and priming", "purge_g * material_price_eur_kg", cur),
             _item("setup_prep", "setup", "Preparation and slicing", "setup_time_h * labour_rate_eur_h", cur),
             _item("labour_post", "labour", "Post-processing labour", "postprocess_time_h * labour_rate_eur_h", cur),
             _item("machine_time", "machine", "Machine time", "print_time_h * machine_rate_eur_h", cur),
             _item("waste_scrap", "waste", "Failed prints (expected scrap)",
-                  "failure_rate_pct * (mat_geo + mat_supports + mat_purge + machine_time)", cur),
+                  "failure_rate_pct * (mat_geo + mat_skin + mat_supports + mat_purge + machine_time)", cur),
             _item("margin", "margin", "Margin on cost",
-                  "margin_pct * (mat_geo + mat_supports + mat_purge + setup_prep + labour_post + machine_time + waste_scrap)", cur),
+                  "margin_pct * (mat_geo + mat_skin + mat_supports + mat_purge + setup_prep + labour_post + machine_time + waste_scrap)", cur),
         ]
     elif process == "cnc_laser":
         params = {
@@ -849,7 +864,8 @@ def _view(services, name: str, doc: dict, extra: Optional[dict] = None) -> dict:
     res = evaluate(spec)
     out = {"name": name, "process": spec["process"], "currency": spec["currency"], "options": spec["options"],
            "provenance": doc.get("provenance"), "scenarios": doc.get("scenarios", {}), "actuals": doc.get("actuals", []),
-           "result": public(res), "warnings": res["warnings"] + doc.get("input_warnings", [])}
+           "result": public(res), "warnings": res["warnings"] + doc.get("input_warnings", []) + (doc.get("inspection") or {}).get("texts", []),
+           "inspection": doc.get("inspection"), "calibrations": doc.get("calibrations", [])}
     if extra:
         out.update(extra)
     return out

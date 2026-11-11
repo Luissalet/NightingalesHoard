@@ -48,6 +48,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import process_mining as pm
 from . import scenarios as sc
+from . import seasonality as sn
 from .texts import t as tx
 
 ProcessError = pm.ProcessError
@@ -589,6 +590,7 @@ def profile_log(log: dict, threshold: float = 0.5, min_count: int = 1, max_varia
                   "note": tx("el.times_sep") if quality["has_start"] else tx("el.times_elapsed")},
         "concurrency": conc, "bottlenecks": bottlenecks, "explanation": explanation,
         "rework": disc["rework"], "resources": disc["resources"],
+        "arrival_seasonality": sn.analyse([_span(evs)[0] for _c, evs in cases], log["options"]["_tz"]),
         "deviations": deviations, "missing_data": proposals,
         "warnings": warnings, "caveat": tx("el.caveat"),
     }
@@ -778,8 +780,61 @@ def _row(metric: str, train_obs, test_obs, sim: dict, tol: float, n_test: int) -
 
 
 # ---------------------------------------------------------------------------------- user edits of the model
-EDIT_KEYS = ("arrival_rate", "stations", "routing")
-STATION_EDIT_KEYS = ("service", "servers")
+EDIT_KEYS = ("arrival_rate", "arrival_gaps", "stations", "routing")
+STATION_EDIT_KEYS = ("service", "servers", "service_values")
+MAX_EMPIRICAL_VALUES = 5000
+SEASONAL_MODES = ("off", "auto", "on")
+
+
+def _edit_values(current: Optional[list], spec: Any, where: str) -> tuple[list[float], dict]:
+    """The new list of an empirical sample, value by value.
+
+    ``spec`` is either the complete new list, or ``{set: {index: value}, remove: [index], add: [value]}`` applied to
+    ``current`` (indices are 0-based positions in the list as the model shows it; set and remove refer to the
+    current list, add appends). Returns the list and a count of what changed."""
+    def number(v, label):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            raise _edit_fail(where, tx("el.edit_values_number", label=label))
+        if v < 0:
+            raise _edit_fail(where, tx("el.edit_values_negative", label=label))
+        return float(v)
+    if isinstance(spec, list):
+        out = [number(v, f"[{i}]") for i, v in enumerate(spec)]
+        stats_ = {"set": None, "removed": None, "added": None, "replaced": True}
+    elif isinstance(spec, dict) and spec and set(spec) <= {"set", "remove", "add"}:
+        if current is None:
+            raise _edit_fail(where, tx("el.edit_values_not_empirical"))
+        out = list(current)
+        n = len(out)
+        sets = spec.get("set") or {}
+        rem = spec.get("remove") or []
+        add = spec.get("add") or []
+        if not isinstance(sets, dict) or not isinstance(rem, list) or not isinstance(add, list):
+            raise _edit_fail(where, tx("el.edit_values_shape"))
+
+        def index(raw):
+            try:
+                i = int(raw)
+            except (TypeError, ValueError):
+                raise _edit_fail(where, tx("el.edit_values_index", idx=raw, n=n)) from None
+            if isinstance(raw, bool) or not 0 <= i < n:
+                raise _edit_fail(where, tx("el.edit_values_index", idx=raw, n=n))
+            return i
+        set_idx = {index(k): number(v, f"set[{k}]") for k, v in sets.items()}
+        rem_idx = {index(k) for k in rem}
+        if set_idx.keys() & rem_idx:
+            raise _edit_fail(where, tx("el.edit_values_overlap"))
+        for i, v in set_idx.items():
+            out[i] = v
+        out = [v for i, v in enumerate(out) if i not in rem_idx] + [number(v, f"add[{i}]") for i, v in enumerate(add)]
+        stats_ = {"set": len(set_idx), "removed": len(rem_idx), "added": len(add), "replaced": False}
+    else:
+        raise _edit_fail(where, tx("el.edit_values_shape"))
+    if not out:
+        raise _edit_fail(where, tx("el.edit_values_empty"))
+    if len(out) > MAX_EMPIRICAL_VALUES:
+        raise _edit_fail(where, tx("el.edit_values_too_many", max=MAX_EMPIRICAL_VALUES))
+    return out, stats_
 
 
 def _edit_fail(where: str, reason: str):
@@ -833,6 +888,19 @@ def apply_model_edits(model: dict, params: list[dict], edits: Optional[dict]) ->
         p["estimator"] = tx("el.edited_estimator")
         records.append({"parameter": key, "original": original, "edited": value, "normalised": normalised})
 
+    if "arrival_gaps" in edits:
+        if "arrival_rate" in edits:
+            raise _edit_fail("arrival_gaps", tx("el.edit_arrivals_both"))
+        cur_arr = new.get("arrivals") or {}
+        cur_vals = cur_arr.get("values") if cur_arr.get("type") == "empirical" else None
+        if isinstance(edits["arrival_gaps"], dict) and cur_vals is None:
+            raise _edit_fail("arrival_gaps", tx("el.edit_arrivals_not_empirical", kind=cur_arr.get("type")))
+        vals, st_ = _edit_values(cur_vals, edits["arrival_gaps"], "arrival_gaps")
+        if sum(vals) <= 0:
+            raise _edit_fail("arrival_gaps", tx("el.edit_arrivals_zero"))
+        new["arrivals"] = {"type": "empirical", "values": vals}
+        record("arrivals", {"type": "empirical", "values_count": len(vals), "mean_gap_hours": sum(vals) / len(vals),
+                            **{k: v for k, v in st_.items() if v is not None}})
     if "arrival_rate" in edits:
         r = edits["arrival_rate"]
         if isinstance(r, bool) or not isinstance(r, (int, float)) or not math.isfinite(r):
@@ -864,11 +932,28 @@ def apply_model_edits(model: dict, params: list[dict], edits: Optional[dict]) ->
                 raise _edit_fail(f"{where}.servers", tx("el.edit_servers_min"))
             st["servers"] = v
             record(f"servers:{name}", v)
-        if "service" in ch:
+        if "service" in ch and "service_values" in ch:
+            raise _edit_fail(where, tx("el.edit_service_both"))
+        if "service_values" in ch or (isinstance(ch.get("service"), dict) and ch["service"].get("dist") == "empirical"):
+            if "service_values" in ch:
+                spec_v, cur_v = ch["service_values"], st["service"].get("values") if st["service"].get("dist") == "empirical" else None
+            else:
+                spec_v, cur_v = ch["service"].get("values"), None
+            if spec_v is None:
+                raise _edit_fail(f"{where}.service", tx("el.edit_values_shape"))
+            vals, st_ = _edit_values(cur_v, spec_v, f"{where}.service")
+            spec = {"dist": "empirical", "values": vals}
+            try:
+                sc.make_sampler(spec, f"{where}.service")
+            except sc.ScenarioError as exc:
+                raise _edit_fail(f"{where}.service", str(exc)) from None
+            st["service"] = spec
+            record(f"service:{name}", {"dist": "empirical", "mean_hours": sum(vals) / len(vals), "values_count": len(vals),
+                                       **{k: v for k, v in st_.items() if v is not None}})
+        elif "service" in ch:
             spec = ch["service"]
-            if not isinstance(spec, dict) or spec.get("dist") in (None, "empirical"):
-                raise _edit_fail(f"{where}.service", tx("el.edit_service_shape", dists=", ".join(
-                    d for d in sc.DISTS if d != "empirical")))
+            if not isinstance(spec, dict) or spec.get("dist") is None:
+                raise _edit_fail(f"{where}.service", tx("el.edit_service_shape", dists=", ".join(sc.DISTS)))
             try:
                 sc.make_sampler(spec, f"{where}.service")
             except sc.ScenarioError as exc:
@@ -903,11 +988,27 @@ def apply_model_edits(model: dict, params: list[dict], edits: Optional[dict]) ->
 
 
 
+def _use_schedule(model: dict, desc: dict, params: list[dict], seas: dict) -> None:
+    """Replace the fitted arrival process by the seasonal schedule and say so in the provenance of the parameter."""
+    sched = json.loads(json.dumps(seas["schedule"]))
+    model["arrivals"] = sched
+    peaks = [p["slot"] for p in seas["hour_of_day"]["peaks"]]
+    p0 = next(p for p in params if p["parameter"] == "arrivals")
+    p0["value"] = {"type": "schedule", "cycle_hours": sched["cycle_hours"], "used": seas["used"], "peak_hours": peaks,
+                   "mean_rate_per_hour": seas["mean_rate_per_hour"], "rates": sched["rates"]}
+    p0["estimator"] = tx("el.est_seasonal", used=tx("sn.used_" + seas["used"]),
+                         ph=sn._fmt_p(seas["hour_of_day"]["test"]["p_value"]),
+                         pd=sn._fmt_p(seas["day_of_week"]["test"]["p_value"]))
+    desc["arrivals"] = seas["verdict"]
+
+
 def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = None, replications: int = 20,
                   seed: int = 1, tolerances: Optional[dict] = None, variants: Optional[list] = None,
-                  model_edits: Optional[dict] = None) -> dict:
+                  model_edits: Optional[dict] = None, seasonal_arrivals: str = "auto") -> dict:
     if not 1 <= int(replications) <= 100:
         raise ProcessError(tx("pm.replications_range"))
+    if seasonal_arrivals not in SEASONAL_MODES:
+        raise ProcessError(tx("el.bad_seasonal", value=seasonal_arrivals, valid=", ".join(SEASONAL_MODES)))
     tol = dict(DEFAULT_TOLERANCES)
     for k, v in (tolerances or {}).items():
         if k not in tol:
@@ -927,6 +1028,11 @@ def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = Non
         raise ProcessError(tx("el.few_holdout", n=len(test), min=MIN_TEST_CASES))
     q_train = subset_quality(log, train)
     model, desc, params = propose_model(train, q_train, int(replications), int(seed))
+    seas = None
+    if seasonal_arrivals != "off":
+        seas = sn.analyse([_span(evs)[0] for _c, evs in train], log["options"]["_tz"], mode=seasonal_arrivals)
+        if seas.get("schedule"):
+            _use_schedule(model, desc, params, seas)
     disc = pm.discover_log(train, q_train)
     b_rows = _bottlenecks(profile_activities(train, disc), disc)
     bott = b_rows[0]["activity"] if b_rows else None
@@ -1015,6 +1121,7 @@ def calibrate_log(log: dict, holdout: float = 0.3, split_at: Optional[str] = Non
                        "replications": int(replications), "seed": int(seed)},
         "baseline": {"metrics": {k: met[k] for k in pm.HEADLINE if k in met}, "stations": run["stations"]},
         "model_source": "edited" if edit_records else "fitted",
+        "arrival_seasonality": seas, "seasonal_arrivals": seasonal_arrivals,
         "edits": edit_records, "edit_diff": edit_diff,
         "alternatives": outs,
         "warnings": warnings, "method": tx("el.calib_method"), "caveat": tx("el.caveat_sim"),
@@ -1120,7 +1227,7 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
                       holdout: float = 0.3, split_at: Optional[str] = None, replications: int = 20, seed: int = 1,
                       tolerances: Optional[dict] = None, variants: Optional[list] = None,
                       model_name: Optional[str] = None, recipe: Optional[Any] = None, source: str = "ui",
-                      model_edits: Optional[dict] = None) -> dict:
+                      model_edits: Optional[dict] = None, seasonal_arrivals: Optional[str] = None) -> dict:
     dataset, mapping, log_options, rec = _inputs(dataset, mapping, log_options, recipe)
     if rec and rec.get("calibration"):
         c = rec["calibration"]
@@ -1129,10 +1236,13 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
         tolerances = tolerances or c.get("tolerances")
         variants = variants or rec.get("variants")
         model_edits = model_edits or c.get("model_edits")
+        seasonal_arrivals = seasonal_arrivals or c.get("seasonal_arrivals")
+    seasonal_arrivals = seasonal_arrivals or "auto"
 
     def do():
         log = load(services, dataset, mapping, log_options)
-        res = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits)
+        res = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits,
+                            seasonal_arrivals)
         res["dataset"] = dataset
         res["cases"] = {"total": len(log["cases"]), "closed": log["diag"]["closed_cases"],
                         "open": len(log["cases"]) - log["diag"]["closed_cases"]}
@@ -1154,7 +1264,8 @@ def calibrate_process(services, dataset: Optional[str], mapping: Optional[dict],
                                    {"holdout": None if split_at else holdout, "split_at": split_at,
                                     "replications": int(replications), "seed": int(seed),
                                     "tolerances": res["validation"]["tolerances"],
-                                    "model_edits": model_edits or None}, variants)
+                                    "model_edits": model_edits or None,
+                                    "seasonal_arrivals": seasonal_arrivals}, variants)
         res["_log_summary"] = (f"holdout calibration on {dataset}: "
                                f"{'passed' if res['validation']['passed'] else 'FAILED'} "
                                f"({res['split']['fit_cases']} fit / {res['split']['holdout_cases']} held-out cases), "
@@ -1169,7 +1280,7 @@ def export_process(services, dataset: Optional[str], mapping: Optional[dict], lo
                    with_calibration: bool = False, holdout: float = 0.3, split_at: Optional[str] = None,
                    replications: int = 20, seed: int = 1, tolerances: Optional[dict] = None,
                    variants: Optional[list] = None, source: str = "ui",
-                   model_edits: Optional[dict] = None) -> dict:
+                   model_edits: Optional[dict] = None, seasonal_arrivals: str = "auto") -> dict:
     """The profile and the recipe as one JSON document: references to the dataset, never a copy of its rows."""
     dataset, mapping, log_options, _rec = _inputs(dataset, mapping, log_options, None)
 
@@ -1179,10 +1290,12 @@ def export_process(services, dataset: Optional[str], mapping: Optional[dict], lo
         cal = None
         calib_settings = None
         if with_calibration:
-            cal = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits)
+            cal = calibrate_log(log, holdout, split_at, replications, seed, tolerances, variants, model_edits,
+                                seasonal_arrivals)
             calib_settings = {"holdout": None if split_at else holdout, "split_at": split_at,
                               "replications": int(replications), "seed": int(seed),
-                              "tolerances": cal["validation"]["tolerances"], "model_edits": model_edits or None}
+                              "tolerances": cal["validation"]["tolerances"], "model_edits": model_edits or None,
+                              "seasonal_arrivals": seasonal_arrivals}
         recipe = recipe_for(services, dataset, log["quality"]["mapping"], public_options(log["options"]),
                             calib_settings, variants)
         diag = prof["log"]
@@ -1192,7 +1305,7 @@ def export_process(services, dataset: Optional[str], mapping: Optional[dict], lo
             "graph": [{k: e[k] for k in ("from", "to", "count", "cases", "share_of_cases", "kept", "overlapping",
                                          "tie_dependent")} for e in prof["graph"]["edges"]],
             "coverage": prof["graph"]["coverage"], "times": prof["times"], "bottlenecks": prof["bottlenecks"],
-            "concurrency": prof["concurrency"],
+            "concurrency": prof["concurrency"], "arrival_seasonality": sn.summary(prof["arrival_seasonality"]),
             "checks": {"duplicates": diag["duplicates"]["total"], "ties": diag["ties"]["total"],
                        "excluded": {k: v["total"] for k, v in diag["excluded"].items()},
                        "complete_without_start": diag["complete_without_start"]["total"],

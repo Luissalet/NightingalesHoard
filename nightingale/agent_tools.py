@@ -759,13 +759,18 @@ def _run_scenario(s: Services, a: ScenarioArgs) -> dict:
     return sc.calibrate_scenario(s, need(a.dataset, "dataset"), need(a.column, "column"), a.kind, a.unit, source="agent")
 class FabQuoteArgs(BaseModel):
     action: Literal["templates", "vulcan", "create", "list", "get", "delete", "set", "options", "scenario_save",
-                    "scenario_delete", "compare", "sensitivity", "actual", "actuals", "actual_delete", "export"] = Field(
+                    "scenario_delete", "compare", "sensitivity", "actual", "actuals", "actual_delete", "export",
+                    "calibrate", "toolpath", "inspect"] = Field(
         "list", description="templates = processes with their parameters; vulcan = fetch measurements of a library model "
         "(preview, nothing saved); create = new quote (process + measurements/parameters/rate_card/vulcan_model_id); "
         "list/get/delete = stored quotes by name; set = change base parameters (reports the items that changed and why); "
         "options = volume_only policy; scenario_save/scenario_delete = named assumption variations; compare = scenarios "
         "against the base with diffs; sensitivity = one-at-a-time +-pct on parameters; actual = record what a line item "
-        "really cost or took; actuals = actual versus quote per item; actual_delete; export = json, csv or markdown.")
+        "really cost or took; actuals = actual versus quote per item; actual_delete; export = json, csv or markdown; "
+        "calibrate = least-squares fit of rates and yields to several real jobs (jobs, fit, apply), with standard errors, "
+        "confidence intervals, error before/after and a leave-one-job-out check; toolpath = read a slicer G-code or a "
+        "trajectory file (content, kind, unit; apply=false only previews); inspect = Vulcan's inspection of a model "
+        "(vulcan_model_id, target) as structured warnings kept on the quote.")
     name: Optional[str] = Field(None, description="quote name")
     process: Optional[Literal["fdm", "cnc_laser", "concrete"]] = Field(None, description="create: manufacturing process template")
     measurements: Optional[dict[str, Any]] = Field(None, description="create: measured values {parameter: number | "
@@ -796,6 +801,19 @@ class FabQuoteArgs(BaseModel):
     note: str = ""
     actual_id: Optional[int] = Field(None, description="actual_delete: record id")
     format: Literal["json", "csv", "markdown"] = "json"
+    jobs: Optional[list[dict[str, Any]]] = Field(None, description="calibrate: real jobs, each {label, parameters: {measurement: "
+                                                 "value}, actuals: {line item or derived id: real value}}, e.g. "
+                                                 "{\"parameters\": {\"volume_cm3\": 40, \"surface_cm2\": 90, \"part_height_mm\": 30}, "
+                                                 "\"actuals\": {\"print_time_h\": 2.4, \"machine_time\": 3.1}}")
+    fit: Optional[list[str]] = Field(None, description="calibrate: parameters to fit (default the usual rates of the process: "
+                                     "speed, machine rate, material price, labour rate)")
+    apply: bool = Field(False, description="calibrate: write the fitted values into the quote (source calibrated); toolpath: "
+                        "set apply=false to preview only (default true there)")
+    level: float = Field(0.95, ge=0.5, le=0.999, description="calibrate: confidence level of the intervals")
+    content: Optional[str] = Field(None, description="toolpath: text of a slicer G-code, or a trajectory (CSV x,y[,z] / JSON points)")
+    kind: Literal["auto", "gcode", "trajectory"] = Field("auto", description="toolpath: how to read content")
+    path_unit: Literal["mm", "cm", "m", "in"] = Field("mm", description="toolpath: unit of a trajectory's coordinates")
+    label: str = Field("", description="toolpath: file name or note kept in the provenance")
 
 
 def _run_fabquote(s: Services, a: FabQuoteArgs) -> dict:
@@ -834,6 +852,16 @@ def _run_fabquote(s: Services, a: FabQuoteArgs) -> dict:
         return fq.compare_actuals(s, n(), a.scenario)
     if a.action == "actual_delete":
         return fq.delete_actual(s, n(), need(a.actual_id, "actual_id"), source="agent")
+    if a.action == "calibrate":
+        from . import fabquote_calib as fqc
+        return fqc.calibrate_quote(s, n(), need(a.jobs, "jobs"), a.fit, a.apply, a.level, source="agent")
+    if a.action == "toolpath":
+        from . import fabquote_import as fqi
+        return fqi.import_toolpath(s, n(), need(a.content, "content"), a.kind, a.path_unit, a.label,
+                                   apply=a.apply if "apply" in a.model_fields_set else True, source="agent")
+    if a.action == "inspect":
+        from . import fabquote_import as fqi
+        return fqi.inspect_quote(s, n(), need(a.vulcan_model_id, "vulcan_model_id"), a.target or "fdm-print", source="agent")
     return fq.export_quote(s, n(), a.format, a.scenario)
 
 
@@ -906,7 +934,15 @@ class ProcessArgs(BaseModel):
         "stations: {activity: {service: {dist: fixed|exponential|uniform|triangular|lognormal, ...params in hours}, "
         "servers: int>=1}}, routing: {start: {activity: share}, next: {activity: {activity|END: share}}}}. Edited "
         "parameters are marked as edited by the user with their original value; validation and alternatives are "
-        "re-run with the edited model (same seeds) and the diff against the fitted model is returned")
+        "re-run with the edited model (same seeds) and the diff against the fitted model is returned. Empirical "
+        "samples are edited value by value: stations.<activity>.service_values {set: {index: hours}, remove: [index], "
+        "add: [hours]} (indices of model.stations[].service.values) or service {dist: empirical, values: [..]}; "
+        "arrival_gaps with the same operations (or a full list) when the arrivals are empirical")
+    seasonal_arrivals: Optional[Literal["off", "auto", "on"]] = Field(
+        None, description="calibrate/export: arrivals by hour of day and weekday. auto (default) = test the hourly and "
+        "weekly pattern against a constant rate (chi-square, alpha 0.01) and use a schedule only when significant; "
+        "off = never; on = hourly schedule even if not significant. Model time 0 is local midnight (24 h cycle) or "
+        "Monday 00:00 (168 h cycle) of log_options.timezone. profile reports the test as arrival_seasonality")
     with_calibration: bool = Field(False, description="export: include the holdout calibration")
     recipe: Optional[dict[str, Any]] = Field(None, description="profile/calibrate: an exported recipe to re-run "
                                              "(mapping, options and settings; warns if the data changed)")
@@ -938,11 +974,11 @@ def _run_process(s: Services, a: ProcessArgs) -> dict:
     if a.action == "calibrate":
         return el.calibrate_process(s, a.dataset, a.mapping, a.log_options, a.holdout, a.split_at, a.replications,
                                     a.seed, a.tolerances, a.variants, a.model_name, a.recipe, source="agent",
-                                    model_edits=a.model_edits)
+                                    model_edits=a.model_edits, seasonal_arrivals=a.seasonal_arrivals)
     if a.action == "export":
         return el.export_process(s, a.dataset, a.mapping, a.log_options, a.with_calibration, a.holdout, a.split_at,
                                  a.replications, a.seed, a.tolerances, a.variants, source="agent",
-                                 model_edits=a.model_edits)
+                                 model_edits=a.model_edits, seasonal_arrivals=a.seasonal_arrivals or "auto")
     if not a.dataset:
         raise ValueError(f"dataset is required for {a.action}")
     if a.action == "suggest":
@@ -1215,7 +1251,13 @@ TOOLS: list[Tool] = [
          "dependent items and give a before/after diff with formulas and sources; sensitivity varies one parameter at a "
          "time; actual/actuals compare real costs and times with the quote per item (optional reference to a ledger "
          "movement, nothing is written there); export gives json, csv or markdown. Geometry may come from Vulcan "
-         "(vulcan_model_id, optional, with provenance).\n"
+         "(vulcan_model_id, optional, with provenance). FDM has the solid top and bottom layers as a line item of their "
+         "own (top_bottom_area_cm2, or the slicer's volumes). calibrate fits rates and yields (print speed, machine rate, "
+         "material price...) to several real jobs by least squares with the quote's own formulas, giving standard errors, "
+         "confidence intervals, the error before and after, a leave-one-job-out check and the parameters the data cannot "
+         "pin down; toolpath reads a slicer G-code (time, filament by feature, layers) or a trajectory file into the "
+         "quote's measurements, with the file hash; inspect reads Vulcan's inspection through the Hub as structured "
+         "warnings (severity, parameters in doubt, suggested fix).\n"
          "Sinónimos: presupuesto de fabricación, impresión 3D, FDM, hormigón, corte láser, CNC, coste de pieza, tarifa, "
          "escenarios de coste, sensibilidad, desperdicio, tiempo de máquina, calibración con costes reales, quote.",
          FabQuoteArgs, _ann(False, False, False), _run_fabquote, capped=False),

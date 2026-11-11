@@ -197,7 +197,7 @@ def test_scenario_compare_reports_diff_and_keeps_formulas_and_sources(services):
     assert {c["id"] for c in pm["changes"]} == {"mat_geo", "mat_supports", "mat_purge", "waste_scrap", "margin"}
     mg = next(c for c in pm["changes"] if c["id"] == "mat_geo")
     assert mg["after"] == pytest.approx(mg["before"] * 40 / 22)
-    assert mg["formula"] == "extruded_cm3 * density_g_cm3 * material_price_eur_kg"
+    assert mg["formula"] == "(extruded_cm3 - skin_cm3) * density_g_cm3 * material_price_eur_kg"
     assert mg["sources"]["material_price_eur_kg"] == "assumed"          # scenario override defaults to assumed
     assert mg["because"] == [{"parameter": "material_price_eur_kg", "before": 22, "after": 40, "unit": "EUR/kg",
                               "source_before": "rate card", "source_after": "assumed"}]
@@ -257,7 +257,7 @@ def test_export_json_csv_markdown_with_formulas_and_sources(services):
     line = next(r for r in rows if ",machine_time," in r)
     assert "print_time_h * machine_rate_eur_h" in line and "machine_rate_eur_h (rate card)" in line
     md = fq.export_quote(services, "q", "markdown", "s1")["content"]
-    assert "| `mat_geo` |" in md and "extruded_cm3 * density_g_cm3 * material_price_eur_kg" in md and "(measured)" in md
+    assert "| `mat_geo` |" in md and "(extruded_cm3 - skin_cm3) * density_g_cm3 * material_price_eur_kg" in md and "(measured)" in md
     with pytest.raises(fq.FabQuoteError):
         fq.export_quote(services, "q", "xml")
 

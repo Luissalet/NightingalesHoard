@@ -56,6 +56,8 @@ export function ProfilePanel({ prof, lang, t, onExport, busy }) {
         </div>
       </div>
 
+      <SeasonalityBlock s={prof.arrival_seasonality} lang={lang} t={t} />
+
       <div className="panel flex flex-col gap-1" data-testid="pr-checks">
         <h2 className="font-semibold mb-1">{t("el_checks")}</h2>
         <p className="help mb-1">{L.ordering}</p>
@@ -137,6 +139,80 @@ const fmtVal = (v, lang) => {
   return Object.entries(v).map(([k, x]) => `${k} ${pct(x, lang)}`).join(", ");
 };
 
+const fmtP = (p, lang) => (typeof p !== "number" ? "—" : p < 0.0001 ? "< 0,0001".replace(",", lang === "es" ? "," : ".") : formatNumber(p, lang, { maximumFractionDigits: 4 }));
+
+/** Hour-of-day and weekday arrival pattern with the chi-square test against a constant rate. */
+export function SeasonalityBlock({ s, lang, t }) {
+  if (!s) return null;
+  const hod = s.hour_of_day, dow = s.day_of_week;
+  const bars = (block, labels) => {
+    const max = Math.max(...block.rate_per_hour, 1e-12);
+    return (
+      <div className="flex items-end gap-[2px]" style={{ height: 70 }} role="img" aria-label={t("sn_chart")}>
+        {block.rate_per_hour.map((r, i) => (
+          <div key={i} className="flex flex-col items-center justify-end" style={{ width: labels ? 42 : 14, height: "100%" }} title={`${labels ? labels[i] : i + ":00"} · ${formatNumber(r, lang, { maximumFractionDigits: 2 })}/h · n=${block.counts[i]}`}>
+            <div style={{ width: "100%", height: `${Math.max(2, (r / max) * 52)}px`, background: "currentColor", opacity: block.peaks?.some((p) => p.slot === i) ? 0.9 : 0.35 }} />
+            <span className="help" style={{ fontSize: 10 }}>{labels ? labels[i] : i}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const testLine = (b, label) => b && b.test && (
+    <span className="help" key={label}>{label}: χ² = <span className="num">{formatNumber(b.test.statistic, lang, { maximumFractionDigits: 1 })}</span>, {t("sn_df")} {b.test.df}, p = <span className="num">{fmtP(b.test.p_value, lang)}</span>{b.test.reliable === false ? ` (${t("sn_unreliable")})` : ""}</span>
+  );
+  return (
+    <div className="panel flex flex-col gap-2" data-testid="pr-seasonality">
+      <h2 className="font-semibold"><Chip tone={s.significant ? "warn" : "ok"}>{s.significant ? t("sn_pattern") : s.evaluable ? t("sn_constant") : t("sn_not_evaluable")}</Chip> {t("sn_title")}</h2>
+      <p className="text-[13px]">{s.verdict}</p>
+      {s.evaluable && hod && (
+        <>
+          <div className="overflow-x-auto"><div style={{ minWidth: 24 * 16 }} data-testid="pr-seasonality-hours">{bars(hod)}</div></div>
+          {dow && <div className="overflow-x-auto"><div data-testid="pr-seasonality-days">{bars(dow, dow.labels)}</div></div>}
+          <p className="flex flex-wrap gap-x-4">{testLine(hod, t("sn_by_hour"))}{testLine(dow, t("sn_by_day"))}</p>
+          {hod.peaks?.length > 0 && <p className="help">{t("sn_peaks")}: {hod.peaks.map((p) => `${p.slot}:00 (×${formatNumber(p.ratio_to_mean, lang, { maximumFractionDigits: 1 })})`).join(", ")}</p>}
+        </>
+      )}
+      {s.caveat && <p className="help">{s.caveat}</p>}
+    </div>
+  );
+}
+
+/** Value-by-value editor of an empirical sample: change, remove or add single values; sends set/remove/add. */
+function ValuesEditor({ values, cur, set, t, label }) {
+  const c = cur || { set: {}, remove: [], add: [] };
+  const shown = values.slice(0, 300);
+  const [addv, setAddv] = useState("");
+  const upd = (patch) => {
+    const next = { ...c, ...patch };
+    const empty = !Object.keys(next.set).length && !next.remove.length && !next.add.length;
+    set(empty ? undefined : next);
+  };
+  return (
+    <details className="text-[13px]" data-testid={`pr-values-${label}`}>
+      <summary className="cursor-pointer">{t("el_values_edit")} ({values.length})</summary>
+      <div className="flex flex-wrap gap-1 mt-1" style={{ maxHeight: 180, overflowY: "auto" }}>
+        {shown.map((v, i) => {
+          const removed = c.remove.includes(i);
+          return (
+            <span key={i} className="flex items-center gap-[2px]" style={removed ? { opacity: 0.4, textDecoration: "line-through" } : undefined}>
+              <input className="field num" style={{ width: 68 }} type="number" step="any" min="0" aria-label={`${label}[${i}]`} disabled={removed}
+                value={c.set[i] ?? v} onChange={(e) => { const s2 = { ...c.set }; if (e.target.value === "" || Number(e.target.value) === v) delete s2[i]; else s2[i] = Number(e.target.value); upd({ set: s2 }); }} data-testid={`pr-value-${label}-${i}`} />
+              <button className="btn btn-sm" type="button" aria-label={`${t("el_values_remove")} ${i}`} onClick={() => upd({ remove: removed ? c.remove.filter((x) => x !== i) : [...c.remove, i] })}>{removed ? "↺" : "×"}</button>
+            </span>
+          );
+        })}
+      </div>
+      {values.length > shown.length && <p className="help">{t("el_values_more").replace("{n}", values.length - shown.length)}</p>}
+      <div className="flex items-center gap-2 mt-1">
+        <input className="field num" style={{ width: 90 }} type="number" step="any" min="0" placeholder={t("el_edit_hours")} aria-label={t("el_values_add")} value={addv} onChange={(e) => setAddv(e.target.value)} data-testid={`pr-value-add-${label}`} />
+        <button className="btn btn-sm" type="button" disabled={addv === ""} onClick={() => { upd({ add: [...c.add, Number(addv)] }); setAddv(""); }} data-testid={`pr-value-add-btn-${label}`}>{t("el_values_add")}</button>
+        {c.add.length > 0 && <span className="help">+ {c.add.join(", ")} <button className="btn btn-sm" type="button" onClick={() => upd({ add: [] })}>×</button></span>}
+      </div>
+    </details>
+  );
+}
+
 const DIST_FIELDS = { fixed: ["value"], exponential: ["mean"], uniform: ["min", "max"], triangular: ["min", "mode", "max"], lognormal: ["mean", "sigma"] };
 const num = (x) => (x === "" || x === undefined || x === null ? null : Number(x));
 
@@ -146,6 +222,11 @@ export function editsFromDraft(draft) {
   for (const [key, d] of Object.entries(draft)) {
     const [kind, name] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
     if (key === "arrivals") { if (num(d) !== null) out.arrival_rate = num(d); continue; }
+    if (key === "gaps") { if (d) out.arrival_gaps = d; continue; }
+    if (kind === "values") {
+      if (d) { out.stations = out.stations || {}; out.stations[name] = { ...(out.stations[name] || {}), service_values: d }; }
+      continue;
+    }
     if (kind === "servers") { if (num(d) !== null) { out.stations = out.stations || {}; out.stations[name] = { ...(out.stations[name] || {}), servers: num(d) }; } continue; }
     if (kind === "service") {
       if (d && d.dist) {
@@ -163,13 +244,27 @@ export function editsFromDraft(draft) {
   return out;
 }
 
-function ParamEditor({ p, draft, setDraft, t }) {
+function ParamEditor({ p, draft, setDraft, t, model }) {
   const key = p.parameter;
   const set = (v) => setDraft({ ...draft, [key]: v });
   const d = draft[key];
   const aria = `${t("el_edit")} ${key}`;
   if (key === "arrivals") {
-    return <input className="field num" style={{ width: 90 }} type="number" min="0" step="any" placeholder={t("el_edit_rate")} aria-label={aria} value={d ?? ""} onChange={(e) => set(e.target.value)} data-testid={`pr-edit-${key}`} />;
+    const gaps = model?.arrivals?.type === "empirical" && Array.isArray(model.arrivals.values) ? model.arrivals.values : null;
+    return (
+      <span className="flex flex-col gap-1">
+        <input className="field num" style={{ width: 90 }} type="number" min="0" step="any" placeholder={t("el_edit_rate")} aria-label={aria} value={d ?? ""} onChange={(e) => set(e.target.value)} data-testid={`pr-edit-${key}`} />
+        {gaps && <ValuesEditor values={gaps} cur={draft.gaps} set={(v) => setDraft({ ...draft, gaps: v })} t={t} label="gaps" />}
+      </span>
+    );
+  }
+  if (key.startsWith("service:") && Array.isArray(model?.stations?.[key.slice(8)]?.service?.values)) {
+    const name = key.slice(8);
+    return (
+      <span className="flex flex-col gap-1">
+        <ValuesEditor values={model.stations[name].service.values} cur={draft[`values:${name}`]} set={(v) => setDraft({ ...draft, [`values:${name}`]: v })} t={t} label={name} />
+      </span>
+    );
   }
   if (key.startsWith("servers:")) {
     return <input className="field num" style={{ width: 90 }} type="number" min="1" step="1" placeholder={t("el_edit_servers")} aria-label={aria} value={d ?? ""} onChange={(e) => set(e.target.value)} data-testid={`pr-edit-${key}`} />;
@@ -223,6 +318,8 @@ export function CalibrationPanel({ cal, lang, t, busy, onRerun }) {
         {cal.warnings.map((w, i) => <p key={i} className="help">{w}</p>)}
       </div>
 
+      <SeasonalityBlock s={cal.arrival_seasonality} lang={lang} t={t} />
+
       {cal.edit_diff && (
         <div className="panel overflow-x-auto" data-testid="pr-edit-diff">
           <h2 className="font-semibold mb-1"><Chip tone="warn">{t("el_edited")}</Chip> {t("el_diff_title")}</h2>
@@ -247,7 +344,7 @@ export function CalibrationPanel({ cal, lang, t, busy, onRerun }) {
               <td>{p.edited ? <><Chip tone="warn">{t("el_edited")}</Chip> {fmtVal(p.value, lang)} <span className="help">({t("el_original")}: {p.original_value && p.original_value.dist ? fmtVal(p.original_value, lang) : p.parameter.startsWith("servers:") && !p.fitted?.identifiable ? "∞" : fmtVal(p.original_value, lang)})</span></>
                 : (p.parameter.startsWith("servers:") && !p.identifiable ? "∞" : fmtVal(p.value, lang))}</td><td className="text-right">{(p.edited ? p.fitted.n : p.n) ?? "—"}</td><td className="help">{p.edited ? <>{p.estimator} · {t("el_original")}: {p.fitted.estimator}</> : p.estimator}</td>
               <td>{(p.edited ? p.fitted.identifiable : p.identifiable) ? <Chip tone="ok">✓</Chip> : <span><Chip tone="warn">✗</Chip> <span className="help">{p.edited ? p.fitted.missing_data : p.missing_data}</span></span>}</td>
-              {onRerun && <td><ParamEditor p={p.edited ? { ...p, value: p.original_value } : p} draft={draft} setDraft={setDraft} t={t} /></td>}</tr>
+              {onRerun && <td><ParamEditor p={p.edited ? { ...p, value: p.original_value } : p} draft={draft} setDraft={setDraft} t={t} model={cal.model} /></td>}</tr>
           ))}</tbody>
         </table>
         {onRerun && (
