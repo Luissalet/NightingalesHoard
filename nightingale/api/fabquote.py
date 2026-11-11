@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import fabquote as fq
+from .. import fabquote_calib as fq_calib
+from .. import fabquote_import as fq_import
 from .deps import api_errors, services
 
 router = APIRouter(prefix="/api/fabquote")
@@ -64,6 +66,51 @@ class VulcanBody(BaseModel):
     model_id: Any
     base_url: Optional[str] = None
     target: Optional[str] = "fdm-print"
+
+
+class CalibrateBody(BaseModel):
+    jobs: list[dict[str, Any]]
+    fit: Optional[list[str]] = None
+    apply: bool = False
+    level: float = Field(0.95, ge=0.5, le=0.999)
+
+
+class ToolpathBody(BaseModel):
+    content: str
+    kind: str = "auto"
+    unit: str = "mm"
+    label: str = ""
+    apply: bool = True
+
+
+class InspectBody(BaseModel):
+    model_id: Any
+    target: str = "fdm-print"
+
+
+@router.post("/toolpath")
+@api_errors
+def toolpath_preview(request: Request, body: ToolpathBody):
+    """What a slicer G-code or a trajectory file says; writes nothing."""
+    return fq_import.toolpath_preview(body.content, body.kind, body.unit, None, body.label)
+
+
+@router.post("/quotes/{name}/calibrate")
+@api_errors
+def calibrate(request: Request, name: str, body: CalibrateBody):
+    return fq_calib.calibrate_quote(services(request), name, body.jobs, body.fit, body.apply, body.level)
+
+
+@router.post("/quotes/{name}/toolpath")
+@api_errors
+def toolpath(request: Request, name: str, body: ToolpathBody):
+    return fq_import.import_toolpath(services(request), name, body.content, body.kind, body.unit, body.label, body.apply)
+
+
+@router.post("/quotes/{name}/inspect")
+@api_errors
+def inspect(request: Request, name: str, body: InspectBody):
+    return fq_import.inspect_quote(services(request), name, body.model_id, body.target)
 
 
 @router.get("/templates")

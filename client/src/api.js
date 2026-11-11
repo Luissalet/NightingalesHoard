@@ -141,6 +141,10 @@ export const api = {
   fabquoteCompare: (name) => get(`/api/fabquote/quotes/${encodeURIComponent(name)}/compare`),
   fabquoteSensitivity: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/sensitivity`, body),
   fabquoteActual: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/actuals`, body),
+  fabquoteCalibrate: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/calibrate`, body),
+  fabquoteToolpath: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/toolpath`, body),
+  fabquoteToolpathPreview: (body) => post(`/api/fabquote/toolpath`, body),
+  fabquoteInspect: (name, body) => post(`/api/fabquote/quotes/${encodeURIComponent(name)}/inspect`, body),
   fabquoteActuals: (name) => get(`/api/fabquote/quotes/${encodeURIComponent(name)}/actuals`),
   fabquoteExport: (name, format) => downloadGet(`api/fabquote/quotes/${encodeURIComponent(name)}/export?format=${format}&download=true`),
 
