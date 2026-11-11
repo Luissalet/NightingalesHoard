@@ -1370,8 +1370,8 @@ TOOLS: list[Tool] = [
     Tool("data_log", "Search the analysis log (every operation, with its N-000123 id, input and result).\n"
          "Sinónimos: historial, registro de análisis, qué se ha hecho.",
          LogArgs, _ann(True), _run_log),
-    Tool("story_build", "Turn a dataset into a story: ordered findings, each with its chart, one sentence with the "
-         "exact figure and the query that produces it. Relato con los datos.\n"
+    Tool("story_build", "Turn a dataset into a story: ordered findings, each with its chart, figure and query. "
+         "Relato con los datos.\n"
          "Only findings that clear a stated minimum of support enter (trend, group difference, outlier, "
          "concentration, change between periods); nothing is invented. rewrite=true asks the model to reword the "
          "sentences, and a sentence whose numbers are not the finding's own is discarded.\n"
