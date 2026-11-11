@@ -228,14 +228,42 @@ All JSON; errors are `{ "error": "..." }`.
 - `POST /api/ask`, `GET /api/ask/available`
 - `GET /api/agent/tools` (catalog + instructions), `POST /api/agent/call` (Bearer token from `<DATA_DIR>/mcp-token`)
 
+## Story from the data
+
+**Story** turns a loaded dataset into an ordered list of findings, strongest first, each with its
+chart, one sentence that states the exact figure the chart shows, and the query that produces it.
+Five kinds are computed with the operations the app already has: a trend (Pearson correlation of the
+period series against its index, at least five periods, p < 0.05), a comparison between groups
+(Welch's t-test between the highest and the lowest group mean, at least two groups of five rows,
+p < 0.05 and a gap of at least 10 %), outliers (rows outside 1.5 IQR, at least one and at most 10 %
+of the values), concentration (the largest category holds at least 40 % of the rows, with at least
+three categories) and a change between periods (Welch's t-test between the two halves of the time
+span, at least ten rows each, p < 0.05 and a change of at least 10 %). A finding that does not clear
+its threshold is left out, and a dataset that supports nothing gets an empty story rather than an
+unsupported sentence.
+
+The model of the family only ever rewrites a sentence over figures that are already computed: every
+number in the text is re-read and compared with the finding's own figures, and a sentence with any
+other number is discarded so the template stays. The chart is drawn from the same aggregate the
+sentence quotes, so the two cannot drift apart. Findings can be reordered, dropped and their sentence
+edited (with the same check), and the story exports as one standalone HTML file — sentences, figures,
+inline PNG charts and the queries, no script and no network — or, when Cicero's Hoard answers through
+the Hub, as a presentation with one finding per slide built with Cicero's own tools. When Cicero is
+not available the HTML is still written and the answer says so.
+
+Page **Story**, API `/api/story/*` (`build`, `stories`, `stories/{id}`, `stories/{id}/export`,
+`download`), tools `story_build`, `story_get`, `story_list`, `story_update`, `story_export`. Every
+build, update and export lands in the analysis log. The combined catalog is now 57 tools (35 Data,
+20 Calculation, 2 controls).
+
 ## MCP tools
 
-See `docs/MCP.md` for the Data module reference (29 tools, `data_ingest` through `data_ask`) and a minimal
+See `docs/MCP.md` for the Data module reference (35 tools, `data_ingest` through `story_export`) and a minimal
 walk-through. The shipped instructions tell the assistant to preview a transform before applying it
 when the effect isn't obviously safe, to never assume a dataset name (`data_list` first), and to
 cite the analysis-log id (`N-000123`) when reporting a result back. Calculation adds 20 native tools
 documented in [its reference](fusion/laplace-docs/MCP.md); three collisions use the `laplace_`
-prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 52-tool catalog (30 Data, 20 Calculation, 2 controls).
+prefix listed above. `nightingale_modules` and `nightingale_set_module` complete the 57-tool catalog (35 Data, 20 Calculation, 2 controls).
 
 ## Tests
 
@@ -346,4 +374,4 @@ One page, three tabs, backed by `/api/twin/*`, `/api/experiment/*`, `/api/effect
 
 ## Skills for the agents that connect
 
-This app carries procedures from the skill library of the family's workspace for the agents that connect to it: `data-cleaning-with-lineage`, `measured-improvement`, `verification-loop`. They are named in what an agent reads on connecting, read with `skills_list` and `skill_read`, searched and assigned with `skills_library` and `skills_assign`, and offered as prompts. The person chooses them on the skills page (`/api/agent/skills/page`) or in the hub's Skills tab; the `skills` block of `faustus-plugin.json` holds what the app asks for by default.
+This app carries procedures from the skill library of the family's workspace for the agents that connect to it: `data-cleaning-with-lineage`, `measured-improvement`, `verification-loop`, `story-from-data`. They are named in what an agent reads on connecting, read with `skills_list` and `skill_read`, searched and assigned with `skills_library` and `skills_assign`, and offered as prompts. The person chooses them on the skills page (`/api/agent/skills/page`) or in the hub's Skills tab; the `skills` block of `faustus-plugin.json` holds what the app asks for by default.
