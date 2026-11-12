@@ -43,12 +43,24 @@ def _figure_rows(finding: dict) -> str:
         if figure.get("value") is None:
             continue
         cells.append(
-            f'<tr><th scope="row">{html.escape(str(figure["key"]))}</th>'
+            f'<tr><th scope="row">{html.escape(str(figure.get("label") or figure["key"]))}</th>'
             f'<td class="num">{html.escape(str(figure.get("text") or ""))}</td></tr>'
         )
     if not cells:
         return ""
     return f'<table class="figures"><tbody>{"".join(cells)}</tbody></table>'
+
+
+def _lead(rendered: dict, lang: str) -> str:
+    """The headline and the two or three sentences under it, from the same
+    figures the findings quote."""
+    headline = rendered.get("headline") or ""
+    summary = rendered.get("summary") or []
+    if not headline and not summary:
+        return ""
+    lines = "".join(f"<p>{html.escape(sentence)}</p>" for sentence in summary)
+    title = f'<p class="headline">{html.escape(headline)}</p>' if headline else ""
+    return f'<section class="lead">{title}{lines}</section>'
 
 
 def render_html(story: dict, lang: str = "en", generated_at: Optional[str] = None) -> str:
@@ -76,6 +88,8 @@ def render_html(story: dict, lang: str = "en", generated_at: Optional[str] = Non
       </details>
     </section>""")
     body = "".join(parts) or f'<p class="empty">{html.escape(t("story.no_findings", lang))}</p>'
+    lead = _lead(rendered, lang)
+    rows_text = story_mod.format_number(rendered.get("rows") or 0, 0, lang)
     return f"""<!doctype html>
 <html lang="{html.escape(lang)}">
 <head>
@@ -91,6 +105,11 @@ def render_html(story: dict, lang: str = "en", generated_at: Optional[str] = Non
   header {{ border-bottom:2px solid var(--accent); padding-bottom:16px; margin-bottom:32px; }}
   h1 {{ font:600 26px/1.2 "Cinzel", Georgia, serif; margin:0 0 6px; }}
   .meta {{ color:var(--dim); font-size:13px; }}
+  .lead {{ background:var(--soft); border-left:3px solid var(--gold); border-radius:0 6px 6px 0;
+           padding:16px 20px; margin:0 0 28px; }}
+  .lead p {{ margin:0 0 8px; }}
+  .lead p:last-child {{ margin-bottom:0; }}
+  .headline {{ font:600 18px/1.35 "Cinzel", Georgia, serif; color:var(--accent); }}
   .finding {{ border-top:1px solid var(--line); padding:24px 0 8px; }}
   .finding:first-of-type {{ border-top:0; }}
   h2 {{ font-size:17px; font-weight:600; margin:0 0 8px; display:flex; gap:10px; align-items:baseline; }}
@@ -114,8 +133,9 @@ def render_html(story: dict, lang: str = "en", generated_at: Optional[str] = Non
 <main>
   <header>
     <h1>{html.escape(title)}</h1>
-    <div class="meta">{html.escape(str(rendered.get("dataset") or ""))} · {int(rendered.get("rows") or 0):,} {html.escape(t("story.export_rows", lang))} · {html.escape(stamp)}</div>
+    <div class="meta">{html.escape(str(rendered.get("dataset") or ""))} · {html.escape(rows_text)} {html.escape(t("story.export_rows", lang))} · {html.escape(stamp)}</div>
   </header>
+{lead}
 {body}
   <footer>{html.escape(t("story.export_note", lang))}</footer>
 </main>
