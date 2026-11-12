@@ -233,14 +233,28 @@ All JSON; errors are `{ "error": "..." }`.
 **Story** turns a loaded dataset into an ordered list of findings, strongest first, each with its
 chart, one sentence that states the exact figure the chart shows, and the query that produces it.
 Five kinds are computed with the operations the app already has: a trend (Pearson correlation of the
-period series against its index, at least five periods, p < 0.05), a comparison between groups
-(Welch's t-test between the highest and the lowest group mean, at least two groups of five rows,
-p < 0.05 and a gap of at least 10 %), outliers (rows outside 1.5 IQR, at least one and at most 10 %
-of the values), concentration (the largest category holds at least 40 % of the rows, with at least
-three categories) and a change between periods (Welch's t-test between the two halves of the time
-span, at least ten rows each, p < 0.05 and a change of at least 10 %). A finding that does not clear
-its threshold is left out, and a dataset that supports nothing gets an empty story rather than an
-unsupported sentence.
+period series against its index, at least five periods of five rows each, p < 0.05), a comparison
+between groups (Welch's t-test between the highest and the lowest group, at least two groups of five
+rows, p < 0.05 and a gap of at least 10 %), outliers (rows outside 1.5 IQR, at least one and at most
+10 % of the values), concentration (the largest category holds at least 40 % of the amount, or the
+three largest hold at least 60 %, with at least three categories) and a change between periods
+(Welch's t-test between the two halves of the time span, at least ten rows each, p < 0.05 and a change
+of at least 10 %). The trend and the group comparison run on the period total and on the period
+average, and again inside the largest groups of the first categorical columns, so a total that stays
+flat does not hide a product that falls; the concentration is measured on the amount when the dataset
+has one. A finding that does not clear its threshold is left out, and a dataset that supports nothing
+gets an empty story rather than an unsupported sentence. Findings are ordered by how unlikely the
+pattern is under the null of its test plus how large the effect is, and the story keeps one of every
+kind before it repeats a kind, so a single outlier finding is not pushed out by eight variants of a
+trend.
+
+The story opens with a headline and two or three sentences that summarise the strongest findings —
+built from the same figure texts the findings quote, so the summary cannot say anything new — and the
+sentences, titles, figure labels and the export follow the language of the interface (`?lang=es`).
+Each finding's chart is drawn in the app's own look (rose and gold, the app's ink and hairlines, no
+heavy frame, Spanish number format) and in the shape that tells the finding: a line for a trend,
+ordered bars for a group gap, a Pareto of bars plus the running share for a concentration, a box for
+the outliers.
 
 The model of the family only ever rewrites a sentence over figures that are already computed: every
 number in the text is re-read and compared with the finding's own figures, and a sentence with any

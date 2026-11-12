@@ -281,14 +281,28 @@ En Gráficos, **Usar como base** carga en el constructor editable el conjunto de
 **Relato** convierte un conjunto ya cargado en una lista ordenada de hallazgos, del más fuerte al más
 débil, cada uno con su gráfico, una frase que dice la cifra exacta que muestra el gráfico y la consulta
 que lo produce. Se calculan cinco clases con las operaciones que la aplicación ya tiene: tendencia
-(correlación de Pearson de la serie por periodo contra su índice, al menos cinco periodos, p < 0,05),
-comparación entre grupos (prueba t de Welch entre la media más alta y la más baja, al menos dos grupos
-de cinco filas, p < 0,05 y una diferencia de al menos el 10 %), valores atípicos (filas fuera de 1,5 IQR,
-al menos uno y como mucho el 10 % de los valores), concentración (la categoría mayor reúne al menos el
-40 % de las filas, con tres categorías o más) y cambio entre periodos (prueba t de Welch entre las dos
-mitades del intervalo temporal, al menos diez filas en cada una, p < 0,05 y un cambio de al menos el
-10 %). El hallazgo que no alcanza su umbral se queda fuera, y un conjunto que no sostiene nada produce
-un relato vacío en lugar de una frase sin respaldo.
+(correlación de Pearson de la serie por periodo contra su índice, al menos cinco periodos de cinco
+filas cada uno, p < 0,05), comparación entre grupos (prueba t de Welch entre el grupo más alto y el más
+bajo, al menos dos grupos de cinco filas, p < 0,05 y una diferencia de al menos el 10 %), valores
+atípicos (filas fuera de 1,5 IQR, al menos uno y como mucho el 10 % de los valores), concentración (la
+categoría mayor reúne al menos el 40 % del importe, o las tres mayores el 60 %, con tres categorías o
+más) y cambio entre periodos (prueba t de Welch entre las dos mitades del intervalo temporal, al menos
+diez filas en cada una, p < 0,05 y un cambio de al menos el 10 %). La tendencia y la comparación entre
+grupos se calculan sobre el total y sobre la media del periodo, y también dentro de los grupos mayores
+de las primeras columnas categóricas, para que un total plano no esconda un producto que baja; la
+concentración se mide sobre el importe cuando el conjunto tiene una columna de dinero. El hallazgo que
+no alcanza su umbral se queda fuera, y un conjunto que no sostiene nada produce un relato vacío en
+lugar de una frase sin respaldo. Los hallazgos se ordenan por lo improbable del patrón bajo la
+hipótesis nula de su prueba más el tamaño del efecto, y el relato guarda uno de cada clase antes de
+repetir una, para que un único hallazgo de atípicos no quede fuera por ocho variantes de una tendencia.
+
+El relato abre con un titular y dos o tres frases que resumen los hallazgos más fuertes —escritas con
+las mismas cifras que citan los hallazgos, así que el resumen no puede decir nada nuevo—, y las frases,
+los títulos, las etiquetas de las cifras y la exportación siguen el idioma de la interfaz
+(`?lang=es`). El gráfico de cada hallazgo se dibuja con el aspecto de la aplicación (rosa y oro, la
+tinta y las líneas finas de la app, sin marco pesado, formato de número español) y con la forma que
+cuenta el hallazgo: línea para una tendencia, barras ordenadas para una diferencia entre grupos, un
+Pareto de barras más la proporción acumulada para una concentración y una caja para los atípicos.
 
 El modelo de la familia solo reescribe frases sobre cifras ya calculadas: cada número del texto se
 vuelve a leer y se compara con las cifras del hallazgo, y la frase con cualquier otra cifra se descarta
