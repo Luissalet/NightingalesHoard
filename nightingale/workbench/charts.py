@@ -353,6 +353,9 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
         if spec.x:
             labels = [str(r.get(spec.x, i)) for i, r in enumerate(rows)]
             ax.set_xticklabels(labels, rotation=30, ha="right")
+        else:
+            # one box, no group: the default "1" tick says nothing
+            ax.set_xticks([])
         ax.yaxis.set_major_formatter(fmt)
     elif spec.kind == "heatmap":
         xs = sorted({r["x"] for r in rows}, key=str)
@@ -420,7 +423,9 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
             for x, value in zip(pos, cumulative):
                 twin.annotate(_format_locale_number(value, lang) + " %", (x, value),
                               textcoords="offset points", xytext=(0, 6), ha="center",
-                              fontsize=8, color=DIM)
+                              fontsize=8, color=DIM,
+                              bbox={"boxstyle": "round,pad=0.15", "facecolor": "white",
+                                    "edgecolor": "none", "alpha": 0.85})
     else:
         xs = [str(r["x"]) for r in rows]
         if "series" in (rows[0] if rows else {}):
