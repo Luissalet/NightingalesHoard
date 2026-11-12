@@ -250,7 +250,10 @@ trend.
 
 The story opens with a headline and two or three sentences that summarise the strongest findings —
 built from the same figure texts the findings quote, so the summary cannot say anything new — and the
-sentences, titles, figure labels and the export follow the language of the interface (`?lang=es`).
+sentences, titles, figure labels and the export follow the language of the interface (`?lang=es`); a caller that
+does not say which language it wants — an agent through MCP, a script, the command line — gets the language the app is
+configured in (Spanish unless the person chose another, kept in `data/app-language.json` and set from the interface
+through `PUT /api/language`), never English by accident.
 Each finding's chart is drawn in the app's own look (rose and gold, the app's ink and hairlines, no
 heavy frame, Spanish number format) and in the shape that tells the finding: a line for a trend,
 ordered bars for a group gap, a Pareto of bars plus the running share for a concentration, a box for
