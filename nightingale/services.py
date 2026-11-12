@@ -28,7 +28,7 @@ from .hoard_link import fam_web, tokens
 from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
 from .config import Config
-from .texts import t
+from .texts import get_lang, t
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
 from .dac import spec as dac_spec
@@ -1711,14 +1711,18 @@ class Services:
     def _story_spec(self, row: sqlite3.Row) -> dict:
         return json.loads(row["spec_json"])
 
-    def story_build(self, dataset_name: str, lang: str = "en", rewrite: bool = False,
+    def story_build(self, dataset_name: str, lang: Optional[str] = None, rewrite: bool = False,
                     source: str = "ui") -> dict:
         """Compute the findings of a dataset's current version and keep them as a story.
 
         ``rewrite`` asks the family's model to reword each sentence; a sentence
         whose numbers are not the finding's own is discarded and the template
         stays, so the text can never say something the query did not.
+
+        ``lang`` is the language of the interface (``?lang=`` on the request);
+        the sentences, the titles and the figure labels are written in it.
         """
+        lang = lang or get_lang()
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
@@ -1773,7 +1777,8 @@ class Services:
                 notes.append(t("story.statement_rejected", lang, numbers=", ".join(check["unsupported"])))
         return notes
 
-    def story_get(self, story_id: int, lang: str = "en") -> dict:
+    def story_get(self, story_id: int, lang: Optional[str] = None) -> dict:
+        lang = lang or get_lang()
         row = self._story_row(story_id)
         spec = self._story_spec(row)
         return {"story_id": row["id"], "title": row["title"], "created_at": row["created_at"],
@@ -1788,9 +1793,10 @@ class Services:
 
     def story_update(self, story_id: int, order: Optional[list[str]] = None,
                      remove: Optional[list[str]] = None, statements: Optional[dict[str, str]] = None,
-                     title: Optional[str] = None, lang: str = "en", source: str = "ui") -> dict:
+                     title: Optional[str] = None, lang: Optional[str] = None, source: str = "ui") -> dict:
         """Reorder, drop findings or edit a sentence. A sentence whose numbers are
         not the finding's own is discarded and the template stays."""
+        lang = lang or get_lang()
         row = self._story_row(story_id)
 
         def do():
@@ -1840,8 +1846,10 @@ class Services:
         return self._log("story_update", source, row["dataset"],
                           {"order": bool(order), "remove": remove or [], "statements": list((statements or {}))}, do)
 
-    def story_export(self, story_id: int, fmt: str = "html", lang: str = "en", source: str = "ui") -> dict:
+    def story_export(self, story_id: int, fmt: str = "html", lang: Optional[str] = None,
+                     source: str = "ui") -> dict:
         """Write the story as one standalone HTML file, or build a presentation in Cicero's Hoard."""
+        lang = lang or get_lang()
         row = self._story_row(story_id)
         if fmt not in ("html", "presentation"):
             raise ValueError("format must be 'html' or 'presentation'")
