@@ -2,359 +2,147 @@
 
 # Nightingale's Hoard
 
-El editor compartido de **bin** en Datos → Receta y Lab → Canalización acepta
-**Límites de intervalos** y **Etiquetas** opcionales en JSON. Los límites no vacíos
-sustituyen el número de intervalos y crean tramos nativos `[inferior, superior)`;
-el último extremo superior, los valores fuera de los tramos y NULL quedan sin
-categoría. Las etiquetas que falten usan el texto del tramo; una etiqueta vacía
-explícita queda vacía. Límites vacíos o `[]` conservan el modo actual por número
-de intervalos. Editar un paso guardado conserva ambos arrays, incluidos cero,
-comas, comillas y Unicode. Vista previa no crea versiones: Receta no añade análisis,
-mientras Canalización registra su ejecución de prueba nativa. Aplicar usa el
-comportamiento nativo de versiones y receta. La previa de Receta muestra hasta
-ocho filas. Sin cálculo frontend, nueva validación, API ni herramienta
-MCP; el catálogo combinado sigue en43.
+Banco de trabajo de datos local: ingesta, limpieza, validación, gráficos y modelos con pasos reversibles, más un conjunto de módulos de cálculo independientes. [English](README.md)
 
-En Conjuntos de datos, **Frecuencias por columna** recorre los valores de una
-columna de la versión guardada mostrada, con recuentos exactos y porcentajes sobre
-todas sus filas. Distingue NULL y cadena vacía y conserva el texto completo.
-Cargar más lee la siguiente página nativa; un fallo conserva las filas anteriores
-para Reintentar. Cambiar columna/versión o cerrar retira resultados incompatibles.
-Consultar no crea versiones, entradas de análisis ni archivos. La API
-`GET /api/datasets/{name}/frequencies` y `data_profile(mode="frequencies",
-column=..., version=..., offset=..., limit=...)` comparten el cálculo. Sólo este
-modo nuevo devuelve páginas completas para que su offset no omita grupos por
-recortes; los otros modos conservan su salida. El catálogo combinado sigue en43.
-Los valores usan texto VARCHAR de DuckDB, no bytes binarios originales; la UI
-redondea porcentajes. El contexto normal de Faustus recibe consulta y metadatos
-de la página aplicada cuando la sección está abierta.
+<img src="docs/media/dashboard.png" width="760" alt="Panel con gráficos e indicadores">
 
-El editor compartido del paso **window** en Datos y Lab → Pipeline permite elegir
-**Desplazamiento (filas)** para `lag`/`lead` y **Tamaño de ventana** para sumas/medias
-móviles. Vacío conserva los valores nativos 1/3; los explícitos, incluido cero,
-se conservan al editar un paso guardado o cambiar su nombre de salida. Los campos
-se muestran según la función sin descartar ninguno de los dos parámetros.
-Vista previa/aplicar usan el motor `data_transform` y API/MCP43 existentes, sin
-cálculo frontend. Las ventanas incluyen la fila actual, empiezan parcialmente en
-cada partición y cuentan filas, no días de calendario. Las claves de orden todas
-empatadas no determinan posiciones estables. Se conservan NULL/errores nativos y
-el comportamiento de versiones/receta.
+## Qué es
 
-Datos → Receta permite elegir el otro conjunto y añadir pares de columnas para una unión; el mismo editor funciona en Canalización. El JSON manual se conserva, incluidos nombres con coma, comillas o Unicode y nombres de pasos anteriores. Los tipos nativos siguen siendo left, inner, right y full. «Comprobar coincidencias» cuenta filas de la versión actual izquierda que encuentran al menos una coincidencia en la versión actual derecha. No crea versiones ni entradas de análisis; los duplicados derechos pueden multiplicar las filas de la unión, que se consultan con Vista previa. La cobertura no representa nodos pendientes de Canalización. API existente y nueva herramienta MCP `data_join_preview` comparten el cálculo nativo; el catálogo combinado tiene 43 herramientas (21 Datos, 20 Cálculo y dos controles).
+Nightingale's Hoard es la aplicación de datos de la familia Hoard. Cargas un archivo sucio, lo limpias con pasos versionados que puedes deshacer, lo validas con reglas que defines, lo conviertes en gráficos y paneles, entrenas un modelo rápido y le haces preguntas en lenguaje natural. Un asistente puede hacer todo esto por MCP exactamente igual que tú en el navegador.
 
-Gráficos → **Descargar PNG** obtiene la gráfica guardada seleccionada mediante el
-renderizador existente `GET /api/charts/{id}?image=true&lang=es`. Cada tarjeta
-identifica su gráfica, dataset e idioma solicitado; un error se puede reintentar
-sin cambiar el borrador del constructor. «Descarga iniciada» indica que se entregó
-el archivo al navegador, no que se haya confirmado su guardado. El PNG consulta la
-versión actual del dataset al pedirlo, respeta los límites de consulta nativos y
-puede diferir del visor interactivo Vega. No es una captura histórica ni exporta
-todas las filas. Descargar no crea gráficas, versiones ni entradas del registro.
+Todo se queda en tu máquina: DuckDB guarda los datos y SQLite los metadatos (fuentes, versiones, reglas de calidad, gráficos, paneles, modelos y el registro de análisis). No hay cuentas ni llamadas de red salvo a la URL de archivo que le des.
 
-MCP `data_chart` admite también `action="get", chart_id=<id guardado>, image=true,
-lang="en"|"es"`. Devuelve el PNG completo como ImageContent `image/png`, con los
-metadatos JSON acotados por separado y sin duplicar el base64. `image=false`
-devuelve sólo metadatos. Omitir `action` conserva la creación anterior y sus límites
-de respuesta. El catálogo conjunto sigue teniendo 43 herramientas.
+Limpiar un conjunto de datos real suele ser un camino sin vuelta. Aquí cada paso crea una versión nueva y materializada, así que deshacer es instantáneo y un paso que no te gustó nunca tocó la versión anterior. Si el archivo de origen cambia, actualizar lo vuelve a ingerir y reproduce toda la receta sobre los datos nuevos, deteniéndose limpiamente si un paso ya no se puede aplicar.
 
-En Datasets, **Conservar libro original (.xlsx)** muestra origen, hoja/rango,
-estructura importada, pestañas y coincidencia de la huella registrada. Descarga una
-copia actualizando sólo la hoja del dataset y versión seleccionados mediante el
-exportador nativo (`POST /api/export/workbook/download`). La exportación plana
-CSV/JSON/Parquet/XLSX sigue disponible por separado. El original y las versiones
-guardadas no cambian; se añaden recibo y registro de análisis normales. Requiere un
-`.xlsx` importado con estructura compatible. No sobrescribe fórmulas ni recalcula
-fórmulas o gráficos; conserva las validaciones sin comprobar sus valores. No es
-un backup del proyecto ni una promesa de fidelidad universal de Excel. Actualizar
-varias hojas sigue disponible mediante la API/MCP `data_export` existente.
+La app incluye además dos módulos activables, Datos y Cálculo. Ambos están desactivados en una instalación nueva; activa solo lo que necesites desde Funciones. Cálculo (aritmética exacta, matemática simbólica, unidades, fechas, estadística, SQL sobre archivos) funciona sin cargar el banco de datos ni DuckDB.
 
-Conjuntos de datos → **Exportar datos** descarga todas las filas de la versión
-mostrada a CSV, JSON, Parquet o XLSX con una sola hoja. La petición captura la
-versión explícitamente y usa el escritor nativo de `data_export` mediante
-`POST /api/export/download`. No modifica la fuente ni las versiones guardadas;
-crea archivos de exportación y la entrada habitual del registro de análisis.
-El XLSX plano no conserva el libro original y estos archivos no son un backup
-del proyecto.
+## Qué hace
 
-El panel de receta de un conjunto abre cualquier versión guardada mediante las operaciones existentes de deshacer/rehacer. Se puede pulsar un paso anterior o elegir una versión posterior hasta que una transformación nueva sustituya esa rama. Exportar SQL incorpora copia y descarga `.sql`, en castellano e inglés. El script usa tablas locales del conjunto; no es una copia autónoma de los datos. UI, API y MCP `data_undo`/`data_recipe` comparten el cálculo nativo existente; el catálogo combinado sigue en 43 herramientas.
+### Ingesta
+- CSV/TSV (incluidos los separados por punto y coma y con coma decimal), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta, una URL o texto pegado.
+- Registros que devuelve otra app Hoard (a través del Hoard Hub), aplanados a una fila por registro, con preajustes como los movimientos de Ledger.
+- Actualizar reingiere una fuente que cambió, reproduce la receta y ejecuta las reglas de calidad guardadas.
+- Borrar un conjunto de datos arrastra sus reglas, gráficos y modelos, tras listar lo que depende de él.
 
-## Módulos nativos de datos y cálculo
+### Limpieza y transformación
+- 22 tipos de paso: filtrar, seleccionar, quitar, renombrar, convertir tipo, rellenar nulos, quitar duplicados, derivar, dividir columna, operaciones de texto, reemplazar, intervalos (por número o con límites explícitos), partes de fecha, agrupar (editor visual de agregaciones), pivotar, despivotar, unir, concatenar, ordenar, muestrear, ventana (lag/lead, sumas y medias móviles) y SQL directo.
+- Todo paso se puede previsualizar antes de aplicarlo; aplicar crea una versión nueva.
+- Deshacer, rehacer y un panel de receta desde el que se abre cualquier versión guardada; la receta se exporta como script SQL ejecutable.
+- Uniones con pares de columnas exactos y comprobación de coincidencias antes de aplicar.
+- Comparación de dos versiones por perfil de columnas o por filas (solo en A / solo en B, contando filas repetidas).
+- Frecuencias por columna con recuentos y porcentajes exactos, paginadas.
+- Rejilla de datos formateada según el tipo de columna y el idioma de la interfaz, con el valor original a un paso con el ratón.
+- Exportación de una versión a CSV, JSON, Parquet o XLSX; exportación a una copia del libro original cambiando solo las celdas modificadas (una o varias hojas).
 
-Nightingale incorpora todas las funciones de Laplace: aritmética exacta, álgebra, unidades, fechas, estadística, SQL sobre archivos, gráficos e historial de cálculo. Datos y Cálculo son interruptores independientes, ambos OFF en la primera instalación o migración. Arranca la app expresamente desde Hoard Hub y activa lo que necesites. La calculadora funciona sin cargar el workbench ni DuckDB. Las interfaces completas están en `/data/` y `/calculation/`, dentro de un único servidor.
+### Reglas de calidad
+- Nueve tipos de regla: no nulo, único, valores aceptados, rango, expresión regular, número de filas, frescura, integridad referencial y SQL personalizado.
+- Se ejecutan a demanda con historial de aciertos y fallos; una regla de unicidad fallida indica cuántos valores se repiten y cuántas filas quedarían tras eliminar duplicados.
 
-El catálogo MCP estático conserva 40 herramientas nativas y añade dos controles de módulos. Las tres colisiones se publican como `laplace_data_list`, `laplace_data_query` y `laplace_data_chart`. Los datos anteriores se adoptan en su ruta mediante `data/modules.json`, sin copiar ni cambiar formatos. Véase [arquitectura y procedencia](docs/FUSION.md).
+### Gráficos y paneles
+- 11 tipos de gráfico agregados en SQL, interactivos (Vega-Lite) y en PNG, con filtro de filas opcional y «usar como punto de partida» para copiar un gráfico guardado.
+- Los paneles combinan gráficos guardados con indicadores definidos por expresiones SQL. Cada cambio es una acción tipada y reversible, con deshacer/rehacer e historial.
+- Paneles como código: un archivo YAML sobre una capa semántica de métricas y dimensiones con nombre, con filtros, pestañas, bucles, condiciones y métricas derivadas; validado con pistas, versionado, comparable e importable/exportable.
 
+### Modelos y Lab
+- Aprendizaje supervisado con detección automática de la tarea y validación cruzada, k-means, PCA, detección de anomalías con isolation forest y previsión Holt-Winters. Los resultados van a un conjunto nuevo por defecto.
+- Lab, una página aparte con siete pestañas (Explorar, Modelos, Diagnóstico, Optimizar, Comparar y deriva, Canalización, Informe):
+  - EDA: correlaciones, patrones de nulos con vista previa de imputación, valores atípicos, sugerencias de codificación y una puntuación de calidad de 0 a 100.
+  - Registro de modelos (lineal, ridge, logística, bosque aleatorio, gradient boosting, extra trees, k-NN, MLP, proceso gaussiano y, opcionalmente, XGBoost y LightGBM) con modelos versionados y persistentes.
+  - Diagnósticos (residuos, predicho frente a real, calibración, ROC), ajuste de hiperparámetros, explicaciones SHAP o por permutación, optimización bayesiana y frentes de Pareto.
+  - Detección de deriva, comparación de curvas, informe PDF y editor visual de canalizaciones que comparte el motor de pasos de Conjuntos de datos.
+- Las librerías opcionales (Optuna, SHAP, XGBoost, LightGBM) tienen alternativas documentadas si faltan. Véase [docs/LAB.md](docs/LAB.md).
 
-El banco de trabajo de datos para un modelo de lenguaje local: ingesta un archivo desordenado,
-límpialo con pasos versionados que puedes deshacer, compruébalo contra reglas que tú defines,
-represéntalo en gráficos y paneles, entrena un modelo rápido, y pregúntale algo — todo en tu propio
-equipo, y todo alcanzable por un asistente mediante MCP exactamente como lo usarías tú mismo.
+### Relato con los datos
+- Convierte un conjunto de datos en una lista ordenada de hallazgos (tendencia, diferencia entre grupos, atípicos, concentración, cambio entre periodos), cada uno con su gráfico, una frase con la cifra exacta y la consulta que lo produce. Los hallazgos que no superan su umbral estadístico se descartan.
+- Los hallazgos se pueden reordenar, quitar y editar; un modelo de lenguaje solo puede reformular una frase si no aparece ningún número nuevo.
+- Se exporta como un único HTML autónomo o, a través del Hub, como presentación construida por Cicero's Hoard.
 
-Todo se queda en local: DuckDB para los datos, SQLite para los metadatos (fuentes, versiones,
-reglas de calidad, gráficos, paneles, modelos, el registro de análisis), sin cuentas, sin llamadas
-de red salvo a una URL de archivo que tú le hayas dado.
+### Pregunta a tus datos
+- Una pregunta en lenguaje natural se convierte en una consulta SQL visible, ejecutada con un modelo de lenguaje local compartido (Faustus, llama.cpp, Ollama o un endpoint compatible con OpenAI). Si no hay ninguno configurado, lo dice.
 
-Forma parte de la familia Hoard (ver `faustus-plugin.json`). Cálculo conserva el catálogo de
-archivos de solo lectura de Laplace junto al workbench reversible de Nightingale.
+### Herramientas de análisis
+- **Conciliar**: compara dos conjuntos fila a fila por pares de columnas clave, con claves sugeridas, tolerancias y normalización; cada fila y celda se clasifica y el resultado se puede guardar o descargar.
+- **Libros de Excel como cálculo**: compila un `.xlsx` en un cálculo ejecutable, lo ejecuta con valores nuevos, traza resultados, contrasta con los valores guardados por Excel, recalcula en Excel o LibreOffice y exporta un módulo Python autónomo o una pequeña calculadora web local. Véanse [docs/WORKBOOK-COMPILER.es.md](docs/WORKBOOK-COMPILER.es.md) y [docs/WORKBOOK-EXPORT.es.md](docs/WORKBOOK-EXPORT.es.md).
+- **Escenarios**: simulación de eventos discretos con semilla de una operación (llegadas, estaciones, turnos, colas, costes, existencias) con réplicas, intervalos al 95 %, comparación de variantes y barridos de parámetros.
+- **Migrar**: ensaya una migración a tablas destino tipadas, con filas rechazadas y su motivo, idempotencia de la segunda carga, pruebas de ida y vuelta, totales y consultas funcionales, y DDL y archivo SQLite descargables.
+- **Proceso**: descubre un proceso a partir de un registro de eventos (grafo de sucesión directa, variantes, retrabajo, cuello de botella, carga por recurso), comprueba la conformidad con un proceso de referencia y ensaya cambios frente a la línea base.
+- **Presupuestos de fabricación**: presupuestos con unidades a partir de parámetros con nombre y partidas con fórmula, calibrados con trabajos pasados y comparados por escenarios.
+- **Experimentos**: ajusta un modelo dinámico interpretable de una serie temporal (gemelo); diseña y analiza experimentos factoriales, de composición central e hipercubos latinos; estima el efecto de un cambio (diferencias en diferencias, series temporales interrumpidas y otros) con ajuste por grafo causal y pruebas de refutación.
 
-## Por qué existe
+### Módulo de cálculo
+- Aritmética exacta, matemática simbólica, unidades, fechas, estadística, SQL sobre archivos, gráficos e historial de cálculo, independientes del banco de datos. Véase [docs/FUSION.md](docs/FUSION.md).
 
-Limpiar un conjunto de datos real es normalmente un viaje sin vuelta atrás: sobrescribes el
-archivo, o guardas cinco copias a medio nombrar "por si acaso". Nightingale hace el viaje
-reversible. Cada paso de limpieza — filtrar, renombrar, convertir un tipo, rellenar un nulo,
-derivar una columna, unir dos conjuntos de datos, veintiún tipos en total — crea una versión nueva,
-real y materializada. Deshacer es instantáneo. Un paso que no te ha gustado nunca toca la versión
-anterior. Y si el *archivo de origen* cambia más tarde, "actualizar" lo vuelve a ingerir y reproduce
-toda tu receta sobre los datos nuevos automáticamente, deteniéndose limpiamente si un paso ya no
-aplica.
+### Registro de análisis
+- Cada operación recibe un id como `N-000123` con su entrada, un resumen de una línea, la duración y si la ejecutaste tú o el asistente. Es un rastro de auditoría de solo añadir, no una copia de seguridad de los datos.
 
-## Qué está implementado
+## Cómo ejecutarlo
 
-| Función | Qué hace | Límites |
-| --- | --- | --- |
-| **Ingesta** | CSV/TSV (incl. formatos españoles con separador punto y coma y coma decimal), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta, una URL, o texto pegado. | Una ingesta se ejecuta en un hilo en segundo plano con un límite de 5 minutos; los archivos muy grandes deberían ser Parquet o CSV pre-filtrado en lugar de un libro Excel de 50 hojas. Ingerir con un nombre que ya existe se rechaza (y el conjunto existente no se toca): usa refresh para recargarlo o elige otro nombre. |
-| **Desde la familia** | Tipo de fuente `hoard`: los registros que otra app Hoard devuelve con una de sus herramientas, llamada a través de Hoard Hub (`family.call`); la lista de registros se busca en la respuesta (o se indica con `list_path`), se aplana a una fila por registro (los objetos anidados pasan a columnas `a_b`, las listas a texto JSON) y se ingiere como JSON. Preajustes: `ledger_transactions` (`list_entries` de Ledger, 200 por llamada hasta 5000 movimientos, importes en céntimos), `phileas_shipments` (`shipments_list` de Phileas, entregados; las fechas epoch pasan a timestamp y se añade `transit_days`: días naturales de enviado a entregado), `argus_app_time` (`screen_app_time` de Argus: **sin verificar**, no había acceso a esa app para comprobar el nombre de la herramienta ni la forma de la respuesta). En la interfaz: Fuentes, **Desde la familia**. Por MCP: `data_ingest` con `kind="hoard"` y `preset` o `app` + `tool` (+ `args`, `list_path`, opciones `paginate`, `max_rows`, `epoch_columns`, `derive`). | Necesita el hub y la otra app en marcha; si falta alguno, el error dice cuál. Repetir la misma ingesta bajo el mismo nombre añade una VERSIÓN NUEVA (`ingest`) sobre la actual, así que Deshacer vuelve a la captura anterior y los pasos de limpieza no se reaplican; `data_refresh`, en cambio, reconstruye desde la app y reaplica la receta. Otra app o herramienta bajo un nombre ocupado se rechaza como cualquier ingesta. La paginación solo sirve para herramientas con argumentos limit/offset; una importación recortada lo indica con `truncated`. |
-| **Transformar** | 22 tipos de paso (filter, select, drop, rename, cast, fill_null, drop_duplicates, derive, split_column, operaciones de texto, replace, bin, date_parts, group, pivot, unpivot, join, union, sort, sample, window, SQL en crudo) — todos previsualizables antes de aplicarse. `GET /api/transforms` documenta los parámetros; añade un dataset para consultar nombres/tipos de columna, versión y filas actuales. | El paso `sql` y la herramienta de consulta SQL aceptan exactamente una sentencia de solo lectura; sin escrituras, sin scripts multi-sentencia. Consulta [los parámetros de transformación](docs/TRANSFORM-OPERATIONS.es.md). |
-| **Comparar filas** | La vista Filas compara versiones guardadas mediante columnas seleccionadas de idéntico nombre/tipo. Cuenta repeticiones y NULL; las tablas Sólo A / Sólo B tienen paginación independiente. `data_rows_compare` y `POST /api/datasets/{name}/versions/rows` comparten motor. | Explicita columnas omitidas y motivos; compara filas proyectadas sin adivinar identidades. Las celdas usan el límite existente de vista previa de 500 caracteres; los recuentos usan valores completos. |
-| **Comparar versiones** | Desde Datasets o el panel de receta, compara dos versiones guardadas: filas/columnas, columnas añadidas/retiradas/cambio de tipo, nulos, distintos aproximados y mínimos/máximos. También por `data_versions_compare` y `GET /api/datasets/{name}/versions/compare?version_a=0&version_b=1`. | Compara perfiles de columnas por nombre, sin emparejar filas ni celdas. Las diferencias son B menos A; comparar no cambia la versión actual. |
-| **Deshacer / rehacer / receta** | Cada versión es una tabla real; un panel lateral muestra la receta completa, la exporta como un script SQL ejecutable, y puede reproducirla contra datos de origen reingeridos. | Ramificar tras un deshacer descarta las versiones rehechas hacia adelante (como el deshacer de cualquier editor) — hay una sola línea temporal, no un árbol. |
-| **Reglas de calidad** | 9 tipos de regla (not_null, unique, accepted_values, range, regex, row_count, freshness, integridad referencial, SQL personalizado), ejecutadas bajo demanda, con historial de aprobado/fallido. Una regla `unique` fallida dice cuántos valores se repiten, cuántas filas son copias sobrantes y cuántas quedarían al quitar duplicados. | Las reglas comprueban la versión *actual* del conjunto de datos; no se ejecutan automáticamente al ingerir salvo que las vuelvas a ejecutar tú mismo. |
-| **Gráficos y paneles** | 11 tipos de gráfico, agregados en SQL (nunca se trae una tabla completa al cliente), representados de forma interactiva (Vega-Lite) y como PNG (para exportar/uso del asistente); los paneles combinan gráficos guardados con casillas KPI de expresión SQL. | Los gráficos leen la versión actual del conjunto de datos en el momento de representarse — un gráfico no congela datos pasados, refleja la última limpieza. |
-| **Ediciones reversibles de paneles** | Cada cambio a un panel por elementos (añadir/quitar/mover un elemento, cambiar la consulta de un KPI o un gráfico, título, nombre, filtro, columnas) es una acción tipada con esquema JSON, aplicada por un único reductor, guardada en un registro por panel e invertible. La página Paneles (botones, deshacer/rehacer, historial) y la herramienta MCP usan el mismo camino; los paneles anteriores reciben ids estables y una instantánea inicial al cargarse. Ver `docs/DASHBOARD-ACTIONS.md`. | Una acción nueva descarta la rama rehacer; las referencias (gráfico, conjunto de datos) se comprueban al añadir o cambiar, no al deshacer. |
-| **Paneles como código** | Un panel como un archivo YAML sencillo sobre una capa semántica reutilizable (métricas y dimensiones con nombre por conjunto de datos) — filtros, pestañas, filas de casillas de métrica/gráfico/tabla/texto, bucles `for` sobre los N valores principales de una dimensión, condiciones `if`, y métricas derivadas (p. ej. una métrica desplazada un mes atrás). Validado con una pista (`hint`) por cada problema, representado con el SQL y el error de cada casilla por separado (una casilla rota nunca rompe el resto), con un historial de 20 versiones con diffs, y exportable a los paneles basados en elementos de arriba. Ver `docs/DASHBOARDS_AS_CODE.md`. | Todo se compila a SQL de solo lectura sobre la vista propia de un conjunto de datos, el mismo nivel de confianza que el filtro de un gráfico. |
-| **Modelos** | Aprendizaje supervisado (detección automática de tarea, validación cruzada, importancia de variables, matriz de confusión), agrupamiento k-means (codo + silueta), PCA, detección de anomalías por bosque de aislamiento, previsión Holt-Winters con intervalo y una alternativa estacional-ingenua documentada. Un control "Escribir resultados en" (conjunto de datos nuevo por defecto, con una explicación de una línea de la alternativa) elige el destino de las predicciones/etiquetas/marcas: `new_dataset` (por defecto) las pone en su propio conjunto de datos nuevo (`<origen>__model_<id>`, etc.), sin tocar el de origen; `new_version` escribe sobre el propio origen, y aun así solo añade una columna; `none` solo muestra el resultado. Cada columna de origen copiada — en cualquiera de los dos destinos — conserva su tipo exacto de DuckDB (una DATE sigue siendo DATE, un DECIMAL sigue siendo DECIMAL); solo las columnas nuevas de predicción/etiqueta se calculan con pandas. | El entrenamiento reduce la muestra a 200.000 filas; la selección automática de variables excluye columnas de tipo identificador casi únicas (se informa de ello) para evitar una explosión de codificación one-hot — pasa una lista explícita de variables para anularlo. |
-| **Eliminar un conjunto de datos** | Elimina un conjunto de datos, todas sus versiones, y en cascada sus reglas de calidad, gráficos y modelos; un panel que usaba uno de esos gráficos sigue funcionando (muestra el elemento como no disponible) en lugar de romperse. Disponible desde la pantalla de Datasets (con un diálogo de confirmación que lista lo que depende de él), `DELETE /api/datasets/{name}` (`?force=true` para saltarse las dependencias), y la acción `action="delete"` de la herramienta MCP `data_ingest`. | Se bloquea por defecto si hay gráficos/paneles/modelos que dependen del conjunto de datos — pasa `force`/`force=true` para eliminarlo de todos modos. |
-| **Registro de análisis** | Cada operación (ingesta, transformación, ejecución de calidad, gráfico, modelo, exportación...) recibe un id como `N-000123`, con la entrada, un resumen de una línea, el tiempo empleado, y si vino de ti o del asistente. | El registro es de solo-añadir y tiene un límite de tamaño por campo; es un rastro de auditoría, no una copia de seguridad completa de los datos. |
-| **Pregunta a tus datos** | Una pregunta en lenguaje llano se convierte en una consulta SQL (que se muestra, no se oculta) ejecutada a través de un modelo de lenguaje local compartido vía Hoard Link. | Necesita un backend de LLM resuelto (Faustus, un servidor llama.cpp local, Ollama, o un endpoint compatible con OpenAI) — sin ninguno configurado lo dice claramente en lugar de inventar. |
-| **Lab** | Ciencia de datos más profunda sobre el workbench, con su propia página (siete pestañas — Explorar, Modelos, Diagnosticar, Optimizar, Comparar y desviación, Canalización, Informe): EDA completo (correlación, patrones de nulos + vista previa de imputación, valores atípicos IQR/z-score, sugerencias de codificación con aplicación de un clic como paso) y una puntuación de calidad de 0 a 100 (solo llega a 100 cuando cada componente es realmente perfecto); un registro de modelos conectable (lineal/ridge/logística, random forest, gradient boosting, extra trees, k-NN, MLP, proceso gaussiano, más XGBoost/LightGBM si están instalados) con modelos versionados y persistidos; diagnóstico de modelos (residuos, predicho-vs-real, error por grupo, sesgo en el tiempo, sobre/subajuste, calibración, y para clasificadores una curva ROC representada — una curva por clase, uno contra el resto, cuando hay más de dos); ajuste de hiperparámetros (Optuna TPE o una alternativa aleatoria); explicaciones (SHAP o importancia por permutación + dependencia parcial); optimización bayesiana de las variables de entrada de un modelo (sustituto GP + EI/UCB) y frentes de Pareto multiobjetivo; detección de deriva y comparación de curvas/series entre conjuntos de datos; un informe en PDF; y un editor de canalización visual (añadir/reordenar/editar/previsualizar pasos como una cadena de nodos, aplicados a través del mismo motor de pasos que la página Datasets). Ver `docs/LAB.md`. Datasets y Modelos enlazan directamente con ella ("Abrir en Lab" / "Abrir en el registro de Lab"). | XGBoost/LightGBM/Optuna/SHAP son opcionales (`requirements-lab.txt`) — cada función degrada a una alternativa documentada sin ellos. |
-
-Para un `.xlsx` importado, la exportación conservando el libro puede escribir las celdas cambiadas
-del conjunto de datos en una copia del original y mantener las celdas y funciones del libro que
-no cambiaron. Una solicitud puede actualizar varias pestañas importadas en esa copia. Incluye un
-inventario del origen y un recibo de trazabilidad; no permite sobrescribir fórmulas y conserva las
-reglas de validación sin aplicarlas. Consulta la [guía de exportación](docs/WORKBOOK-EXPORT.es.md)
-para ver la API, MCP y los límites admitidos.
-
-La cuadrícula de datos formatea cada celda según el tipo de columna de DuckDB y el idioma de la
-interfaz — las fechas y marcas de tiempo se muestran como fechas (una marca de tiempo exactamente a
-medianoche omite la hora), y los números llevan separador de miles y una precisión razonable (2
-decimales para columnas `DECIMAL`, hasta 4 cifras significativas para el resto de tipos numéricos)
-— mientras que el valor exacto sin formatear queda a un pase del ratón (una descripción emergente) y
-a un doble clic (lo copia al portapapeles).
-
-### Lab, en la interfaz
-
-<img src="docs/media/lab-explore.png" width="420" alt="Pestaña Explorar de Lab: medidor de puntuación de calidad, mapa de calor de correlación, patrones de nulos, diagramas de caja de valores atípicos"> <img src="docs/media/lab-diagnose.png" width="420" alt="Pestaña Diagnosticar de Lab: métricas, predicho-vs-real, residuos, curva de aprendizaje">
-
-## Casos de uso
-
-- Suelta un CSV desordenado que te mandó un compañero, observa cómo el banco de trabajo adivina
-  tipos y codificaciones, límpialo con unos cuantos pasos, y exporta algo que de verdad le
-  entregarías a alguien.
-- Pide a un asistente que "mire estos datos y te diga qué falla" — puede perfilar, ejecutar
-  comprobaciones de calidad, y citar la entrada exacta `N-000123` del registro de lo que encontró.
-- Mantén una receta contra un archivo de origen que se actualiza cada semana: actualizar vuelve a
-  aplicar todos los pasos a los datos nuevos en una sola llamada, ejecuta las reglas de calidad
-  guardadas y muestra los fallos con ejemplos. Puedes omitir esa comprobación con `check_quality=false`.
-- Entrena un modelo la misma tarde sobre un conjunto de datos que acabas de terminar de limpiar,
-  sin salir de la aplicación ni escribir un cuaderno.
-
-## Puesta en marcha
-
-Requiere Python 3.11+ y Node 22+ (Node solo para construir el cliente).
+Requiere Python 3.11+ y Node 22+ (Node solo para compilar el cliente).
 
 ```bash
-git clone <este repositorio> nightingale-hoard
-cd nightingale-hoard
 python -m venv venv
 venv/bin/pip install -r requirements.txt      # Windows: venv\Scripts\pip install -r requirements.txt
-venv/bin/pip install -r requirements-lab.txt  # opcional: Optuna/SHAP/XGBoost/LightGBM para el paquete Lab
+venv/bin/pip install -r requirements-lab.txt  # opcional: Optuna, SHAP, XGBoost, LightGBM
 npm install
 npm run build
 venv/bin/python -m nightingale --demo         # Windows: venv\Scripts\python -m nightingale --demo
 ```
 
-Abre http://127.0.0.1:5189 y activa Datos o Cálculo en Funciones. `--demo` siembra al activar Datos tres conjuntos inventados (un CSV de ventas
-con formato español desordenado, una tabla de clientes, una serie temporal de sensor estacional con
-algunas anomalías inyectadas) en una carpeta `data-demo/` separada, así que nunca toca datos reales.
-Quita `--demo` para un banco de trabajo limpio.
+Abre http://127.0.0.1:5189 y activa Datos o Cálculo en Funciones. `--demo` crea tres conjuntos inventados en una carpeta aparte `data-demo/`; quítalo para un banco limpio.
 
-- `python scripts/launch.py` arranca la aplicación en un puerto libre y abre el navegador.
-- `python scripts/dev.py` ejecuta uvicorn con `--reload` más el servidor de desarrollo de Vite
-  (haciendo proxy de `/api`).
-
-## Configuración (variables de entorno)
+- `python scripts/launch.py` arranca la app en un puerto libre y abre el navegador.
+- `python scripts/dev.py` ejecuta uvicorn con recarga y el servidor de desarrollo de Vite.
 
 | Variable | Por defecto | Significado |
 | --- | --- | --- |
-| `NIGHTINGALE_PORT` / `PORT` | `5189` | Puerto preferido; `PORT_STRICT=1` lo fija, si no se toma el primer puerto libre a partir de ahí. |
+| `NIGHTINGALE_PORT` / `PORT` | `5189` | Puerto preferido; `PORT_STRICT=1` lo fija, si no se usa el primero libre a partir de ahí. |
 | `NIGHTINGALE_DATA_DIR` | `<repo>/data` (`data-demo` con `--demo`) | Archivo DuckDB, SQLite de metadatos, `mcp-token`, exportaciones, imágenes de gráficos. |
-| `NIGHTINGALE_ALLOWED_HOSTS` | | Nombres de host adicionales aceptados detrás de un túnel (ver abajo). |
+| `NIGHTINGALE_ALLOWED_HOSTS` | | Nombres de host extra aceptados detrás de un túnel. |
 
-### Acceso desde tu móvil (detrás de un túnel)
+El servidor escucha en `127.0.0.1` y solo responde a `localhost`, `127.0.0.1` y `[::1]`. Para acceder desde el móvil por un túnel, lista los nombres de host en `NIGHTINGALE_ALLOWED_HOSTS` (separados por comas, exactos o `*.sufijo`, p. ej. `mi-pc.example,*.ts.net`); el `Origin` de las llamadas a la API también debe coincidir. Abierta por el túnel, el navegador ofrece instalarla como PWA.
 
-El servidor se vincula a `127.0.0.1` y solo responde a peticiones cuyo `Host` sea `localhost`,
-`127.0.0.1` o `[::1]`. Para alcanzarlo desde tu móvil a través de un túnel, lista los nombres de
-host adicionales en `NIGHTINGALE_ALLOWED_HOSTS`, separados por comas, nombres exactos o `*.sufijo`:
-`NIGHTINGALE_ALLOWED_HOSTS=mi-pc.ejemplo,*.ts.net`. El puerto y las mayúsculas se ignoran, y el
-`Origin` de las llamadas a la API también debe resolver a uno de esos hosts. Una vez abierto a
-través del túnel, el navegador ofrece instalarlo como PWA.
+## Conexión con Faustus y el Hoard Hub
 
-## Conectar con Faustus
+- `faustus-plugin.json` es el manifiesto del plugin; cárgalo en Faustus para descubrir el catálogo MCP. Arranca la app desde el Hoard Hub y activa el módulo que necesites.
+- El puente MCP (`mcp_server.py`) llama a la API HTTP de la app en marcha, igual que la interfaz del navegador, y nunca abre la base de datos. Las llamadas de agente usan el token Bearer de `<carpeta de datos>/mcp-token` (`GET /api/agent/tools`, `POST /api/agent/call`).
+- Herramientas por grupos: fuentes e ingesta, conjuntos y perfilado, transformaciones, versiones y receta, consultas SQL, calidad, gráficos, paneles (normales y como código), modelos, exportación, relato, libros, conciliación, escenarios, migración, proceso, experimentos, registro de análisis y control de módulos. Referencia de las herramientas de Datos: [docs/MCP.md](docs/MCP.md); herramientas de Cálculo: [fusion/laplace-docs/MCP.md](fusion/laplace-docs/MCP.md). Donde los nombres coinciden, las de Cálculo llevan el prefijo `laplace_`.
+- Al asistente se le indica que previsualice una transformación antes de aplicarla, que nunca suponga el nombre de un conjunto y que cite el id del registro de análisis al informar de un resultado.
+- Un botón «Faustus» abre dentro de la app el panel de asistente común de la familia. Lleva como contexto el conjunto, panel, modelo de Lab o entrada de registro en pantalla y refresca las listas tras cada turno.
+- La app lleva skills de la biblioteca de la familia para los agentes conectados (limpieza de datos con linaje, mejora medida, bucle de verificación, relato desde datos), disponibles con las herramientas de skills y como prompts.
+- Otros documentos: [docs/API.md](docs/API.md), [docs/TRANSFORM-OPERATIONS.es.md](docs/TRANSFORM-OPERATIONS.es.md), [docs/DASHBOARD-ACTIONS.md](docs/DASHBOARD-ACTIONS.md), [docs/DASHBOARDS_AS_CODE.md](docs/DASHBOARDS_AS_CODE.md).
 
-Carga `faustus-plugin.json` en Faustus para descubrir el catálogo MCP estático. Arranca la app
-expresamente desde Hoard Hub y activa el módulo solicitado. El puente usa la API HTTP de la app,
-igual que la interfaz del navegador, y conserva las bases de datos dentro de su módulo nativo.
+## Pantallas
 
-## API
+<details>
+<summary>Capturas</summary>
 
-Todo JSON; los errores son `{ "error": "..." }`.
+<img src="docs/media/datasets-workbench.png" width="420" alt="Banco de conjuntos de datos"> <img src="docs/media/charts.png" width="420" alt="Gráficos">
+<img src="docs/media/models.png" width="420" alt="Modelos"> <img src="docs/media/mobile-datasets.png" width="200" alt="Conjuntos de datos en móvil">
+<img src="docs/media/lab-explore.png" width="420" alt="Lab Explorar"> <img src="docs/media/lab-models.png" width="420" alt="Lab Modelos">
+<img src="docs/media/lab-diagnose.png" width="420" alt="Lab Diagnóstico"> <img src="docs/media/lab-optimize.png" width="420" alt="Lab Optimizar">
+<img src="docs/media/lab-compare.png" width="420" alt="Lab Comparar y deriva"> <img src="docs/media/lab-pipeline.png" width="420" alt="Lab Canalización">
+<img src="docs/media/lab-report.png" width="420" alt="Lab Informe"> <img src="docs/media/lab-explore-mobile.png" width="200" alt="Lab Explorar en móvil"> <img src="docs/media/lab-pipeline-mobile.png" width="200" alt="Lab Canalización en móvil">
 
-- `GET /api/health`, `GET /api/status`
-- `GET /api/sources`, `POST /api/sources/ingest` (`kind: "hoard"` con `preset` o `app` + `tool` + `args` + `list_path`), `GET /api/sources/hoard-presets`
-- `GET /api/datasets`, `POST /api/datasets/{name}/refresh`, `DELETE /api/datasets/{name}`, `GET /api/datasets/{name}/dependents`
-- `GET /api/datasets/{name}/{profile,preview,lineage,recipe,correlation}`
-- `POST /api/datasets/{name}/{transform,undo,redo,join-preview}`
-- `POST /api/query`
-- `GET/POST /api/datasets/{name}/quality`, `POST /api/datasets/{name}/quality/run`, `DELETE /api/quality/{id}`
-- `GET/POST /api/charts`, `GET/DELETE /api/charts/{id}`
-- `GET/POST /api/dashboards`, `GET /api/dashboards/{id}`, `POST /api/dashboards/{id}/items`\n- `GET /api/dashboards/action-schemas`, `POST /api/dashboards/{id}/{actions,undo,redo}`, `GET /api/dashboards/{id}/history` - ediciones tipadas y reversibles (`docs/DASHBOARD-ACTIONS.md`)
-- `GET/PUT /api/dac/semantic`, `POST /api/dac/semantic/validate`, `GET /api/dac/semantic/suggest?dataset=`
-- `GET/POST /api/dac/dashboards`, `GET/PUT/DELETE /api/dac/dashboards/{slug}`, `POST /api/dac/dashboards/{slug}/{rename,validate,render,export}`, `GET /api/dac/dashboards/{slug}/{history,diff}`, `POST /api/dac/dashboards/import` — ver `docs/DASHBOARDS_AS_CODE.md`
-- `POST /api/models/{train,cluster,pca,anomaly,forecast}`, `GET /api/models`
-- `POST /api/export`
-- `GET /api/log`, `GET /api/log/{id}`
-- `POST /api/ask`, `GET /api/ask/available`
-- `GET /api/agent/tools` (catálogo + instrucciones), `POST /api/agent/call` (token Bearer desde `<DATA_DIR>/mcp-token`)
+</details>
 
-## Herramientas MCP
+## Estructura del proyecto
 
-Consulta `docs/MCP.md` para la referencia del módulo Datos (30 herramientas, de `data_ingest` a
-`data_ask`) y un recorrido mínimo. Las instrucciones incluidas indican al asistente que previsualice
-una transformación antes de aplicarla cuando el efecto no sea obviamente seguro, que nunca asuma el
-nombre de un conjunto de datos (`data_list` primero), y que cite el id del registro de análisis
-(`N-000123`) al informar de un resultado. Cálculo aporta otras 20 herramientas nativas,
-documentadas en [su referencia](fusion/laplace-docs/MCP.md), con las tres colisiones prefijadas
-como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 51 (29 Datos, 20 Cálculo y 2 controles).
-como `laplace_`. `nightingale_modules` y `nightingale_set_module` completan el catálogo de 50 (28 Datos, 20 Cálculo y 2 controles).
+| Ruta | Contenido |
+| --- | --- |
+| `nightingale/` | Paquete Python: API, motor del banco, Lab, paneles como código, relato, escenarios, minería de procesos y el resto de herramientas |
+| `client/` | Interfaz React/Vite |
+| `fusion/` | Módulo de cálculo y su documentación |
+| `mcp_server.py` | Puente MCP por stdio |
+| `faustus-plugin.json` | Manifiesto del plugin de Faustus |
+| `scripts/` | `launch.py`, `dev.py` |
+| `tests/` | Pruebas |
+| `docs/` | Documentación de referencia y capturas |
+| `data/` | Datos locales (se crea al ejecutar) |
 
-## Pruebas
+## Desarrollo
 
 ```bash
 venv/bin/python -m pytest -q     # Windows: venv\Scripts\python -m pytest -q
 ```
 
-Las pruebas cubren el motor del banco de trabajo (cada vía de ingesta, cada paso de
-transformación, versionado y deshacer/rehacer/reproducción), reglas de calidad, gráficos y paneles,
-modelos (incluida la exclusión de columnas de tipo identificador, la corrección de previsión con
-marcas de tiempo duplicadas, y que tanto la salida por defecto a un conjunto de datos nuevo como la
-opción `write_to="new_version"` conservan el tipo exacto de cada columna copiada), la eliminación de
-conjuntos de datos (comprobación de dependencias, cascada, forzado), la API HTTP, las herramientas
-del agente a través de `/api/agent/call`, la protección de peticiones, los puntos finales de la PWA,
-y una prueba de extremo a extremo en subproceso a través del puente MCP por stdio.
-
-## Licencia
-
-MIT — Luis María Salete Cuartero.
-
-## Panel de Faustus
-
-Un botón «Faustus» abre el panel de asistente común de la familia sin salir de la app. Faustus guarda las conversaciones
-(también en Faustus Studio), ejecuta el agente con el modelo elegido globalmente y usa las herramientas de esta app. Cada
-turno lleva el dataset, dashboard, dashboard como código, modelo del Lab o entrada del registro que haya en pantalla; el YAML sin guardar de un dashboard como código o de la capa semántica, y los formularios de gráfico y regla nuevos. Al terminar un turno, las listas y la vista abierta se refrescan sin perder lo que estuvieras escribiendo.
-El panel lo sirve Hoard Link (`install_spa`) y habla con Faustus a través del relay de la app, así que ningún token llega
-al navegador.
-
-
-## Datos propios y compatibilidad
-
-Los datos nativos pueden trasladarse a `data/native/<módulo>/data`, con configuración privada junto a cada módulo. La ficción de Writer utiliza su perfil de escritorio `writers-hoard/fiction/data`. Traslada árboles completos, incluidos WAL/SHM de SQLite, medios, modelos descargados y sesiones del navegador; actualiza las rutas absolutas guardadas antes de activar el módulo. Los manifiestos de `compatibility/<id>/faustus-plugin.json` conservan identidades, nombres de herramientas y tokens sin necesitar el repositorio retirado. Añade el directorio `compatibility` de cada producto a las raíces del Hub antes de la raíz general. El catálogo y los puentes compatibles nunca arrancan aplicaciones. Todos los módulos permanecen apagados durante el traslado.
-
-Las instrucciones anteriores de adopción in-place describen una importación opcional. Una vez comprobados el traslado y las rutas, ya no es necesario conservar las carpetas de los productos antiguos.
-
-## Reutilizar la configuración de un gráfico
-
-En Gráficos, **Usar como base** carga en el constructor editable el conjunto de datos, tipo, ejes, agregación, color, filtro de filas y título de un gráfico guardado. Identifica el origen y enfoca el título. Cargar los campos no guarda nada; **Guardar gráfico** crea otro ID y conserva el original. Los campos permanecen tras guardar o un error, incluidas las ediciones posteriores al envío. Refrescar la lista no vuelve a aplicar la configuración de origen. Reutiliza las API de lectura/creación y las acciones de `data_chart` en MCP; las43 herramientas siguen intactas. Consulta las filas actuales del conjunto, sin duplicar datos, imágenes históricas, dashboards o historial de análisis.
-
-## Relato con los datos
-
-**Relato** convierte un conjunto ya cargado en una lista ordenada de hallazgos, del más fuerte al más
-débil, cada uno con su gráfico, una frase que dice la cifra exacta que muestra el gráfico y la consulta
-que lo produce. Se calculan cinco clases con las operaciones que la aplicación ya tiene: tendencia
-(correlación de Pearson de la serie por periodo contra su índice, al menos cinco periodos de cinco
-filas cada uno, p < 0,05), comparación entre grupos (prueba t de Welch entre el grupo más alto y el más
-bajo, al menos dos grupos de cinco filas, p < 0,05 y una diferencia de al menos el 10 %), valores
-atípicos (filas fuera de 1,5 IQR, al menos uno y como mucho el 10 % de los valores), concentración (la
-categoría mayor reúne al menos el 40 % del importe, o las tres mayores el 60 %, con tres categorías o
-más) y cambio entre periodos (prueba t de Welch entre las dos mitades del intervalo temporal, al menos
-diez filas en cada una, p < 0,05 y un cambio de al menos el 10 %). La tendencia y la comparación entre
-grupos se calculan sobre el total y sobre la media del periodo, y también dentro de los grupos mayores
-de las primeras columnas categóricas, para que un total plano no esconda un producto que baja; la
-concentración se mide sobre el importe cuando el conjunto tiene una columna de dinero. El hallazgo que
-no alcanza su umbral se queda fuera, y un conjunto que no sostiene nada produce un relato vacío en
-lugar de una frase sin respaldo. Los hallazgos se ordenan por lo improbable del patrón bajo la
-hipótesis nula de su prueba más el tamaño del efecto, y el relato guarda uno de cada clase antes de
-repetir una, para que un único hallazgo de atípicos no quede fuera por ocho variantes de una tendencia.
-
-El relato abre con un titular y dos o tres frases que resumen los hallazgos más fuertes —escritas con
-las mismas cifras que citan los hallazgos, así que el resumen no puede decir nada nuevo—, y las frases,
-los títulos, las etiquetas de las cifras y la exportación siguen el idioma de la interfaz
-(`?lang=es`). El gráfico de cada hallazgo se dibuja con el aspecto de la aplicación (rosa y oro, la
-tinta y las líneas finas de la app, sin marco pesado, formato de número español) y con la forma que
-cuenta el hallazgo: línea para una tendencia, barras ordenadas para una diferencia entre grupos, un
-Pareto de barras más la proporción acumulada para una concentración y una caja para los atípicos.
-
-El modelo de la familia solo reescribe frases sobre cifras ya calculadas: cada número del texto se
-vuelve a leer y se compara con las cifras del hallazgo, y la frase con cualquier otra cifra se descarta
-y queda la plantilla. El gráfico se dibuja a partir de la misma agregación que cita la frase, así que no
-pueden separarse. Los hallazgos se reordenan, se quitan y su frase se edita (con la misma comprobación),
-y el relato se exporta como un único archivo HTML autónomo —frases, cifras, gráficos PNG incrustados y
-las consultas, sin script y sin red— o, cuando Cicero's Hoard responde por el Hub, como presentación con
-un hallazgo por diapositiva construida con las herramientas de Cicero. Si Cicero no está disponible, el
-HTML se escribe igualmente y la respuesta lo dice.
-
-Página **Relato**, API `/api/story/*` (`build`, `stories`, `stories/{id}`, `stories/{id}/export`,
-`download`), herramientas `story_build`, `story_get`, `story_list`, `story_update`, `story_export`. Cada
-generación, edición y exportación queda en el registro de análisis. El catálogo combinado pasa a 57
-herramientas (35 Datos, 20 Cálculo y dos controles).
-
-## Libros de Excel como cálculo
-
-Compila un `.xlsx` en un cálculo ejecutable (parámetros, tablas, resultados), lánzalo con otros valores, traza un resultado hasta sus datos, compáralo con lo que guardó Excel, recalcula casos nuevos con semilla en Excel o LibreOffice y exporta un módulo Python independiente. Las fórmulas no soportadas se congelan con el valor de Excel y se listan. Página **Libros Excel**, API `/api/sheets/*`, herramienta `data_workbook`. También explica el cálculo: una ordenación de sensibilidad (tornado) de los parámetros numéricos para cualquier salida, escenarios con nombre guardados con el libro y comparados con la base, y comprobación de unidades (unidades declaradas más formatos de moneda y porcentaje, propagadas por las fórmulas con Pint, con errores como sumar metros y euros). Son acciones adicionales de `data_workbook`, quedan en el registro y el número de herramientas no cambia. Detalle: `docs/WORKBOOK-COMPILER.es.md`.
-
-## Conciliar dos conjuntos
-
-Compara dos conjuntos fila a fila por uno o varios pares de columnas clave (por ejemplo, una exportación del CRM frente al ERP). Nightingale sugiere pares de clave y de valor por parecido de nombres y solapamiento de valores, y clasifica cada fila como emparejada, solo izquierda, solo derecha, ambigua (clave duplicada) o sin clave, y cada celda comparada como igual, igual dentro de la tolerancia, distinta, cero frente a vacío, vacío frente a ausente o presente en un solo lado. Opciones de normalización: recortar espacios, ignorar mayúsculas, comparación numérica, vacío como ausente y tolerancia numérica. Cada recuento lleva ejemplos y una explicación; el resultado fila a fila se puede guardar como conjunto nuevo o descargar en CSV. Página **Conciliar**, API `/api/reconcile/*` (`suggest`, `run`, `export.csv`), herramienta `data_reconcile`. Cada ejecución queda en el registro de análisis.
-
-## Laboratorio de escenarios
-
-Describe una operación como un modelo (llegadas por tasa de Poisson, calendario horario o tiempos entre llegadas medidos; estaciones con servidores, turnos, colas limitadas y distribuciones de tiempo de servicio; costes; y, opcionalmente, un artículo de stock con punto de pedido y plazo de reposición) y simúlalo con un motor de eventos discretos con semilla. Cada ejecución usa varias réplicas y da media e intervalo del 95 % de rendimiento, plazo (media, mediana, p90), espera, utilización y cola por estación, trabajo en curso, trabajos perdidos, roturas de stock y coste, además de una comprobación de la ley de Little y, para una sola estación M/M/c, el tiempo de espera de Erlang-C junto al simulado. Las variantes con nombre se comparan con números aleatorios comunes y cada diferencia se marca como distinguible o no; un barrido varía un parámetro sobre una lista de valores. La calibración lee duraciones o marcas de tiempo de una columna, informa del tamaño de muestra y avisa si es pequeño. El resultado son escenarios bajo supuestos declarados, no una predicción. Los modelos se guardan por nombre y los resultados pueden guardarse como conjuntos. Página **Escenarios**, API `/api/scenarios/*`, herramienta `data_scenario`. Cada ejecución queda en el registro de análisis.
-
-## Ensayo de migración
-
-Ensaya una migración antes de la real. Una especificación (JSON, guardada por nombre) lista las tablas destino, cada una con un conjunto de origen o SQL de solo lectura sobre conjuntos, columnas tipadas (`INTEGER`, `REAL`, `TEXT`, `DATE`, `BOOLEAN`) con indicador de obligatoria, una expresión DuckDB sobre las columnas de origen (por defecto, la columna del mismo nombre) y una clase (`representation` o `correction`), además de claves primaria, únicas y foráneas y comprobaciones. El ensayo reconstruye un archivo SQLite por nombre de migración en el directorio de datos y carga las tablas empezando por las padre. Por tabla informa de filas de origen = cargadas + rechazadas, con cada fila rechazada y su motivo (valor que no se convierte, con columna y valor original; falta un valor obligatorio; clave primaria o única repetida; clave foránea sin padre); las filas rechazadas se pueden guardar como conjunto. Una segunda carga hace upsert por clave primaria en el mismo archivo y el informe muestra recuentos y huella del contenido sin cambios y sin claves duplicadas. Las columnas de representación se prueban con una ida y vuelta contra la columna de origen y se marcan si cambian algún valor; las de corrección informan de cuántos valores cambian. Las comprobaciones de totales (expresión de origen frente a columna de destino, con tolerancia) y las consultas funcionales (una consulta en origen y otra en destino cuyos resultados deben coincidir) se evalúan en ambos lados. Se pueden descargar el DDL destino y el archivo SQLite. Un ayudante esboza una tabla a partir del perfil de un conjunto y avisa de que es solo un borrador. Los conjuntos de origen nunca se modifican. Página **Migrar**, API `/api/migrate/*` (`suggest`, `specs`, `rehearse`, `ddl`, `ddl.sql`, `file/{name}`), herramienta `data_migrate`. Cada ejecución queda en el registro de análisis.
-
-## Presupuestos de fabricación por escenarios
-
-Los presupuestos pueden importar trabajos anteriores y usar sus costes y tiempos observados para calibrar estimaciones. La calibración de procesos admite tasas de llegada por hora de la semana y edición de las observaciones empíricas de los tiempos de servicio y los intervalos de llegada.
-
-Vulcan mide y prepara la pieza, esta aplicación calcula con tarifas, densidad y parámetros explícitos, y la contabilidad registra lo que ocurre después. Un presupuesto tiene parámetros con nombre, unidades y fuente (usuario, supuesto, medido, tarifa) y partidas en categorías separadas (material geométrico, material de proceso, preparación, trabajo, máquina, desperdicio, margen), cada una una fórmula sobre esos parámetros evaluada con unidades Pint por un evaluador restringido. El grafo de dependencias hace que al cambiar un supuesto se recalculen solo las partidas que dependen de él, y la diferencia muestra valores antes y después, fórmulas y fuentes. Plantillas: FDM (tiempo a partir de altura de capa, perímetros, relleno y velocidades, o del tiempo del segmentador; un tiempo solo con el volumen es una estimación gruesa señalada o se bloquea por opción), CNC/láser (longitud de corte, avance, perforaciones, anidado) e impresión de hormigón (el tiempo exige longitud de trayectoria, velocidad y capas; rechaza deducirlo del volumen). Una medida que falta nunca se inventa: bloquea las partidas que la necesitan y el total se marca como parcial. La geometría puede traerse, de forma opcional, de la API de biblioteca de Vulcan (`vulcan_model_id`, por defecto `http://127.0.0.1:5186`), con origen, id del modelo, sha256 y hora. Los escenarios con nombre se comparan con la base, la sensibilidad de uno en uno ordena los supuestos, los costes y tiempos reales se registran por partida tras el trabajo y se comparan con el presupuesto (con referencia opcional a un movimiento contable; no se escribe nada en la contabilidad) y los presupuestos se exportan en JSON, CSV o Markdown con fórmulas y fuentes. Página **Presupuestos de fabricación**, API `/api/fabquote/*`, herramienta `data_fabquote`. Las tarifas de las plantillas son valores de ejemplo señalados y requieren calibración con trabajos reales.
-
-## Descubrimiento de procesos y ensayo de cambios
-
-Carga un registro de eventos (una fila por evento: id de caso, actividad, marca de tiempo y, opcionalmente, el inicio del paso, un recurso y un coste; las columnas se proponen a partir de nombres y valores). El **descubrimiento** da el grafo de sucesiones directas con frecuencias y espera mediana/p90, filtrado con la medida de dependencia del heuristic miner (umbral y recuento mínimo; los bucles de retrabajo de longitud dos se conservan), variantes con recuentos y proporciones, actividades de inicio y fin, bucles de retrabajo, tiempos de ciclo por caso, el cuello de botella (dónde se concentra la espera) y la carga por recurso. Sin columna de inicio, el tiempo previo a un paso mezcla espera y trabajo, y el resultado lo dice. La **conformidad** comprueba cada caso contra un proceso de referencia dado como pasos ordenados (con marcas de opcional y paralelo) o como transiciones permitidas, e informa de pasos omitidos, insertados, repetidos y reordenados con recuentos, proporciones y casos de ejemplo. El **ensayo** convierte el proceso descubierto en un modelo para el motor del laboratorio de escenarios (duraciones empíricas por paso, proporciones de ruta del grafo, grupos de recursos, ritmo de llegadas), comprueba primero que la línea base reproduce el tiempo de ciclo observado y avisa cuando no es así, y después compara cambios (añadir recursos, quitar un paso, cambiar una proporción de ruta, acortar una duración) con la línea base usando números aleatorios comunes e intervalos del 95 %; el modelo puede guardarse en la página Escenarios. Los resultados pueden guardarse como conjuntos de datos. Página **Procesos** (mapa del proceso con conmutador frecuencia/duración, variantes, cuellos de botella, conformidad, ensayo), API `/api/process/*` (`suggest`, `discover`, `conform`, `rehearse`), herramienta de agente `data_process`. Cada ejecución se registra en el registro de análisis. Límites: el enrutamiento es de primer orden (el sucesor de un paso depende solo del paso), las duraciones se sortean de forma independiente, los recursos compartidos se modelan como un grupo por paso, y la capacidad solo puede estimarse si existe columna de inicio. **Perfil del registro de eventos y calibración con periodo reservado** (`nightingale/event_log.py`): la correspondencia de columnas admite también una columna de `ciclo de vida` (una fila por evento `start`/`complete`, emparejados por caso y actividad) en lugar de la columna de inicio, y `log_options` declara la zona horaria de las horas sin desfase (los desfases escritos se conservan; todo se normaliza a UTC), las actividades finales (los casos que no llegan a una están abiertos/censurados: se cuentan y listan, pero quedan fuera de tiempos y ajuste) y la secuencia esperada (pasos ausentes por caso cerrado). La carga es determinista (marca de tiempo, después ciclo de vida, después fila de origen; los momentos de fin iguales son empates cuyo orden no se deduce) y cada evento conserva su fila de origen; se separan y listan los duplicados exactos, las marcas de tiempo ilegibles o imposibles (incluidas las horas locales que no existen en la zona declarada), las finalizaciones sin inicio, los inicios sin finalización, las horas locales ambiguas y los casos que cambian de desfase UTC. El **perfil** da variantes, el grafo de sucesiones directas con frecuencias, cobertura y las aristas que dependen de empates o de intervalos solapados, tiempos observados con tamaño de muestra y p10–p95, servicio y espera separados donde hay horas de inicio (en otro caso, tiempo transcurrido, espera más trabajo, indicando el dato que falta), concurrencia entre pasos solapados, dónde se acumula el trabajo (casos esperando de media) y una lista explicada de desviaciones; un recuento de sucesión directa no se presenta como causalidad. **Calibrar** ajusta un modelo del laboratorio de escenarios con los casos que empiezan antes de un corte temporal (cada parámetro con sus eventos de origen, tamaño de muestra y estimador, o marcado como no identificable con el dato que falta), lo simula con el motor existente y lo contrasta con los casos reservados con tolerancias explícitas; si falla se muestra como fallo, y las alternativas (otro operario, otra impresora…) se comparan con las mismas semillas y réplicas (intervalos del 95 %). **Exportar** devuelve el perfil y la receta en JSON con una referencia al conjunto de datos (nombre, versión, huella del contenido), nunca sus filas; una receta puede volver a ejecutarse y avisa si los datos han cambiado. La importación CSV admite `text_columns` para conservar una columna de tiempo tal como está escrita y no perder sus desfases. **Edición de la propuesta**: `model_edits` (`arrival_rate`, `stations.<actividad>.{service, servers}`, `routing.{start, next}`) se valida con mensajes explícitos (tasas o capacidades no positivas, actividades desconocidas, proporciones negativas o que suman cero, distribuciones con parámetros imposibles), se aplica sobre el modelo ajustado, cada parámetro editado queda marcado como editado por la persona usuaria con el valor ajustado y su origen, y la validación con casos reservados y las alternativas se repiten con el modelo editado (mismas semillas y réplicas) junto con la diferencia frente al ajustado; las ediciones viajan en la receta. **Emparejamiento inicio/fin**: las filas del mismo caso y actividad se emparejan primero por recurso si hay columna de recurso asignada (el inicio abierto más antiguo con el mismo recurso) y, si no, por orden de llegada; el perfil informa por actividad de cuántas parejas decidió cada regla, cuántas se solapaban y cuántas difieren del orden de llegada. Una columna de tiempo ya importada con zona horaria se detecta y el perfil dice que los desfases escritos se perdieron y que hay que volver a importar el archivo con `text_columns`. Acciones `profile`, `calibrate`, `export` de `data_process`, API `/api/process/profile|calibrate|export`, pestañas **Perfil del registro** y **Calibración** en la página Procesos. El conjunto de datos nunca se modifica.
-## Experimentos
-
-Una página con tres pestañas, respaldada por `/api/twin/*`, `/api/experiment/*`, `/api/effect/*` y las herramientas de agente `data_twin`, `data_experiment` y `data_effect`. Cada ejecución queda en el registro de análisis.
-
-**Gemelo.** A partir de una serie temporal muestreada con regularidad (columna de tiempo, salidas y entradas), Nightingale ajusta por mínimos cuadrados un modelo dinámico lineal interpretable: un ARX multisalida (un modelo de espacio de estados lineal en forma compañera; se informa de sus polos y ganancias estacionarias) o, con una entrada y una salida, un modelo de respuesta a escalón de primer orden con tiempo muerto. El orden de retardos se elige en un bloque de selección separado del último tramo del registro, que se reserva y se puntúa con el NRMSE a un paso y en simulación libre (RMSE sobre el rango de lo observado), el R2 y una referencia de persistencia. La comprobación de residuos (Ljung-Box y banda del 95 %) avisa de dinámica no modelada, y se informa de la cobertura empírica del intervalo de predicción en el bloque reservado. Los parámetros y las ganancias llevan intervalos por bootstrap de residuos. La anchura del intervalo se calibra por horizonte con puntuaciones conformales de los errores en simulación libre desde cada origen del bloque reservado (se guardan varios niveles y se interpola el pedido); en un proceso sintético de dinámica conocida el intervalo del 90 % cubrió de media el 90,4 % en 60 ajustes (89,0 % antes de calibrar), con variación entre ajustes según la longitud del bloque reservado, y si el bloque es demasiado corto para calibrar el ajuste lo avisa. Las simulaciones de «qué pasa si» aceptan un perfil de entrada (valor fijo, lista, escalón o rampa) y devuelven la respuesta con un intervalo (incertidumbre de coeficientes más residuos remuestreados) junto a una línea base con las entradas fijas. Las entradas fuera del rango visto en el entrenamiento se marcan; muy por fuera (por defecto más del 25 % del rango) el gemelo se niega salvo que se indique lo contrario. Los gemelos se guardan por nombre. Límites: solo dinámica lineal, muestreo uniforme (se usa el tramo regular más largo), el intervalo no incluye error estructural ni cambios del proceso, y se avisa cuando el horizonte supera el bloque validado.
-
-**Diseño y siguiente prueba.** Diseños factoriales de dos niveles completos y fraccionados (generadores, relación definitoria, resolución, estructura de alias), diseños centrales compuestos (de cara, inscritos o circunscritos) e hipercubos latinos maximin con semilla, con límites y combinaciones prohibidas escritas como expresiones o cajas; se informa de lo que cuesta una restricción (pérdida de equilibrio, términos estimables). Los resultados se analizan en efectos principales, interacciones y, si el diseño lo permite, una superficie cuadrática con intervalos de confianza; un diseño saturado sin réplicas se juzga con el error estándar pseudo de Lenth en lugar de un error inventado, y se comprueban la curvatura, la falta de ajuste y el punto estacionario (marcado si cae fuera de la región). La siguiente prueba es el candidato con mayor varianza de predicción, o con mejor mejora esperada si el objetivo es maximizar o minimizar, y la respuesta explica por qué. Para hipótesis discretas (por ejemplo, tres causas posibles) con un resultado previsto por prueba, las pruebas se ordenan por ganancia de información por coste, se nombra la prueba más barata que separa todas las hipótesis y se muestra un plan secuencial. Las recomendaciones suponen la forma del modelo ajustado; el orden de las hipótesis vale lo que valgan las probabilidades y costes indicados.
-
-**Efecto de un cambio.** Diferencias en diferencias con grupo de control (errores robustos por conglomerados si se da una columna de unidad, test de tendencias previas paralelas con el sesgo que implicaría, fecha placebo), serie temporal interrumpida (regresión segmentada con tendencia previa, cambio de nivel y cambio de pendiente, estacionalidad opcional, errores AR(1) si los residuos están autocorrelacionados, comprobación de linealidad del periodo previo, fechas placebo) y ajuste por regresión con los confusores indicados (estimación bruta frente a ajustada, equilibrio, solapamiento de propensión, estabilidad al añadir confusores, valor de robustez frente a un confusor no medido, resultado placebo opcional). Cada supuesto se lista como superado, fallido o no comprobable; uno fallido convierte el veredicto en una advertencia, y el resultado nunca afirma causalidad. Los tests de placebo y de tendencias previas tienen poca potencia con series cortas.
-
-**Hipótesis causal, identificación y refutación** (tratamiento y resultado deben ser variables distintas; se avisa si el grafo no tiene camino dirigido del tratamiento al resultado o si un nombre solo difiere de una columna en las mayúsculas; las pruebas de refutación no suspenden una estimación indistinguible de cero y las marcan como no informativas; el estado `initial` del gemelo acepta `{"outputs": ..., "inputs": ...}` o nombres sueltos y rechaza los desconocidos). Con `adjust`, un grafo causal escrito como aristas (`temporada -> descuento, temporada -> ventas, descuento -> visitas -> ventas, descuento -> ventas`; los nombres que no son columnas cuentan como no observados) sirve para hallar el conjunto de ajuste por la puerta trasera (se usa como confusores si no se indica ninguno), nombrar las variables por las que no se debe ajustar (mediadores y otras consecuencias del tratamiento), comprobar un conjunto indicado (también uno que abre un camino por un efecto común) y, si ningún conjunto medido sirve, decir que el efecto no está identificado y qué falta: medir la causa común no observada, asignar el tratamiento al azar o un instrumento candidato (no se estima). `refute` vuelve a estimar con un tratamiento placebo barajado, una causa común aleatoria añadida y submuestras del 80 %. Probado con datos con un confusor conocido en los que la diferencia bruta tiene el signo contrario. El grafo es una hipótesis; las comprobaciones solo dicen lo que se sigue de él.
-
-## Skills para los agentes que se conectan
-
-Esta app lleva procedimientos de la biblioteca de skills del espacio de trabajo de la familia para los agentes que se conectan: `data-cleaning-with-lineage`, `measured-improvement`, `verification-loop`, `story-from-data`. Aparecen en lo que el agente lee al conectarse, se leen con `skills_list` y `skill_read`, se buscan y asignan con `skills_library` y `skills_assign`, y se ofrecen como prompts. Se eligen en la página de skills (`/api/agent/skills/page`) o en la pestaña Skills del hub; el bloque `skills` de `faustus-plugin.json` guarda lo que la app pide por defecto.
+Los datos viven en `NIGHTINGALE_DATA_DIR`. Licencia: MIT, Luis María Salete Cuartero.
