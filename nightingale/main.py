@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from . import __version__
+from . import __version__, applang
 from .api import ROUTERS
 from .config import Config
 from .hoard_link import family
@@ -29,6 +29,8 @@ def create_app(config: Config | None = None, services: Services | None = None) -
     async def lifespan(app: FastAPI):
         svc = services or Services(config)
         app.state.services = svc
+        # the language a caller that does not ask for one gets (an agent, a script): the app's own, Spanish by default
+        applang.configure(config.data_dir)
         family.configure("nightingale", str(config.data_dir), token_file=str(config.token_path))  # calls to sibling apps through the hub
         logging.getLogger("nightingale").info("Nightingale's Hoard %s - data in %s", __version__, config.data_dir)
         try:

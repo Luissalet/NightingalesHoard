@@ -84,6 +84,8 @@ export default function App() {
     setApiLang(l);
     setLangState(l);
     persistLang(l);
+    // the server keeps it too, so a story built by an agent without ?lang= comes out in this language
+    api.setLanguage(l).catch(() => {});
   }, []);
 
   const refreshDatasets = useCallback(async () => {
