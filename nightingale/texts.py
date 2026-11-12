@@ -2239,23 +2239,41 @@ register({
 # ======================================================================= story (story.*)
 register({
     "story.title_trend": {"en": "Trend of {y} over {x}", "es": "Tendencia de {y} a lo largo de {x}"},
+    "story.title_trend_group": {"en": "Trend of {y} over {x} in {group}", "es": "Tendencia de {y} a lo largo de {x} en {group}"},
     "story.title_groups": {"en": "Average {y} by {x}", "es": "Media de {y} por {x}"},
+    "story.title_groups_total": {"en": "Total {y} by {x}", "es": "Total de {y} por {x}"},
     "story.title_outliers": {"en": "Outliers in {y}", "es": "Valores atípicos en {y}"},
     "story.title_concentration": {"en": "Concentration of {x}", "es": "Concentración de {x}"},
+    "story.title_concentration_amount": {"en": "Share of {y} by {x}", "es": "Reparto de {y} por {x}"},
     "story.title_change": {"en": "Change in {y} between the two halves of the period", "es": "Cambio de {y} entre las dos mitades del periodo"},
+    "story.measure_sum": {"en": "total", "es": "total"},
+    "story.measure_avg": {"en": "average", "es": "media"},
+    "story.measure_count": {"en": "count", "es": "recuento"},
     "story.trend_up": {
-        "en": "The average {y} per {grain} rises from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
-        "es": "La media de {y} por {grain} sube de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+        "en": "The {measure} {y} per {grain} rises from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "El {measure} de {y} por {grain} sube de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
     "story.trend_down": {
-        "en": "The average {y} per {grain} falls from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
-        "es": "La media de {y} por {grain} baja de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+        "en": "The {measure} {y} per {grain} falls from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "El {measure} de {y} por {grain} baja de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+    "story.trend_up_group": {
+        "en": "In {group}, the {measure} {y} per {grain} rises from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "En {group}, el {measure} de {y} por {grain} sube de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
+    "story.trend_down_group": {
+        "en": "In {group}, the {measure} {y} per {grain} falls from {first} in the first period to {last} in the last ({change} % over {periods} periods; Pearson p <= {p}).",
+        "es": "En {group}, el {measure} de {y} por {grain} baja de {first} en el primer periodo a {last} en el último ({change} % en {periods} periodos; p de Pearson <= {p})."},
     "story.groups": {
         "en": "The average {y} is {highest} in {high} and {lowest} in {low}: a gap of {gap} ({relative} %; Welch p <= {p}, {groups} groups).",
         "es": "La media de {y} es {highest} en {high} y {lowest} en {low}: una diferencia de {gap} ({relative} %; p de Welch <= {p}, {groups} grupos)."},
+    "story.groups_total": {
+        "en": "{high} leads the total {y} with {highest}, against {lowest} in {low}: a gap of {gap} ({relative} %; Welch p <= {p}, {groups} groups).",
+        "es": "{high} encabeza el total de {y} con {highest}, frente a {lowest} en {low}: una diferencia de {gap} ({relative} %; p de Welch <= {p}, {groups} grupos)."},
     "story.outliers": {
         "en": "{outliers} of {rows} values of {y} ({share} %) lie outside 1.5 IQR above the third quartile ({q3}); the largest is {max}.",
         "es": "{outliers} de {rows} valores de {y} ({share} %) quedan fuera de 1,5 IQR por encima del tercer cuartil ({q3}); el mayor es {max}."},
-    "story.concentration": {
+    "story.concentration_amount": {
+        "en": "{top} takes {share} % of {y} ({top_value} of {total}); the three largest {x} values take {top_three} % ({groups} categories).",
+        "es": "{top} se lleva el {share} % de {y} ({top_value} de {total}); los tres valores mayores de {x} suman el {top_three} % ({groups} categorías)."},
+    "story.concentration_rows": {
         "en": "{top} holds {share} % of the rows ({top_count} of {rows}); the three largest {x} values hold {top_three} % ({groups} categories).",
         "es": "{top} concentra el {share} % de las filas ({top_count} de {rows}); los tres valores mayores de {x} suman el {top_three} % ({groups} categorías)."},
     "story.change_up": {
@@ -2264,11 +2282,60 @@ register({
     "story.change_down": {
         "en": "The average {y} falls from {before} in the first half of the period to {after} in the second ({relative} %; Welch p <= {p}).",
         "es": "La media de {y} baja de {before} en la primera mitad del periodo a {after} en la segunda ({relative} %; p de Welch <= {p})."},
+    "story.verb_up": {"en": "rises", "es": "sube"},
+    "story.verb_down": {"en": "falls", "es": "baja"},
+    "story.headline": {"en": "{dataset}: {lead}", "es": "{dataset}: {lead}"},
+    "story.short_trend": {
+        "en": "the {measure} {y} {verb} {change} % over {periods} periods",
+        "es": "el {measure} de {y} {verb} un {change} % en {periods} periodos"},
+    "story.short_trend_group": {
+        "en": "in {group} the {measure} {y} {verb} {change} % over {periods} periods",
+        "es": "en {group} el {measure} de {y} {verb} un {change} % en {periods} periodos"},
+    "story.short_groups": {
+        "en": "the average {y} differs by {relative} % between {high} and {low}",
+        "es": "la media de {y} se separa un {relative} % entre {high} y {low}"},
+    "story.short_groups_total": {
+        "en": "the total {y} differs by {relative} % between {high} and {low}",
+        "es": "el total de {y} se separa un {relative} % entre {high} y {low}"},
+    "story.short_concentration_amount": {
+        "en": "the three largest {x} values take {top_three} % of {y}",
+        "es": "los tres valores mayores de {x} suman el {top_three} % de {y}"},
+    "story.short_concentration_rows": {
+        "en": "the three largest {x} values hold {top_three} % of the rows",
+        "es": "los tres valores mayores de {x} suman el {top_three} % de las filas"},
+    "story.short_outliers": {
+        "en": "{outliers} of {rows} values of {y} ({share} %) are outliers",
+        "es": "{outliers} de {rows} valores de {y} ({share} %) son atípicos"},
+    "story.short_change": {
+        "en": "the average {y} {verb} {relative} % between the two halves of the period",
+        "es": "la media de {y} {verb} un {relative} % entre las dos mitades del periodo"},
     "story.half_before": {"en": "first half", "es": "primera mitad"},
     "story.half_after": {"en": "second half", "es": "segunda mitad"},
     "story.grain_day": {"en": "day", "es": "día"},
     "story.grain_month": {"en": "month", "es": "mes"},
     "story.grain_year": {"en": "year", "es": "año"},
+    "story.fig_first": {"en": "First period", "es": "Primer periodo"},
+    "story.fig_last": {"en": "Last period", "es": "Último periodo"},
+    "story.fig_change": {"en": "Change (%)", "es": "Cambio (%)"},
+    "story.fig_periods": {"en": "Periods", "es": "Periodos"},
+    "story.fig_p": {"en": "p-value", "es": "p-valor"},
+    "story.fig_highest": {"en": "Highest", "es": "El más alto"},
+    "story.fig_lowest": {"en": "Lowest", "es": "El más bajo"},
+    "story.fig_gap": {"en": "Gap", "es": "Diferencia"},
+    "story.fig_relative": {"en": "Gap (%)", "es": "Diferencia (%)"},
+    "story.fig_groups": {"en": "Groups", "es": "Grupos"},
+    "story.fig_outliers": {"en": "Outliers", "es": "Atípicos"},
+    "story.fig_share": {"en": "Share (%)", "es": "Proporción (%)"},
+    "story.fig_rows": {"en": "Rows", "es": "Filas"},
+    "story.fig_max": {"en": "Largest", "es": "El mayor"},
+    "story.fig_q3": {"en": "Third quartile", "es": "Tercer cuartil"},
+    "story.fig_top_share": {"en": "Largest share (%)", "es": "Mayor proporción (%)"},
+    "story.fig_top_three_share": {"en": "Three largest (%)", "es": "Tres mayores (%)"},
+    "story.fig_top": {"en": "Rows of the largest", "es": "Filas del mayor"},
+    "story.fig_top_value": {"en": "Largest", "es": "El mayor"},
+    "story.fig_total": {"en": "Total", "es": "Total"},
+    "story.fig_before": {"en": "First half", "es": "Primera mitad"},
+    "story.fig_after": {"en": "Second half", "es": "Segunda mitad"},
     "story.no_numeric": {"en": "this dataset has no numeric column to summarise", "es": "este conjunto no tiene ninguna columna numérica que resumir"},
     "story.too_few_rows": {"en": "{rows} rows is below the {minimum} a finding needs", "es": "{rows} filas no llegan a las {minimum} que necesita un hallazgo"},
     "story.no_findings": {
@@ -2289,6 +2356,7 @@ register({
     "story.export_empty": {"en": "the story has no findings to export", "es": "el relato no tiene hallazgos que exportar"},
     "story.export_query": {"en": "Query that produces this finding", "es": "Consulta que produce este hallazgo"},
     "story.export_rows": {"en": "rows", "es": "filas"},
+    "story.export_figures": {"en": "Figures", "es": "Cifras"},
     "story.export_note": {
         "en": "Every figure comes from the query shown with its finding, run over the dataset's current version. A finding that did not reach the stated minimum support was left out.",
         "es": "Cada cifra sale de la consulta que acompaña a su hallazgo, ejecutada sobre la versión actual del conjunto. Se dejó fuera todo hallazgo que no alcanzó el soporte mínimo indicado."},
