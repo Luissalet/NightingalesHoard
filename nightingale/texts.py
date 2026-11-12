@@ -4,6 +4,8 @@ The analysis modules build warnings, verdicts, notes and error texts for people.
 ``KEY -> {"en": ..., "es": ...}`` written as a ``str.format`` template; ``t(key, lang, **kw)`` renders it.
 
 * ``lang`` defaults to "en", so agent/MCP callers and the existing tests see exactly the English they always saw.
+  The story tools are the exception: they default to the language the app is configured in (``applang``), so a story
+  built by an agent that does not say which language it wants is never written in English by accident.
 * The REST layer sets the language of the current request once (``use_lang`` / ``set_lang``); every ``t()`` call
   without an explicit ``lang`` then follows it, so the message builders do not need a ``lang`` argument threaded
   through every helper.
@@ -21,7 +23,9 @@ from typing import Any
 LANGS = ("en", "es")
 DEFAULT_LANG = "en"
 
-_current: contextvars.ContextVar[str] = contextvars.ContextVar("nightingale_lang", default=DEFAULT_LANG)
+# None means "this request did not say": get_lang() then answers English, and request_lang() answers None so a caller
+# that has its own default (the story tools: the language the app is configured in) can use it.
+_current: contextvars.ContextVar[str | None] = contextvars.ContextVar("nightingale_lang", default=None)
 
 CATALOGUE: dict[str, dict[str, str]] = {}
 
@@ -33,11 +37,16 @@ def norm_lang(lang: Any) -> str:
 
 
 def get_lang() -> str:
+    return _current.get() or DEFAULT_LANG
+
+
+def request_lang() -> str | None:
+    """The language this request asked for (``?lang=``), or None when it did not say."""
     return _current.get()
 
 
 def set_lang(lang: Any) -> contextvars.Token:
-    return _current.set(norm_lang(lang))
+    return _current.set(norm_lang(lang) if lang else None)
 
 
 def reset_lang(token: contextvars.Token) -> None:
@@ -66,7 +75,7 @@ class _Fmt(string.Formatter):
 
 def t(message: str, lang: Any = None, **kw) -> str:
     """Render message `message` in `lang` (default: the language of the current request, else English)."""
-    code = norm_lang(lang) if lang is not None else _current.get()
+    code = norm_lang(lang) if lang is not None else get_lang()
     entry = CATALOGUE[message]
     return _Fmt(code).vformat(entry.get(code) or entry["en"], (), kw)
 

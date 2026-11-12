@@ -72,7 +72,10 @@ def test_a_dataset_too_small_is_refused(client):
     client.post("/api/sources/ingest", json={"kind": "paste", "text": "a,b\n1,2\n3,4\n", "name": "pocos", "fmt": "csv"})
     response = client.post("/api/story/build", json={"dataset": "pocos"})
     assert response.status_code == 400
-    assert "rows" in response.json()["error"]
+    # no ?lang=: the story (and its refusal) comes in the language the app is configured in, Spanish by default
+    assert "filas" in response.json()["error"]
+    english = client.post("/api/story/build", params={"lang": "en"}, json={"dataset": "pocos"})
+    assert "rows" in english.json()["error"]
 
 
 def test_a_dataset_without_numbers_is_refused(client):
@@ -394,3 +397,50 @@ def test_the_export_is_in_spanish_and_carries_the_headline(client, sales):
     assert "filas" in page
     for english in ("Outliers in", "Query that produces this finding", ">rows<", "Trend of"):
         assert english not in page, english
+
+
+# ---- the language a caller that does not ask for one gets --------------------
+
+def test_a_story_built_without_a_language_uses_the_app_language(client, ds):
+    """An agent or a script that does not send ?lang= gets the language the app is configured in (Spanish by default),
+    never English just because nobody asked."""
+    from nightingale import applang
+
+    assert applang.current() == "es"
+    built = client.post("/api/story/build", json={"dataset": ds}).json()
+    assert "Tendencia" in built["findings"][0]["title"] or "Total" in built["findings"][0]["title"]
+    for finding in built["findings"]:
+        assert " the " not in finding["statement"]
+        assert " of " not in finding["statement"]
+
+
+def test_the_export_without_a_language_is_in_the_app_language(client, ds):
+    built = client.post("/api/story/build", json={"dataset": ds}).json()
+    exported = client.post(f"/api/story/stories/{built['story_id']}/export", params={"format": "html"}).json()
+    page = open(exported["path"], encoding="utf-8").read()
+    assert 'lang="es"' in page
+    assert "Consulta que produce este hallazgo" in page
+
+
+def test_the_agent_tools_export_in_the_app_language(client, ds):
+    async def run():
+        built = await call_tool(client.services, "story_build", {"dataset": ds})
+        return built, await call_tool(client.services, "story_export",
+                                      {"story_id": built["story_id"], "format": "html"})
+
+    built, exported = asyncio.run(run())
+    assert "Tendencia" in built["findings"][0]["title"] or "Total" in built["findings"][0]["title"]
+    page = open(exported["path"], encoding="utf-8").read()
+    assert 'lang="es"' in page
+
+
+def test_the_interface_language_is_kept_and_used_as_the_default(client, ds):
+    assert client.get("/api/language").json() == {"language": "es"}
+    assert client.put("/api/language", json={"language": "en"}).json() == {"language": "en"}
+    built = client.post("/api/story/build", json={"dataset": ds}).json()
+    assert "Trend of" in built["findings"][0]["title"] or "Total" in built["findings"][0]["title"]
+    assert " the " in built["findings"][0]["statement"] or " of " in built["findings"][0]["statement"]
+    # an explicit ?lang= still wins over the app's own
+    spanish = client.post("/api/story/build", params={"lang": "es"}, json={"dataset": ds}).json()
+    assert " the " not in spanish["findings"][0]["statement"]
+    client.put("/api/language", json={"language": "es"})

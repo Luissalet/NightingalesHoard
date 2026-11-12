@@ -63,6 +63,9 @@ async function downloadGet(path) {
 export const api = {
   health: () => get("/api/health"),
   status: () => get("/api/status"),
+  // the language the app is configured in: what a caller that does not ask for one (an agent, a script) gets
+  language: () => get("/api/language"),
+  setLanguage: (language) => put("/api/language", { language }),
 
   sources: () => get("/api/sources"),
   ingest: (body) => post("/api/sources/ingest", body),

@@ -28,7 +28,7 @@ from .hoard_link import fam_web, tokens
 from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
 from .config import Config
-from .texts import get_lang, t
+from .texts import get_lang, request_lang, t
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
 from .dac import spec as dac_spec
@@ -52,7 +52,7 @@ from .workbench.quality import QualityError, RULE_KINDS, build_check
 from .workbench.steps import StepError, STEP_KINDS, step_parameter_catalog
 from . import workbook_export
 from . import story as story_mod
-from . import story_export
+from . import applang, story_export
 
 log = logging.getLogger("nightingale")
 
@@ -1720,9 +1720,10 @@ class Services:
         stays, so the text can never say something the query did not.
 
         ``lang`` is the language of the interface (``?lang=`` on the request);
-        the sentences, the titles and the figure labels are written in it.
+        the sentences, the titles and the figure labels are written in it. A caller that does not say
+        (an agent, a script) gets the language the app is configured in, never English by accident.
         """
-        lang = lang or get_lang()
+        lang = lang or request_lang() or applang.current()
         dataset_row = self._dataset_row(dataset_name)
 
         def do():
@@ -1778,7 +1779,7 @@ class Services:
         return notes
 
     def story_get(self, story_id: int, lang: Optional[str] = None) -> dict:
-        lang = lang or get_lang()
+        lang = lang or request_lang() or applang.current()
         row = self._story_row(story_id)
         spec = self._story_spec(row)
         return {"story_id": row["id"], "title": row["title"], "created_at": row["created_at"],
@@ -1796,7 +1797,7 @@ class Services:
                      title: Optional[str] = None, lang: Optional[str] = None, source: str = "ui") -> dict:
         """Reorder, drop findings or edit a sentence. A sentence whose numbers are
         not the finding's own is discarded and the template stays."""
-        lang = lang or get_lang()
+        lang = lang or request_lang() or applang.current()
         row = self._story_row(story_id)
 
         def do():
@@ -1849,7 +1850,7 @@ class Services:
     def story_export(self, story_id: int, fmt: str = "html", lang: Optional[str] = None,
                      source: str = "ui") -> dict:
         """Write the story as one standalone HTML file, or build a presentation in Cicero's Hoard."""
-        lang = lang or get_lang()
+        lang = lang or request_lang() or applang.current()
         row = self._story_row(story_id)
         if fmt not in ("html", "presentation"):
             raise ValueError("format must be 'html' or 'presentation'")

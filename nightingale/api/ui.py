@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .. import applang
 from .deps import api_errors, services
 
 router = APIRouter(prefix="/api")
@@ -32,6 +33,24 @@ class IngestBody(BaseModel):
     fmt: str = Field("csv", pattern="^(csv|json)$")
     glob: str = "*.csv"
     options: dict[str, Any] = Field(default_factory=dict)
+
+
+class LanguageBody(BaseModel):
+    language: str = Field(..., pattern="^(en|es)$")
+
+
+@router.get("/language")
+@api_errors
+def get_language(request: Request):
+    """The language the app is configured in: what a caller that does not ask for one gets."""
+    return {"language": applang.current()}
+
+
+@router.put("/language")
+@api_errors
+def put_language(request: Request, body: LanguageBody):
+    """Store the interface language, so the stories and messages built without one come out in it."""
+    return {"language": applang.set_language(body.language)}
 
 
 @router.post("/sources/ingest")
