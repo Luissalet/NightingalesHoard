@@ -201,7 +201,7 @@ export default function StoryPage() {
           )}
 
           {(story.headline || story.summary?.length > 0) && (
-            <div className="panel-white flex flex-col gap-1 border-l-2 border-[var(--gold)]" data-testid="story-lead">
+            <div className="panel-white flex flex-col gap-1 border-l-2 border-[var(--accent)]" data-testid="story-lead">
               {story.headline && <p className="text-[15px] font-semibold">{story.headline}</p>}
               {(story.summary || []).map((line) => (
                 <p key={line} className="text-[13px]">{line}</p>
