@@ -24,10 +24,17 @@ from .engine import Engine, is_numeric_type, is_temporal_type, json_safe, q
 
 __all__ = ["ChartError", "CHART_KINDS", "build_chart_query", "render_png", "to_vega_lite"]
 
-CHART_KINDS = ("bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut")
+CHART_KINDS = ("bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut", "pareto")
 MAX_CHART_ROWS = 5000
 ACCENT = "#7a1f4a"
 GOLD = "#e0a048"
+# The app's ink and line colors, so a PNG reads as part of the same interface
+# as the screen: dark ink for titles, muted ink for ticks, a hairline for axes.
+INK = "#241419"
+DIM = "#6b5560"
+LINE = "#e3d6da"
+GRID = "#00000014"
+FONT_STACK = ["Segoe UI", "Source Sans 3", "DejaVu Sans", "sans-serif"]
 # Rose and gold alternate so adjacent categories in a legend or a stacked bar
 # stay visually distinct instead of blurring into one another the way an
 # all-rose ramp would for anything beyond two series.
@@ -123,6 +130,13 @@ def build_chart_query(spec: ChartSpec, table: str) -> str:
             raise ChartError(f"{spec.kind} needs 'x' (category)")
         agg = f"{agg_fn}({q(spec.y)})" if spec.y else "COUNT(*)"
         return f"SELECT {q(spec.x)} AS label, {agg} AS value FROM {q(table)}{where} GROUP BY {q(spec.x)} ORDER BY value DESC LIMIT 20"
+    if spec.kind == "pareto":
+        # largest category first: the bars fall and the running total climbs
+        if not spec.x:
+            raise ChartError("pareto needs 'x' (category)")
+        agg = f"{agg_fn}({q(spec.y)})" if spec.y else "COUNT(*)"
+        return (f"SELECT {q(spec.x)} AS x, {agg} AS y FROM {q(table)}{where} "
+                f"GROUP BY {q(spec.x)} ORDER BY y DESC LIMIT 20")
     # bar / grouped_bar / stacked_bar / line / area
     if not spec.x:
         raise ChartError(f"{spec.kind} needs 'x'")
@@ -199,6 +213,18 @@ def to_vega_lite(spec: ChartSpec, data: dict) -> dict:
         base["mark"] = {"type": "arc", "innerRadius": 60 if spec.kind == "donut" else 0, "tooltip": True}
         base["encoding"] = {"theta": {"field": "value", "type": "quantitative", "format": _agg_format(spec.agg, bool(spec.y))},
                              "color": {"field": "label", "type": "nominal", "sort": None}}
+    elif spec.kind == "pareto":
+        # bars for each category's share, a line for the running total: the
+        # shape that says "these few hold most of it"
+        base["encoding"] = {"x": {"field": "x", "type": "nominal", "sort": None, "title": spec.x}}
+        base["layer"] = [
+            {"mark": {"type": "bar", "color": ACCENT, "tooltip": True},
+             "encoding": {"y": {"field": "y", "type": "quantitative", "title": spec.y or "count",
+                                "format": _VALUE_FMT}}},
+            {"mark": {"type": "line", "color": GOLD, "point": True, "strokeWidth": 2},
+             "encoding": {"y": {"field": "cumulative", "type": "quantitative", "title": "%",
+                                "axis": {"orient": "right"}, "format": _VALUE_FMT}}},
+        ]
     else:
         mark = {"bar": "bar", "grouped_bar": "bar", "stacked_bar": "bar", "line": "line", "area": "area"}[spec.kind]
         x_col = next((c for c in data.get("columns", []) if c["name"] == "x"), None)
@@ -239,21 +265,59 @@ def _locale_formatter(lang: str) -> FuncFormatter:
 
 def render_png(spec: ChartSpec, data: dict, lang: str = "en", out_path=None) -> bytes:
     rows = data["rows"]
-    fig, ax = plt.subplots(figsize=(6, 4), dpi=130)
-    fig.patch.set_facecolor("white")
-    try:
-        _draw(ax, spec, rows, lang)
-        ax.set_title(spec.title or spec.dataset, fontsize=11)
-        fig.tight_layout()
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        png_bytes = buf.getvalue()
-    finally:
-        plt.close(fig)
+    with plt.rc_context({
+        "font.family": "sans-serif",
+        "font.sans-serif": FONT_STACK,
+        "font.size": 9,
+        "axes.titlesize": 12,
+        "axes.titleweight": "semibold",
+        "axes.titlecolor": INK,
+        "axes.labelcolor": DIM,
+        "axes.edgecolor": LINE,
+        "axes.linewidth": 0.8,
+        "xtick.color": DIM,
+        "ytick.color": DIM,
+        "xtick.labelsize": 8.5,
+        "ytick.labelsize": 8.5,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+    }):
+        fig, ax = plt.subplots(figsize=(6.4, 3.8), dpi=140)
+        try:
+            _draw(ax, spec, rows, lang)
+            ax.set_title(spec.title or spec.dataset, loc="left", pad=12)
+            _style_axes(ax)
+            fig.tight_layout()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", facecolor="white")
+            png_bytes = buf.getvalue()
+        finally:
+            plt.close(fig)
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         write_bytes_atomic(out_path, png_bytes)
     return png_bytes
+
+
+def _style_axes(ax) -> None:
+    """The app's frame: no heavy box, a hairline baseline, a faint grid behind
+    the marks and no tick marks — the same look the Vega charts have."""
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(LINE)
+    ax.tick_params(length=0, pad=6)
+    ax.grid(axis="y", color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+
+
+def _value_labels(ax, xs, ys, lang: str, horizontal: bool = False) -> None:
+    """The figure on each mark, in the language's number format."""
+    for x, y in zip(xs, ys):
+        ax.annotate(_format_locale_number(y, lang), (x, y),
+                    textcoords="offset points", xytext=(6, 0) if horizontal else (0, 4),
+                    ha="left" if horizontal else "center", va="center" if horizontal else "bottom",
+                    fontsize=8, color=DIM)
 
 
 def _thin_labels(labels: list[str], max_labels: int = 15) -> list[str]:
@@ -269,12 +333,13 @@ def _thin_labels(labels: list[str], max_labels: int = 15) -> list[str]:
 
 def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
     fmt = _locale_formatter(lang)
+    count_label = "recuento" if lang == "es" else "count"
     if spec.kind == "histogram":
         xs = [r["bin_start"] for r in rows]
         ys = [r["count"] for r in rows]
         ax.bar(xs, ys, color=ACCENT, width=(xs[1] - xs[0]) * 0.9 if len(xs) > 1 else 1)
         ax.set_xlabel(spec.x)
-        ax.set_ylabel("count")
+        ax.set_ylabel(count_label)
         ax.xaxis.set_major_formatter(fmt)
         ax.yaxis.set_major_formatter(fmt)
     elif spec.kind == "box":
@@ -282,7 +347,9 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
         for r in rows:
             stats.append({"med": r["median"], "q1": r["q1"], "q3": r["q3"], "whislo": r["min"], "whishi": r["max"]})
         ax.bxp(stats, showfliers=False, patch_artist=True,
-               boxprops={"facecolor": ACCENT, "alpha": 0.6}, medianprops={"color": "black"})
+               boxprops={"facecolor": ACCENT, "alpha": 0.6, "edgecolor": ACCENT},
+               medianprops={"color": INK, "linewidth": 1.6},
+               whiskerprops={"color": DIM}, capprops={"color": DIM})
         if spec.x:
             labels = [str(r.get(spec.x, i)) for i, r in enumerate(rows)]
             ax.set_xticklabels(labels, rotation=30, ha="right")
@@ -328,6 +395,32 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
         ax.pie(values, labels=labels, colors=PALETTE * (len(values) // len(PALETTE) + 1),
                autopct="%1.0f%%", wedgeprops=wedge_props, textprops={"fontsize": 7})
         ax.set_aspect("equal")
+    elif spec.kind == "pareto":
+        # bars for each category, a line for the running share: the shape that
+        # says "these few hold most of it"
+        xs = [str(r["x"]) for r in rows]
+        ys = [r["y"] or 0 for r in rows]
+        pos = np.arange(len(xs))
+        ax.bar(pos, ys, color=ACCENT, width=0.62)
+        ax.set_xticks(pos)
+        ax.set_xticklabels(_thin_labels(xs), rotation=30, ha="right")
+        ax.set_ylabel(spec.y or count_label)
+        ax.yaxis.set_major_formatter(fmt)
+        if all("cumulative" in r for r in rows):
+            cumulative = [r["cumulative"] or 0 for r in rows]
+            twin = ax.twinx()
+            twin.plot(pos, cumulative, color=GOLD, linewidth=2, marker="o", markersize=4)
+            twin.set_ylim(0, 105)
+            twin.set_ylabel("%", color=DIM)
+            twin.tick_params(colors=DIM, length=0)
+            for side in ("top", "left"):
+                twin.spines[side].set_visible(False)
+            twin.spines["right"].set_color(LINE)
+            twin.grid(False)
+            for x, value in zip(pos, cumulative):
+                twin.annotate(_format_locale_number(value, lang) + " %", (x, value),
+                              textcoords="offset points", xytext=(0, 6), ha="center",
+                              fontsize=8, color=DIM)
     else:
         xs = [str(r["x"]) for r in rows]
         if "series" in (rows[0] if rows else {}):
@@ -342,7 +435,8 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
                     ax.bar(pos, ys, bottom=bottom, label=str(s), color=PALETTE[i % len(PALETTE)])
                     bottom += np.array(ys, dtype=float)
                 elif spec.kind == "line":
-                    ax.plot(pos, ys, label=str(s), color=PALETTE[i % len(PALETTE)], marker="o", markersize=3)
+                    ax.plot(pos, ys, label=str(s), color=PALETTE[i % len(PALETTE)], linewidth=2,
+                            marker="o", markersize=4)
                 elif spec.kind == "area":
                     ax.fill_between(pos, ys, alpha=0.5, label=str(s), color=PALETTE[i % len(PALETTE)])
                 else:
@@ -353,12 +447,15 @@ def _draw(ax, spec: ChartSpec, rows: list[dict], lang: str = "en") -> None:
         else:
             ys = [r["y"] or 0 for r in rows]
             if spec.kind == "line":
-                ax.plot(range(len(xs)), ys, color=ACCENT, marker="o", markersize=3)
+                ax.plot(range(len(xs)), ys, color=ACCENT, linewidth=2, marker="o", markersize=4)
             elif spec.kind == "area":
                 ax.fill_between(range(len(xs)), ys, color=ACCENT, alpha=0.5)
             else:
-                ax.bar(range(len(xs)), ys, color=ACCENT)
+                ax.bar(range(len(xs)), ys, color=ACCENT, width=0.62)
+                if len(xs) <= 12:
+                    # a handful of bars: write the figure on each one
+                    _value_labels(ax, range(len(xs)), ys, lang)
             ax.set_xticks(range(len(xs)))
             ax.set_xticklabels(_thin_labels(xs), rotation=30, ha="right", fontsize=7)
-        ax.set_ylabel(spec.y or "count")
+        ax.set_ylabel(spec.y or count_label)
         ax.yaxis.set_major_formatter(fmt)
