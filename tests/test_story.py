@@ -304,3 +304,93 @@ def test_agent_story_build_needs_a_dataset(client):
 
     with pytest.raises(Exception):
         asyncio.run(run())
+
+# ---- a sales set like the one the review used ---------------------------------
+
+def _sales_csv(rows: int = 1500) -> str:
+    """A sales set shaped like the one the review ran: an order, a date, a
+    product, a city, units and an amount. The total is flat over the period
+    (so the whole-set trend says nothing) while one product falls, the products
+    differ in the money they carry, and the three largest hold most of it."""
+    import random
+
+    rng = random.Random(7)
+    products = ["Teclado", "Monitor 27", "Ratón", "Auriculares", "Webcam"]
+    weights = [0.22, 0.21, 0.20, 0.20, 0.17]
+    cities = ["Sevilla", "Bilbao", "Madrid", "Valencia"]
+    lines = ["pedido,fecha,producto,ciudad,unidades,importe"]
+    for index in range(rows):
+        month = index % 18
+        year, month_number = 2025 + month // 12, month % 12 + 1
+        day = 1 + (index * 7) % 27
+        product = rng.choices(products, weights=weights)[0]
+        amount = max(20.0, rng.gauss(800, 650))
+        if product == "Auriculares":
+            amount *= 1.45 - 0.05 * month  # this one falls month after month
+        if index in (11, 233, 512, 777, 1001, 1288):
+            amount *= 3.4  # a handful of outliers
+        units = 1 + index % 4
+        lines.append(f"P{index:05d},{year}-{month_number:02d}-{day:02d},{product},"
+                     f"{cities[index % 4]},{units},{amount:.2f}")
+    return "\n".join(lines)
+
+
+@pytest.fixture
+def sales(client):
+    response = client.post("/api/sources/ingest",
+                           json={"kind": "paste", "text": _sales_csv(), "name": "ventas_coach", "fmt": "csv"})
+    assert response.status_code == 200, response.text
+    return "ventas_coach"
+
+
+def test_a_sales_set_gives_trend_groups_and_concentration(client, sales):
+    body = client.post("/api/story/build", json={"dataset": sales}).json()
+    kinds = {finding["kind"] for finding in body["findings"]}
+    assert {"trend", "groups", "concentration"} <= kinds, kinds
+    # the trend is the product that falls, not a total that only counts rows
+    trend = next(finding for finding in body["findings"] if finding["kind"] == "trend")
+    assert trend["group"] == "Auriculares"
+    assert trend["direction"] == "down"
+    # the concentration is about the money, not the row count
+    concentration = next(finding for finding in body["findings"] if finding["kind"] == "concentration")
+    assert concentration["columns"]["y"] == "importe"
+    assert concentration["chart"]["spec"]["kind"] == "pareto"
+    # every finding keeps its sentence, its chart and its query
+    for finding in body["findings"]:
+        assert finding["statement"]
+        assert finding["chart"]["rows"]
+        assert finding["query"]["sql"]
+
+
+def test_the_story_leads_with_a_headline_and_a_short_summary(client, sales):
+    body = client.post("/api/story/build", json={"dataset": sales}).json()
+    assert body["headline"]
+    assert 2 <= len(body["summary"]) <= 3
+    # the headline and the summary only repeat figures the findings already quote
+    figures = {figure["text"] for finding in body["findings"] for figure in finding["figures"]}
+    for line in [body["headline"], *body["summary"]]:
+        for token in story_mod.numbers_in(line):
+            assert token in figures or token in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}, token
+
+
+def test_the_story_is_written_in_the_language_of_the_request(client, sales):
+    body = client.post("/api/story/build", params={"lang": "es"}, json={"dataset": sales}).json()
+    assert "Tendencia" in body["findings"][0]["title"] or "Total" in body["findings"][0]["title"]
+    for finding in body["findings"]:
+        assert " the " not in finding["statement"]
+        assert " of " not in finding["statement"]
+        labels = [figure["label"] for figure in finding["figures"]]
+        assert all(label and label != figure["key"] for label, figure in zip(labels, finding["figures"]))
+
+
+def test_the_export_is_in_spanish_and_carries_the_headline(client, sales):
+    built = client.post("/api/story/build", params={"lang": "es"}, json={"dataset": sales}).json()
+    exported = client.post(f"/api/story/stories/{built['story_id']}/export",
+                           params={"format": "html", "lang": "es"}).json()
+    page = open(exported["path"], encoding="utf-8").read()
+    assert 'lang="es"' in page
+    assert html.escape(built["headline"]) in page
+    assert "Consulta que produce este hallazgo" in page
+    assert "filas" in page
+    for english in ("Outliers in", "Query that produces this finding", ">rows<", "Trend of"):
+        assert english not in page, english
