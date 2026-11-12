@@ -200,6 +200,15 @@ export default function StoryPage() {
             </div>
           )}
 
+          {(story.headline || story.summary?.length > 0) && (
+            <div className="panel-white flex flex-col gap-1 border-l-2 border-[var(--gold)]" data-testid="story-lead">
+              {story.headline && <p className="text-[15px] font-semibold">{story.headline}</p>}
+              {(story.summary || []).map((line) => (
+                <p key={line} className="text-[13px]">{line}</p>
+              ))}
+            </div>
+          )}
+
           {story.findings.length === 0 ? (
             <EmptyState>{t("story_empty")}</EmptyState>
           ) : (
@@ -248,7 +257,7 @@ export default function StoryPage() {
                   <tbody>
                     {finding.figures.filter((figure) => figure.value !== null).map((figure) => (
                       <tr key={figure.key}>
-                        <th scope="row">{figure.key}</th>
+                        <th scope="row">{figure.label || figure.key}</th>
                         <td className="num">{figure.text}</td>
                       </tr>
                     ))}
