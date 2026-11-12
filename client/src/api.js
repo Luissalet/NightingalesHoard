@@ -9,7 +9,7 @@ let apiLang = null;
 export function setApiLang(lang) {
   apiLang = lang === "es" || lang === "en" ? lang : null;
 }
-const LOCALISED = /^\/?api\/(process|twin|scenarios|experiment|effect|migrate|reconcile|sheets|fabquote)\//;
+const LOCALISED = /^\/?api\/(process|twin|scenarios|experiment|effect|migrate|reconcile|sheets|fabquote|story)\//;
 function withLang(url, path) {
   if (LOCALISED.test(path) && !url.searchParams.has("lang")) url.searchParams.set("lang", apiLang || detectLang());
   return url;
