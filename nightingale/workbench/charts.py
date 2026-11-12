@@ -24,7 +24,9 @@ from .engine import Engine, is_numeric_type, is_temporal_type, json_safe, q
 
 __all__ = ["ChartError", "CHART_KINDS", "build_chart_query", "render_png", "to_vega_lite"]
 
-CHART_KINDS = ("bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut", "pareto")
+# The kinds the Charts page offers. "pareto" (bars plus the running share) is
+# drawn for the story's concentration finding and is not a builder kind.
+CHART_KINDS = ("bar", "grouped_bar", "stacked_bar", "line", "area", "scatter", "histogram", "box", "heatmap", "pie", "donut")
 MAX_CHART_ROWS = 5000
 ACCENT = "#7a1f4a"
 GOLD = "#e0a048"
