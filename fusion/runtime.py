@@ -155,8 +155,11 @@ def create_runtime(*, name, product, root, data_dir, specs, factory, port):
     @app.middleware("http")
     async def local_request_guard(request, call_next):
         # Reuse the family's established host/origin protection.
-        from nightingale.hoard_link.guard import check_request
-        verdict = check_request(request.method, dict(request.headers), port, (), strict_ports=True)
+        from nightingale.hoard_link import guard
+        headers = dict(request.headers)
+        # A framed navigation from the Faustus dock is let in when its parent is a known Faustus origin.
+        dock = await asyncio.to_thread(guard._dock_origins, request.method, headers)
+        verdict = guard.check_request(request.method, headers, port, (), strict_ports=True, faustus_origins=dock)
         if verdict:
             return JSONResponse({"error": verdict[1]}, status_code=verdict[0])
         # The shared launcher uses canonical URLs. Preserve the native app/tool
