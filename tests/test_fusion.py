@@ -195,3 +195,12 @@ def test_copilot_off_is_inert_for_canonical_and_prefixed_routes(tmp_path, monkey
             assert sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob('*')) == before
         assert not calls
         assert all(module.app is None for module in app.state.modules.values())
+
+
+def test_dock_frames_from_a_known_faustus_origin_only(tmp_path):
+    app = create_app(Config(data_dir=tmp_path))
+    framed = {"sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe"}
+    with TestClient(app, base_url="http://127.0.0.1:5189") as client:
+        assert client.get("/", headers={**framed, "referer": "http://127.0.0.1:7000/"}).status_code != 403
+        assert client.get("/", headers={**framed, "referer": "https://evil.example/"}).status_code == 403
+        assert client.get("/", headers={**framed, "sec-fetch-dest": "embed", "referer": "http://127.0.0.1:7000/"}).status_code == 403
