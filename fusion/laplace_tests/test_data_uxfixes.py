@@ -290,7 +290,7 @@ def test_single_column_excel_sheet_is_never_skipped(tmp_path):
     xlsx = tmp_path / "lista.xlsx"
     wb = openpyxl.Workbook()
     ws = wb.active
-    for v in ("nombre", "Ana", "Luis"):
+    for v in ("nombre", "Analista", "Responsable"):
         ws.append([v])
     wb.save(xlsx)
     cat = Catalog(tmp_path / "data")

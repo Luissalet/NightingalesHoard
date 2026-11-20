@@ -72,7 +72,7 @@ def test_sqlite_table_becomes_a_dataset(catalog, tmp_path):
     db_path = tmp_path / "mini.sqlite"
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)")
-    conn.executemany("INSERT INTO users VALUES (?, ?)", [(1, "Ana"), (2, "Luis")])
+    conn.executemany("INSERT INTO users VALUES (?, ?)", [(1, "Analista"), (2, "Responsable")])
     conn.commit()
     conn.close()
 
