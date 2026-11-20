@@ -19,8 +19,8 @@ La app incluye además dos módulos activables, Datos y Cálculo. Ambos están d
 ## Qué hace
 
 ### Ingesta
-- CSV/TSV (incluidos los separados por punto y coma y con coma decimal), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta, una URL o texto pegado.
-- Registros que devuelve otra app Hoard (a través del Hoard Hub), aplanados a una fila por registro, con preajustes como los movimientos de Ledger.
+- CSV/TSV (incluidos los separados por punto y coma y con coma decimal), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta (los archivos con columnas distintas se apilan por nombre de columna), una URL o texto pegado.
+- Registros que devuelve otra app Hoard o el propio Hoard Hub (sus tareas, su actividad o los recibos de una orden), aplanados a una fila por registro, con preajustes como los movimientos de Ledger.
 - Actualizar reingiere una fuente que cambió, reproduce la receta y ejecuta las reglas de calidad guardadas.
 - Borrar un conjunto de datos arrastra sus reglas, gráficos y modelos, tras listar lo que depende de él.
 
@@ -107,6 +107,7 @@ El servidor escucha en `127.0.0.1` y solo responde a `localhost`, `127.0.0.1` y 
 - El puente MCP (`mcp_server.py`) llama a la API HTTP de la app en marcha, igual que la interfaz del navegador, y nunca abre la base de datos. Las llamadas de agente usan el token Bearer de `<carpeta de datos>/mcp-token` (`GET /api/agent/tools`, `POST /api/agent/call`).
 - Herramientas por grupos: fuentes e ingesta, conjuntos y perfilado, transformaciones, versiones y receta, consultas SQL, calidad, gráficos, paneles (normales y como código), modelos, exportación, relato, libros, conciliación, escenarios, migración, proceso, experimentos, registro de análisis y control de módulos. Referencia de las herramientas de Datos: [docs/MCP.md](docs/MCP.md); herramientas de Cálculo: [fusion/laplace-docs/MCP.md](fusion/laplace-docs/MCP.md). Donde los nombres coinciden, las de Cálculo llevan el prefijo `laplace_`.
 - Al asistente se le indica que previsualice una transformación antes de aplicarla, que nunca suponga el nombre de un conjunto y que cite el id del registro de análisis al informar de un resultado.
+- Como puesto de producción recibe un encargo y entrega una tabla o un gráfico de datos (`x-family.production` en el manifiesto): `data_handoff` da las cifras de un gráfico guardado o de una tabla de un conjunto con su procedencia (conjunto, versión, consulta, fuente y huella de las filas); Cicero las vincula como conjunto de datos y Writer las archiva como tabla citada.
 - Un botón «Faustus» abre dentro de la app el panel de asistente común de la familia. Lleva como contexto el conjunto, panel, modelo de Lab o entrada de registro en pantalla y refresca las listas tras cada turno.
 - La app lleva skills de la biblioteca de la familia para los agentes conectados (limpieza de datos con linaje, mejora medida, bucle de verificación, relato desde datos), disponibles con las herramientas de skills y como prompts.
 - Otros documentos: [docs/API.md](docs/API.md), [docs/TRANSFORM-OPERATIONS.es.md](docs/TRANSFORM-OPERATIONS.es.md), [docs/DASHBOARD-ACTIONS.md](docs/DASHBOARD-ACTIONS.md), [docs/DASHBOARDS_AS_CODE.md](docs/DASHBOARDS_AS_CODE.md).
