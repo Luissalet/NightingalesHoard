@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .hoard_link import agentkit
 from .hoard_link.agentkit import Empty, Tool, ann as _ann, cap_result
+from . import handoff
 from .services import Services
 from .texts import use_lang
 
@@ -36,7 +37,10 @@ class IngestArgs(BaseModel):
     kind: Literal["file", "folder", "url", "paste", "hoard"] = Field(
         "file", description="What to ingest (action=ingest). 'hoard' = the records another Hoard app returns from one of "
                              "its tools, called through the hub: give `preset` (ledger_transactions, phileas_shipments, "
-                             "argus_app_time [tool name unverified]) or `app` + `tool` (+ `args`, `list_path`).")
+                             "argus_app_time [tool name unverified]) or `app` + `tool` (+ `args`, `list_path`); "
+                             "app='hoardhub' reads a tool of the hub itself (hub_agora_tasks, hub_order_receipts...). "
+                             "'folder' stacks every file matching `glob` by column name, so files with different "
+                             "columns load together.")
     path: Optional[str] = Field(None, description="Absolute path to a file or folder (kind=file/folder).")
     url: Optional[str] = Field(None, description="http(s) URL to a CSV/JSON resource (kind=url).")
     text: Optional[str] = Field(None, description="Pasted CSV/JSON text (kind=paste).")
@@ -311,6 +315,15 @@ class ExportArgs(BaseModel):
         "flat", description="'flat' makes the usual single-table export. 'inventory' reads the linked workbook snapshot. 'preserve_workbook' is .xlsx-only: patch the selected imported sheet's tabular cells in a copy of its original workbook, preserving untouched package parts.")
     version: Optional[int] = Field(None, ge=0, description="Dataset version to export; defaults to the current version.")
     workbook_updates: Optional[list[WorkbookUpdateArgs]] = Field(None, description="Additional dataset/version pairs from the same source workbook; all selected sheets are preflighted and written into the same .xlsx copy.")
+
+
+class HandoffArgs(BaseModel):
+    chart_id: Optional[int] = Field(None, description="A saved chart (data_chart): its figures, as the chart shows them.")
+    dataset: Optional[str] = Field(None, description="A dataset: a table of its current version (instead of chart_id).")
+    columns: Optional[list[str]] = Field(None, description="Columns of the table, in order; all when omitted.")
+    filter: Optional[str] = Field(None, description="A SQL WHERE fragment for the table rows.")
+    limit: int = Field(500, ge=1, le=handoff.MAX_ROWS)
+    title: str = ""
 
 
 class LogArgs(BaseModel):
@@ -591,6 +604,12 @@ def _run_export(s: Services, a: ExportArgs) -> dict:
     updates = [item.model_dump(exclude_none=True) for item in a.workbook_updates] if a.workbook_updates is not None else None
     return s.export(a.dataset, a.format, a.path, source="agent", mode=a.mode, version=a.version,
                     workbook_updates=updates)
+
+
+def _run_handoff(s: Services, a: HandoffArgs) -> dict:
+    name = a.dataset if a.dataset else None
+    return s._log("handoff", "agent", name, a.model_dump(exclude_none=True),
+                  lambda: handoff.build(s, a.chart_id, a.dataset, a.columns, a.filter, a.limit, a.title))
 
 
 def _run_log(s: Services, a: LogArgs) -> dict:
@@ -1263,6 +1282,12 @@ TOOLS: list[Tool] = [
          "mode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Optional workbook_updates adds other dataset/version pairs from the same original workbook to this one copy; every sheet is validated before publishing. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\n"
          "Sinónimos: exportar datos, descargar csv, guardar excel.",
          ExportArgs, _ann(False, False, False), _run_export),
+    Tool("data_handoff", "Hand a chart's figures or a dataset table to another station, with its provenance.\n"
+         "Returns columns, rows, CSV and where they come from (dataset, version, query, source, fingerprint). Cicero "
+         "(dataset_connect kind=nightingale) and Writer (wh_import_evidence nightingale) call it through the hub, so no "
+         "figure is copied by hand. Read-only.\nSinónimos: pasar tabla, pasar gráfico, relevo de datos, cifras con "
+         "procedencia, hand over table, data handoff.",
+         HandoffArgs, _ann(True), _run_handoff, capped=False),
     Tool("data_workbook", "Compile an Excel workbook into an executable calculation; run it with new values, verify it and export it.\n"
          "Reads formulas and cached values (.xlsx/.xlsm; macros are never run), separates parameters, lookup tables and "
          "results with their labels, and executes the supported formula subset with Excel's semantics. Anything outside it "

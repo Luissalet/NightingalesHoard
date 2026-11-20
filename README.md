@@ -19,8 +19,8 @@ The app also bundles two switchable modules, Data and Calculation. Both are off 
 ## What it does
 
 ### Ingest
-- CSV/TSV (including semicolon-delimited and comma-decimal Spanish formats), Excel, Parquet, JSON/NDJSON, SQLite, a folder glob, a URL or pasted text.
-- Records returned by another Hoard app (through Hoard Hub), flattened to one row per record, with presets such as ledger transactions.
+- CSV/TSV (including semicolon-delimited and comma-decimal Spanish formats), Excel, Parquet, JSON/NDJSON, SQLite, a folder glob (files whose columns differ are stacked by column name), a URL or pasted text.
+- Records returned by another Hoard app or by Hoard Hub itself (its tasks, feed or order receipts), flattened to one row per record, with presets such as ledger transactions.
 - Refresh re-ingests a changed source and replays the recipe, then runs the saved quality rules.
 - Deleting a dataset cascades to its rules, charts and models, after listing what depends on it.
 
@@ -106,6 +106,7 @@ The server binds `127.0.0.1` and answers only `localhost`, `127.0.0.1` and `[::1
 - `faustus-plugin.json` is the plugin manifest; load it in Faustus to discover the MCP catalogue. Start the app from Hoard Hub and enable the module you need.
 - The MCP bridge (`mcp_server.py`) calls the running app's HTTP API, like the browser UI, and never opens the database itself. Agent calls use the bearer token in `<data dir>/mcp-token` (`GET /api/agent/tools`, `POST /api/agent/call`).
 - Tools by group: sources and ingest, datasets and profiling, transforms, versions and recipe, SQL queries, quality, charts, dashboards (plain and as code), models, export, story, workbooks, reconcile, scenarios, migration, process, experiments, analysis log, and module controls. Data tool reference: [docs/MCP.md](docs/MCP.md); Calculation tools: [fusion/laplace-docs/MCP.md](fusion/laplace-docs/MCP.md). Where names collide the Calculation tools use the `laplace_` prefix.
+- As a production station it takes a production brief and hands over a data table or chart (`x-family.production` in the manifest): `data_handoff` gives the figures of a saved chart or of a dataset table with their provenance (dataset, version, query, source and a print of the rows), which Cicero links as a dataset and Writer files as a cited table.
 - The assistant is told to preview a transform before applying it, never to assume a dataset name, and to cite the analysis-log id when reporting a result.
 - A "Faustus" button opens the family's shared assistant panel inside the app. It carries the dataset, dashboard, Lab model or log entry on screen as context and refreshes the lists after each turn.
 - The app carries skills from the family's skill library for connected agents (data cleaning with lineage, measured improvement, verification loop, story from data), available through the skills tools and as prompts.
