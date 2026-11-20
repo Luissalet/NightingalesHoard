@@ -53,4 +53,5 @@ def test_http_agent_full_page_and_static_catalog(client):
     frozen = next(t for t in catalog if t['name']=='data_profile')
     live = next(t for t in tool_catalog() if t['name']=='data_profile')
     assert frozen['inputSchema'] == live['inputSchema']
-    assert len(catalog) == 50
+    assert len(catalog) == 56
+    assert {t['name'] for t in tool_catalog()} <= {t['name'] for t in catalog}  # the shipped catalog has every data tool

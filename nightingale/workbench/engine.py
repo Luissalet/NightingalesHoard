@@ -54,6 +54,9 @@ _TEMPORAL_PREFIXES = ("DATE", "TIMESTAMP", "TIME")
 # Windows-1252 (identical for accented Spanish/French/German letters).
 _CSV_ENCODINGS = {"utf-8", "utf8", "utf-16", "latin-1", "latin1"}
 _CSV_ENCODING_FALLBACKS = ("latin-1",)
+#: The reader a folder ingest uses for each file extension.
+FOLDER_READERS = {".csv": "read_csv_auto", ".tsv": "read_csv_auto", ".txt": "read_csv_auto", ".json": "read_json_auto",
+                  ".jsonl": "read_json_auto", ".ndjson": "read_json_auto", ".parquet": "read_parquet"}
 
 
 class DataError(ValueError):
@@ -599,16 +602,22 @@ class Engine:
         files = [f for f in folder.glob(glob) if f.is_file()]
         if not files:
             raise DataError(f"no files match {glob!r} in {folder}")
+        # The reader follows the files' extension; files whose columns differ are stacked by column name (a column
+        # missing from a file is NULL in its rows) instead of failing with a schema mismatch.
+        kinds = {FOLDER_READERS.get(f.suffix.lower()) for f in files}
+        if None in kinds or len(kinds) != 1:
+            found = ", ".join(sorted({f.suffix.lower() or "(none)" for f in files}))
+            raise DataError(f"{glob!r} matches files of different or unsupported kinds ({found}); "
+                            "use a pattern for one kind: '*.csv', '*.tsv', '*.json', '*.jsonl' or '*.parquet'")
+        fn = kinds.pop()
         glob_path = str(folder / glob)
-        fn = "read_parquet" if glob.endswith(".parquet") else "read_csv_auto"
-        filename_arg = ", filename=true" if fn == "read_csv_auto" else ""
-        select_sql = f"SELECT * FROM {fn}('{_esc(glob_path)}'{filename_arg})"
-        if source_col and fn == "read_csv_auto":
+        select_sql = f"SELECT * FROM {fn}('{_esc(glob_path)}', union_by_name=true, filename=true)"
+        if source_col:
             select_sql = f"SELECT * EXCLUDE (filename), filename AS {q(source_col)} FROM ({select_sql}) __t"
         tmp = _temp_table_name()
         row_count, columns = self.materialize(tmp, select_sql)
         return IngestResult(select_sql=select_sql, columns=columns, row_count=row_count,
-                             extra={"files": len(files)}, table_name=tmp)
+                             extra={"files": len(files), "columns_by_name": True}, table_name=tmp)
 
     def ingest_json(self, path: Path, options: dict) -> IngestResult:
         flatten = bool(options.get("flatten"))

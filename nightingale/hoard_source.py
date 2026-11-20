@@ -1,7 +1,7 @@
 """Source kind "hoard": the records another app of the family returns from one of its tools.
 
-``{app, tool, args, list_path?}`` is called through the hub (``family.call``), the list of records is found in
-the answer, flattened to one row per record and handed to the normal JSON ingest. Presets name the common
+``{app, tool, args, list_path?}`` is called through the hub (``family.call``); ``app`` may be the hub itself
+(``hoardhub``, or ``hub``) to read one of its own tools. The list of records is found in the answer, flattened to one row per record and handed to the normal JSON ingest. Presets name the common
 cases. Nothing here touches the database: ``Services.ingest_hoard`` does that.
 """
 
@@ -18,6 +18,8 @@ from .workbench.engine import DataError
 APP_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,59}$")
 TOOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 MAX_ROWS_DEFAULT = 20000
+#: The hub answers for its own tools (hub_agora_tasks, hub_order_receipts...) under its manifest id: these names reach it.
+HUB_ALIASES = {"hub": "hoardhub", "hoard-hub": "hoardhub", "hoard_hub": "hoardhub"}
 #: Keys that usually hold the records, tried before "the longest list".
 LIST_KEYS = ("items", "rows", "records", "results", "entries", "transactions", "shipments", "data", "list", "apps")
 
@@ -79,6 +81,7 @@ def resolve_spec(preset: Optional[str], app: Optional[str], tool: Optional[str],
         spec["max_rows"] = options["max_rows"]
     if base.get("name"):
         spec["preset"] = preset
+    spec["app"] = HUB_ALIASES.get(spec["app"], spec["app"])
     if not spec["app"] or not APP_RE.match(spec["app"]):
         raise DataError("hoard source: app is required (an app id such as 'ledger')")
     if not spec["tool"] or not TOOL_RE.match(spec["tool"]):
