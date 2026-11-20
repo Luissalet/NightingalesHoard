@@ -19,6 +19,7 @@ import sqlite3
 import threading
 import shutil
 import time
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
@@ -28,6 +29,7 @@ from .hoard_link import fam_web, tokens
 from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
 from .config import Config
+from .export_files import ExportFiles
 from .texts import get_lang, request_lang, t
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
@@ -125,6 +127,7 @@ class Services:
         write_url(config)
         self.meta = db.Meta(db.connect(config.data_dir))
         self._dash_lock = threading.RLock()
+        self._export_files = ExportFiles(config.data_dir / "export_undo")
         self._dash_migrate_all()
         self.engine = Engine(config.duckdb_path)
         self.link = backend.load_link(config.data_dir)
@@ -1552,26 +1555,7 @@ class Services:
             return self.workbook_inventory(dataset_name, source=source)
         dataset_row = self._dataset_row(dataset_name)
 
-        def do():
-            v = self._version_row(dataset_row, version)
-            fmt_l = fmt.lower()
-            if fmt_l not in ("csv", "xlsx", "parquet", "json"):
-                raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
-            if mode not in ("flat", "preserve_workbook"):
-                raise DataError("export mode must be 'flat' or 'preserve_workbook'")
-            if workbook_updates is not None and mode != "preserve_workbook":
-                raise DataError("workbook_updates requires mode='preserve_workbook' and format='xlsx'")
-            if workbook_updates == []:
-                raise DataError("workbook_updates must contain at least one dataset update when supplied")
-            if mode == "preserve_workbook" and fmt_l != "xlsx":
-                raise DataError("preserve_workbook mode requires format='xlsx'")
-            filename = path or (f"{dataset_row['name']}_v{v['version']}_workbook.xlsx" if mode == "preserve_workbook" else f"{dataset_row['name']}.{fmt_l}")
-            out_path = (self.config.exports_dir / filename).resolve()
-            if not hl_paths.is_inside(out_path, self.config.exports_dir):
-                raise DataError("export path must stay inside the app's exports folder")
-            if mode == "preserve_workbook" and out_path.suffix.lower() != ".xlsx":
-                raise DataError("preserving workbook output path must end in .xlsx")
-            out_path.parent.mkdir(parents=True, exist_ok=True)
+        def do(v, fmt_l, out_path, staged):
             if mode == "preserve_workbook":
                 import json as _json
 
@@ -1639,41 +1623,95 @@ class Services:
                             "rows": rows, "original_rows": original_rows,
                             "dataset": row["name"], "version": selected_version["version"],
                             "source_id": row["source_id"]})
-                receipt = workbook_export.export_many_copy(
-                    Path(source_row["path"]), out_path, snapshot, update_sheets)
+                original_path = Path(source_row["path"])
+                if original_path.resolve() == out_path:
+                    raise DataError("output must be a copy, not the original workbook")
+                receipt = workbook_export.export_many_copy(original_path, staged, snapshot, update_sheets)
                 receipt_path = out_path.with_suffix(".workbook-export.json")
+                receipt["path"] = str(out_path)
                 receipt["receipt_path"] = str(receipt_path)
                 tabs = ", ".join(f"{item['sheet']} v{item['dataset_version']}" for item in receipt["sheets"])
                 return {**receipt, "_log_summary": f"exported workbook tabs {tabs} into {out_path.name}"}
             with self.engine.lock() as conn:
                 if fmt_l == "csv":
-                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT CSV, HEADER)', [str(out_path)])
+                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT CSV, HEADER)', [str(staged)])
                 elif fmt_l == "parquet":
-                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT PARQUET)', [str(out_path)])
+                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT PARQUET)', [str(staged)])
                 elif fmt_l == "json":
-                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT JSON, ARRAY true)', [str(out_path)])
+                    conn.execute(f'COPY (SELECT * FROM "{v["table_name"]}") TO ? (FORMAT JSON, ARRAY true)', [str(staged)])
                 else:  # xlsx: DuckDB has no native writer; build with openpyxl from the query result
-                    self._write_xlsx(v["table_name"], out_path)
+                    self._write_xlsx(v["table_name"], staged)
             return {"path": str(out_path), "format": fmt_l, "row_count": v["row_count"], "dataset": dataset_row["name"],
-                     "dataset_version": v["version"], "mode": "flat",
+                     "dataset_version": v["version"], "mode": "flat", "columns": json.loads(v["columns_json"]),
+                     "sha256": workbook_export.sha256_file(staged),
                      "_log_summary": f"exported {dataset_row['name']!r} to {out_path.name}"}
 
         log_input = {"format": fmt, "mode": mode, "version": version, "workbook_updates": workbook_updates or []}
-        result = self._log("export", source, dataset_row["name"], log_input,
-                           lambda: self.run_heavy(do, timeout=MAX_INGEST_TIMEOUT_S))
-        if result.get("mode") == "preserve_workbook":
-            import json as _json
 
-            receipt_path = Path(result["receipt_path"])
-            result["analysis_log_id"] = result["log_id"]
-            receipt = {key: value for key, value in result.items() if key not in {"log_id", "receipt_sha256"}}
-            receipt["analysis_log_id"] = result["log_id"]
-            encoded = _json.dumps(receipt, ensure_ascii=False, indent=2).encode("utf-8")
-            temp = receipt_path.with_name(receipt_path.name + "." + secrets.token_hex(6) + ".tmp")
-            temp.write_bytes(encoded)
-            temp.replace(receipt_path)
-            result["receipt_sha256"] = workbook_export.sha256_file(receipt_path)
-        return result
+        def write(started):
+            v = self._version_row(dataset_row, version)
+            fmt_l = fmt.lower()
+            preserve = mode == "preserve_workbook"
+            if fmt_l not in ("csv", "xlsx", "parquet", "json"):
+                raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
+            if mode not in ("flat", "preserve_workbook"):
+                raise DataError("export mode must be 'flat' or 'preserve_workbook'")
+            if workbook_updates is not None and not preserve:
+                raise DataError("workbook_updates requires mode='preserve_workbook' and format='xlsx'")
+            if workbook_updates == []:
+                raise DataError("workbook_updates must contain at least one dataset update when supplied")
+            if preserve and fmt_l != "xlsx":
+                raise DataError("preserve_workbook mode requires format='xlsx'")
+            default_name = f"{dataset_row['name']}_v{v['version']}_workbook.xlsx" if preserve else f"{dataset_row['name']}.{fmt_l}"
+            destination = Path(hl_paths.clean_user_path(path)).expanduser() if path else Path(default_name)
+            out_path = (self.config.exports_dir / destination).resolve()
+            if not hl_paths.is_inside(out_path, self.config.exports_dir):
+                if source != "agent":
+                    raise DataError("export path must stay inside the app's exports folder")
+                if not destination.is_absolute():
+                    raise DataError("Use an absolute path outside exports / Usa una ruta absoluta fuera de exportaciones")
+            if out_path.is_dir():
+                out_path = out_path / default_name
+            if preserve and out_path.suffix.lower() != ".xlsx":
+                raise DataError("preserving workbook output path must end in .xlsx")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with TemporaryDirectory(prefix=".export-", dir=out_path.parent) as tmp:
+                stage = Path(tmp)
+                result = do(v, fmt_l, out_path, stage / out_path.name)
+                names = [out_path.name]
+                with self.meta.db.tx():
+                    result["log_id"] = self.meta.log(
+                        "export", source, dataset_row["name"], log_input, result.pop("_log_summary"),
+                        True, None, (time.monotonic() - started) * 1000,
+                    )
+                    if preserve:
+                        result["analysis_log_id"] = result["log_id"]
+                        receipt = {key: value for key, value in result.items() if key != "log_id"}
+                        staged_receipt = stage / Path(result["receipt_path"]).name
+                        staged_receipt.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
+                        result["receipt_sha256"] = workbook_export.sha256_file(staged_receipt)
+                        names.append(staged_receipt.name)
+                    token = self._export_files.publish(stage, out_path.parent, names, reversible=source == "agent")
+                if token:
+                    result["undo"] = {"tool": "data_export_undo", "arguments": {"token": token}}
+                return result
+
+        def logged_write():
+            started = time.monotonic()
+            try:
+                return write(started)
+            except Exception as exc:  # noqa: BLE001 - record the failed operation
+                self.meta.log("export", source, dataset_row["name"], log_input, "", False,
+                              str(exc), (time.monotonic() - started) * 1000)
+                if isinstance(exc, OSError):
+                    raise DataError(f"Could not write export / No se ha podido escribir la exportación: {exc}") from exc
+                raise
+
+        return self.run_heavy(logged_write, timeout=MAX_INGEST_TIMEOUT_S)
+
+    def export_undo(self, token: str, source: str = "agent") -> dict:
+        return self._log("export_undo", source, None, {},
+                         lambda: {"paths": self._export_files.undo(token), "undone": True})
 
     def _write_xlsx(self, table_name: str, out_path: Path) -> None:
         import openpyxl
@@ -1685,8 +1723,14 @@ class Services:
             cur = conn.execute(f'SELECT * FROM "{table_name}"')
             cols = [d[0] for d in cur.description]
             ws.append(cols)
-            for row in cur.fetchall():
-                ws.append([str(v) if isinstance(v, (dict, list)) else v for v in row])
+            for cell in ws[1]:
+                cell.data_type = "s"
+            for n, row in enumerate(cur.fetchall(), start=2):
+                values = [str(v) if isinstance(v, (dict, list)) else v for v in row]
+                ws.append(values)
+                for column, value in enumerate(values, start=1):
+                    if isinstance(value, str):
+                        ws.cell(n, column).data_type = "s"
         wb.save(out_path)
 
     # ---- analysis log --------------------------------------------------------

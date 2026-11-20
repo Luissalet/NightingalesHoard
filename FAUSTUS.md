@@ -36,6 +36,19 @@ This app carries procedures from the skill library of the family's workspace for
 
 El modelo de la familia solo redacta sobre cifras ya calculadas: `verify_statement` relee cada número del texto y lo compara con las cifras del hallazgo; si aparece una cifra que no es suya, se descarta el texto y queda la plantilla. Lo mismo vale para una frase editada a mano. Superficies: página **Relato**, API `/api/story/*` (`build`, `stories`, `stories/{id}`, `stories/{id}/export`, `download`) y herramientas `story_build`, `story_get`, `story_list`, `story_update`, `story_export`. Exportación a HTML autónomo (frases, cifras, PNG incrustados y consultas, sin script ni red) y, cuando Cicero's Hoard responde por el Hub, a presentación con un hallazgo por diapositiva usando `deck_create` y `slides_add` de Cicero; si no está disponible, se escribe el HTML y se dice. Pruebas en `tests/test_story.py` (cálculo, comprobación de cifras y rutas).
 
+## Reglas de calidad y exportación de tablas
+
+`data_quality` admite varias columnas en una regla `not_null`. Cada fila
+cuenta una vez si cualquiera de esas columnas contiene un nulo. `define`
+devuelve la operación de deshacer de la regla.
+
+`data_export` acepta una ruta absoluta de fichero o de carpeta existente. Las
+rutas relativas se resuelven en la carpeta de exportaciones. Una exportación
+plana identifica la versión, las columnas, el número de filas y la huella del
+fichero. Su deshacer restaura el archivo previo o retira el archivo creado
+si sigue siendo la misma exportación. En el modo de conservar libro, el
+deshacer abarca también el recibo.
+
 ## App Dock
 
 El servidor fusionado se puede enmarcar dentro del App Dock de Faustus: una navegación enmarcada (`iframe`/`frame`, solo GET) pasa la guarda cuando la página que la abre es un origen de Faustus conocido (el configurado o el que el Hub publica en su colocación). Los orígenes ajenos y los marcos `embed`/`object` se siguen rechazando. Lo cubre `tests/test_fusion.py::test_dock_frames_from_a_known_faustus_origin_only`.
