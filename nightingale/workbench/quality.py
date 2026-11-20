@@ -46,8 +46,8 @@ def _require(p: dict, key: str) -> Any:
 
 
 def _col_list(p: dict) -> list[str]:
-    """Every rule kind names the column(s) it checks — `unique` naturally
-    takes several, the rest just one — but callers reach for either word
+    """Column rules accept either spelling. `unique` and `not_null` take
+    several columns, while other column rules take one. Callers reach for either word
     regardless (a single-column `unique` rule reads just as naturally as
     "column": "pedido" as "columns": ["pedido"]). `columns` is canonical;
     `column` is accepted the same way, and either may be a single name or a
@@ -70,8 +70,8 @@ def _one_col(p: dict) -> str:
 
 
 def _not_null(table: str, p: dict) -> RuleCheck:
-    col = q(_one_col(p))
-    return RuleCheck(failing_sql=f"SELECT * FROM {q(table)} WHERE {col} IS NULL")
+    missing = " OR ".join(f"{q(col)} IS NULL" for col in _col_list(p))
+    return RuleCheck(failing_sql=f"SELECT * FROM {q(table)} WHERE {missing}")
 
 
 def _unique(table: str, p: dict) -> RuleCheck:

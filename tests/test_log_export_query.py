@@ -1,7 +1,11 @@
 """Analysis log ids, export formats, and the read-only query gate."""
 
+import asyncio
+
+import openpyxl
 import pytest
 
+from nightingale.agent_tools import call_tool
 from nightingale.sqlgate import SQLGateError, gate_sql
 
 
@@ -48,6 +52,36 @@ def test_export_formats(services, ds, fmt):
 def test_export_path_cannot_escape_exports_dir(services, ds):
     with pytest.raises(Exception):
         services.export(ds, "csv", "../../evil.csv")
+
+
+def test_agent_exports_xlsx_to_absolute_path_and_undo_restores_prior_file(services, ds, tmp_path):
+    output = tmp_path / "order" / "data.xlsx"
+    args = {"dataset": ds, "format": "xlsx", "path": str(output)}
+    created = asyncio.run(call_tool(services, "data_export", args))
+    assert created["path"] == str(output)
+    assert created["row_count"] == 2 and created["columns"][0]["name"] == "a"
+    workbook = openpyxl.load_workbook(output, read_only=True)
+    try:
+        assert list(workbook["data"].values) == [("a", "b"), (1, 2), (3, 4)]
+    finally:
+        workbook.close()
+    prior = output.read_bytes()
+    second = asyncio.run(call_tool(services, "data_export", args))
+    undo = second["undo"]
+    assert asyncio.run(call_tool(services, undo["tool"], undo["arguments"]))["undone"]
+    assert output.read_bytes() == prior
+    first_undo = created["undo"]
+    assert asyncio.run(call_tool(services, first_undo["tool"], first_undo["arguments"]))["undone"]
+    assert not output.exists()
+
+
+def test_export_undo_keeps_edits_made_after_export(services, ds, tmp_path):
+    output = tmp_path / "order.csv"
+    result = services.export(ds, "csv", str(output), source="agent")
+    output.write_text("later edit", encoding="utf-8")
+    with pytest.raises(ValueError, match="Export file changed"):
+        services.export_undo(result["undo"]["arguments"]["token"])
+    assert output.read_text(encoding="utf-8") == "later edit"
 
 
 def test_gate_sql_allows_select_rejects_writes():
