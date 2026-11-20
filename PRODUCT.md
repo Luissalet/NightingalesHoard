@@ -1,6 +1,6 @@
 # Nightingale's Hoard
 
-Aplicación local de la familia Hoard para Luis. Importación y análisis de datos, cálculo exacto y estadística.
+Aplicación local de la familia Hoard. Importación y análisis de datos, cálculo exacto y estadística.
 
 ## Uso
 
@@ -12,4 +12,4 @@ Los historiales permanecen en sus carpetas originales. Desactivar conserva datos
 
 ## Presentación confirmada
 
-Luis pide coherencia con los Hoards: icono propio existente, tema oscuro de la familia, títulos Cinzel y texto Source Sans 3, navegación y botón canónico de Faustus. La superficie Funciones es operativa: controles comprensibles, estado visible y acceso directo a cada interfaz. Escritorio y móvil; no hay cambio de identidad ni portada comercial.
+La interfaz sigue las convenciones de los Hoards: icono propio existente, tema oscuro de la familia, títulos Cinzel y texto Source Sans 3, navegación y botón canónico de Faustus. La superficie Funciones es operativa: controles comprensibles, estado visible y acceso directo a cada interfaz. Escritorio y móvil; no hay cambio de identidad ni portada comercial.
