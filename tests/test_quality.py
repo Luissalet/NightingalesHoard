@@ -168,3 +168,19 @@ def test_single_column_rule_rejects_multiple_columns(services, ds):
 def test_missing_column_and_columns_raises(services, ds):
     with pytest.raises(Exception):
         services.quality_define(ds, "bad", "not_null", {})
+
+
+def test_not_null_checks_four_columns_and_counts_each_failing_row_once(services, tmp_path):
+    csv = tmp_path / "venues.csv"
+    csv.write_text("venue,cost,seats,days\nPier,90,4,2\nDock,,8,\n,20,2,1\n", encoding="utf-8")
+    services.ingest_file(str(csv), "venues")
+    defined = asyncio.run(call_tool(services, "data_quality", {
+        "action": "define", "dataset": "venues", "name": "complete", "kind": "not_null",
+        "params": {"columns": ["venue", "cost", "seats", "days"]},
+    }))
+    checked = services.quality_run("venues", defined["rule_id"])["results"][0]
+    assert checked["failed"] == 2
+    assert {row["venue"] for row in checked["sample"]} == {"Dock", None}
+    undo = defined["undo"]
+    asyncio.run(call_tool(services, undo["tool"], undo["arguments"]))
+    assert services.quality_report("venues")["rules"] == []

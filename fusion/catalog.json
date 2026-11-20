@@ -753,7 +753,7 @@
   },
   {
     "name": "data_quality",
-    "description": "Define, run or report data-quality rules on a dataset. Reglas de calidad, validar datos.\nRule kinds: not_null/unique/range/regex/row_count/freshness/referential/custom_sql (write on define/delete).\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
+    "description": "Define, run or report data-quality rules on a dataset. Reglas de calidad, validar datos.\nnot_null accepts one or more columns and fails each row that has a null in any selected column. Other kinds: unique/accepted_values/range/regex/row_count/freshness/referential/custom_sql. Define returns undo.\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -1635,7 +1635,7 @@
   },
   {
     "name": "data_export",
-    "description": "Export a dataset as CSV, XLSX, Parquet or JSON. (write)\nmode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Optional workbook_updates adds other dataset/version pairs from the same original workbook to this one copy; every sheet is validated before publishing. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\nSinónimos: exportar datos, descargar csv, guardar excel.",
+    "description": "Export a dataset as CSV, XLSX, Parquet or JSON. (write)\nmode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Optional workbook_updates adds other dataset/version pairs from the same original workbook to this one copy; every sheet is validated before publishing. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\nUse an absolute path to export elsewhere. Writes return undo.\nSinónimos: exportar datos, descargar csv, guardar excel.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -1697,7 +1697,7 @@
             }
           ],
           "default": null,
-          "description": "Filename inside the app's exports folder; derived if omitted.",
+          "description": "Absolute output file or existing directory, or a filename relative to exports.",
           "title": "Path"
         },
         "mode": {
@@ -1746,6 +1746,31 @@
         "dataset"
       ],
       "title": "ExportArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "data_export_undo",
+    "description": "Undo a file export. Deshace una exportación.\nRestores replaced files or removes newly created files while their exported revision still matches.\nSinónimos: deshacer exportación, restaurar archivo exportado.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "token": {
+          "description": "Token returned by data_export.",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "ExportUndoArgs",
       "type": "object"
     },
     "module": "data"
