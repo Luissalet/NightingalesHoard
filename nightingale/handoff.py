@@ -59,6 +59,15 @@ def build(services, chart_id: Optional[int] = None, dataset: Optional[str] = Non
         data = services.engine.query(f"SELECT {select} FROM {q(version['table_name'])}{where}", limit=limit, cell_cap=None)
         title = title or dataset_row["name"]
     names = [c["name"] for c in data["columns"]]
+    if chart:
+        # The chart query names its columns x, y, label, value...: they go back to the dataset's own names.
+        value = (spec.color if spec.kind == "heatmap" else spec.y) or "count"
+        aliases = {"x": spec.x, "label": spec.x, "y": spec.y if spec.kind in ("heatmap", "scatter") else (spec.y or "count"),
+                   "value": value, "color": spec.color}
+        renamed = [aliases.get(n) or n for n in names]
+        if len(set(renamed)) == len(renamed):
+            names = renamed
+            data = {**data, "rows": [dict(zip(renamed, record.values())) for record in data["rows"]]}
     rows = [[record.get(name) for name in names] for record in data["rows"]][:limit]
     buffer = io.StringIO()
     csv.writer(buffer, lineterminator="\n").writerows([names, *rows])

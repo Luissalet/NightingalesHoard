@@ -84,7 +84,7 @@ def test_handoff_of_a_chart_carries_figures_and_provenance(services):
 
     out = asyncio.run(run())
     assert out["kind"] == "data-chart" and out["title"] == "Returns by station"
-    assert out["chart"]["type"] == "bar" and out["chart"]["x"] == "station"
+    assert out["chart"]["type"] == "bar" and out["chart"]["x"] == "station" and out["columns"] == ["station", "returns"]
     figures = {row[0]: row[1] for row in out["rows"]}
     assert figures == {"writer": 5, "cicero": 1, "hypatia": 1}
     assert list(csv.reader(io.StringIO(out["csv"])))[0] == out["columns"]
