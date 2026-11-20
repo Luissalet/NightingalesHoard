@@ -22,7 +22,7 @@
         },
         "kind": {
           "default": "file",
-          "description": "What to ingest (action=ingest). 'hoard' = the records another Hoard app returns from one of its tools, called through the hub: give `preset` (ledger_transactions, phileas_shipments, argus_app_time [tool name unverified]) or `app` + `tool` (+ `args`, `list_path`).",
+          "description": "What to ingest (action=ingest). 'hoard' = the records another Hoard app returns from one of its tools, called through the hub: give `preset` (ledger_transactions, phileas_shipments, argus_app_time [tool name unverified]) or `app` + `tool` (+ `args`, `list_path`); app='hoardhub' reads a tool of the hub itself (hub_agora_tasks, hub_order_receipts...). 'folder' stacks every file matching `glob` by column name, so files with different columns load together.",
           "enum": [
             "file",
             "folder",
@@ -1751,6 +1751,90 @@
     "module": "data"
   },
   {
+    "name": "data_handoff",
+    "description": "Hand a chart's figures or a dataset table to another station, with its provenance.\nReturns columns, rows, CSV and where they come from (dataset, version, query, source, fingerprint). Cicero (dataset_connect kind=nightingale) and Writer (wh_import_evidence nightingale) call it through the hub, so no figure is copied by hand. Read-only.\nSinónimos: pasar tabla, pasar gráfico, relevo de datos, cifras con procedencia, hand over table, data handoff.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "chart_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A saved chart (data_chart): its figures, as the chart shows them.",
+          "title": "Chart Id"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A dataset: a table of its current version (instead of chart_id).",
+          "title": "Dataset"
+        },
+        "columns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Columns of the table, in order; all when omitted.",
+          "title": "Columns"
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A SQL WHERE fragment for the table rows.",
+          "title": "Filter"
+        },
+        "limit": {
+          "default": 500,
+          "maximum": 2000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "title": "HandoffArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
     "name": "data_workbook",
     "description": "Compile an Excel workbook into an executable calculation; run it with new values, verify it and export it.\nReads formulas and cached values (.xlsx/.xlsm; macros are never run), separates parameters, lookup tables and results with their labels, and executes the supported formula subset with Excel's semantics. Anything outside it is frozen with Excel's saved value and listed with the reason; results that depend on it are flagged uses_frozen. check compares every formula with Excel's saved value; verify recalculates new seeded cases in Excel (or LibreOffice) and compares each result; export writes a standalone Python module (standard library only).\nSinónimos: compilar excel, convertir hoja de cálculo en aplicación, hoja de cotización, ejecutar fórmulas, recalcular excel, motor de cálculo del excel, comparar con excel, exportar cálculo a python, trazar fórmula.",
     "annotations": {
@@ -2367,7 +2451,7 @@
   },
   {
     "name": "data_fabquote",
-    "description": "Fabrication quote by scenario: parameters with units and sources, formula line items, actuals.\nVulcan measures and prepares, this tool computes with explicit rates, density and settings; the books record what happened. Line items are split into geometric material, process material, setup, labour, machine, waste and margin, each a formula over named parameters (Pint units, dependency graph). Templates: fdm, cnc_laser, concrete. FDM time is never taken from solid volume alone without a labelled coarse-estimate warning (or a block); concrete printing refuses volume-only time and needs toolpath length, speed and layers. Missing measurements are never invented: they block the items that need them. scenario_save/compare recompute only the dependent items and give a before/after diff with formulas and sources; sensitivity varies one parameter at a time; actual/actuals compare real costs and times with the quote per item (optional reference to a ledger movement, nothing is written there); export gives json, csv or markdown. Geometry may come from Vulcan (vulcan_model_id, optional, with provenance).\nSinónimos: presupuesto de fabricación, impresión 3D, FDM, hormigón, corte láser, CNC, coste de pieza, tarifa, escenarios de coste, sensibilidad, desperdicio, tiempo de máquina, calibración con costes reales, quote.",
+    "description": "Fabrication quote by scenario: parameters with units and sources, formula line items, actuals.\nVulcan measures and prepares, this tool computes with explicit rates, density and settings; the books record what happened. Line items are split into geometric material, process material, setup, labour, machine, waste and margin, each a formula over named parameters (Pint units, dependency graph). Templates: fdm, cnc_laser, concrete. FDM time is never taken from solid volume alone without a labelled coarse-estimate warning (or a block); concrete printing refuses volume-only time and needs toolpath length, speed and layers. Missing measurements are never invented: they block the items that need them. scenario_save/compare recompute only the dependent items and give a before/after diff with formulas and sources; sensitivity varies one parameter at a time; actual/actuals compare real costs and times with the quote per item (optional reference to a ledger movement, nothing is written there); export gives json, csv or markdown. Geometry may come from Vulcan (vulcan_model_id, optional, with provenance). FDM has the solid top and bottom layers as a line item of their own (top_bottom_area_cm2, or the slicer's volumes). calibrate fits rates and yields (print speed, machine rate, material price...) to several real jobs by least squares with the quote's own formulas, giving standard errors, confidence intervals, the error before and after, a leave-one-job-out check and the parameters the data cannot pin down; toolpath reads a slicer G-code (time, filament by feature, layers) or a trajectory file into the quote's measurements, with the file hash; inspect reads Vulcan's inspection through the Hub as structured warnings (severity, parameters in doubt, suggested fix).\nSinónimos: presupuesto de fabricación, impresión 3D, FDM, hormigón, corte láser, CNC, coste de pieza, tarifa, escenarios de coste, sensibilidad, desperdicio, tiempo de máquina, calibración con costes reales, quote.",
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -2378,7 +2462,7 @@
       "properties": {
         "action": {
           "default": "list",
-          "description": "templates = processes with their parameters; vulcan = fetch measurements of a library model (preview, nothing saved); create = new quote (process + measurements/parameters/rate_card/vulcan_model_id); list/get/delete = stored quotes by name; set = change base parameters (reports the items that changed and why); options = volume_only policy; scenario_save/scenario_delete = named assumption variations; compare = scenarios against the base with diffs; sensitivity = one-at-a-time +-pct on parameters; actual = record what a line item really cost or took; actuals = actual versus quote per item; actual_delete; export = json, csv or markdown.",
+          "description": "templates = processes with their parameters; vulcan = fetch measurements of a library model (preview, nothing saved); create = new quote (process + measurements/parameters/rate_card/vulcan_model_id); list/get/delete = stored quotes by name; set = change base parameters (reports the items that changed and why); options = volume_only policy; scenario_save/scenario_delete = named assumption variations; compare = scenarios against the base with diffs; sensitivity = one-at-a-time +-pct on parameters; actual = record what a line item really cost or took; actuals = actual versus quote per item; actual_delete; export = json, csv or markdown; calibrate = least-squares fit of rates and yields to several real jobs (jobs, fit, apply), with standard errors, confidence intervals, error before/after and a leave-one-job-out check; toolpath = read a slicer G-code or a trajectory file (content, kind, unit; apply=false only previews); inspect = Vulcan's inspection of a model (vulcan_model_id, target) as structured warnings kept on the quote.",
           "enum": [
             "templates",
             "vulcan",
@@ -2395,7 +2479,10 @@
             "actual",
             "actuals",
             "actual_delete",
-            "export"
+            "export",
+            "calibrate",
+            "toolpath",
+            "inspect"
           ],
           "title": "Action",
           "type": "string"
@@ -2710,6 +2797,95 @@
           ],
           "title": "Format",
           "type": "string"
+        },
+        "jobs": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate: real jobs, each {label, parameters: {measurement: value}, actuals: {line item or derived id: real value}}, e.g. {\"parameters\": {\"volume_cm3\": 40, \"surface_cm2\": 90, \"part_height_mm\": 30}, \"actuals\": {\"print_time_h\": 2.4, \"machine_time\": 3.1}}",
+          "title": "Jobs"
+        },
+        "fit": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate: parameters to fit (default the usual rates of the process: speed, machine rate, material price, labour rate)",
+          "title": "Fit"
+        },
+        "apply": {
+          "default": false,
+          "description": "calibrate: write the fitted values into the quote (source calibrated); toolpath: set apply=false to preview only (default true there)",
+          "title": "Apply",
+          "type": "boolean"
+        },
+        "level": {
+          "default": 0.95,
+          "description": "calibrate: confidence level of the intervals",
+          "maximum": 0.999,
+          "minimum": 0.5,
+          "title": "Level",
+          "type": "number"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "toolpath: text of a slicer G-code, or a trajectory (CSV x,y[,z] / JSON points)",
+          "title": "Content"
+        },
+        "kind": {
+          "default": "auto",
+          "description": "toolpath: how to read content",
+          "enum": [
+            "auto",
+            "gcode",
+            "trajectory"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path_unit": {
+          "default": "mm",
+          "description": "toolpath: unit of a trajectory's coordinates",
+          "enum": [
+            "mm",
+            "cm",
+            "m",
+            "in"
+          ],
+          "title": "Path Unit",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "description": "toolpath: file name or note kept in the provenance",
+          "title": "Label",
+          "type": "string"
         }
       },
       "title": "FabQuoteArgs",
@@ -2947,8 +3123,26 @@
             }
           ],
           "default": null,
-          "description": "calibrate/export: edits of the fitted model, validated: {arrival_rate: per hour, stations: {activity: {service: {dist: fixed|exponential|uniform|triangular|lognormal, ...params in hours}, servers: int>=1}}, routing: {start: {activity: share}, next: {activity: {activity|END: share}}}}. Edited parameters are marked as edited by the user with their original value; validation and alternatives are re-run with the edited model (same seeds) and the diff against the fitted model is returned",
+          "description": "calibrate/export: edits of the fitted model, validated: {arrival_rate: per hour, stations: {activity: {service: {dist: fixed|exponential|uniform|triangular|lognormal, ...params in hours}, servers: int>=1}}, routing: {start: {activity: share}, next: {activity: {activity|END: share}}}}. Edited parameters are marked as edited by the user with their original value; validation and alternatives are re-run with the edited model (same seeds) and the diff against the fitted model is returned. Empirical samples are edited value by value: stations.<activity>.service_values {set: {index: hours}, remove: [index], add: [hours]} (indices of model.stations[].service.values) or service {dist: empirical, values: [..]}; arrival_gaps with the same operations (or a full list) when the arrivals are empirical",
           "title": "Model Edits"
+        },
+        "seasonal_arrivals": {
+          "anyOf": [
+            {
+              "enum": [
+                "off",
+                "auto",
+                "on"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "calibrate/export: arrivals by hour of day and weekday. auto (default) = test the hourly and weekly pattern against a constant rate (chi-square, alpha 0.01) and use a schedule only when significant; off = never; on = hourly schedule even if not significant. Model time 0 is local midnight (24 h cycle) or Monday 00:00 (168 h cycle) of log_options.timezone. profile reports the test as arrival_seasonality",
+          "title": "Seasonal Arrivals"
         },
         "with_calibration": {
           "default": false,
@@ -3861,6 +4055,215 @@
         }
       },
       "title": "LogArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "story_build",
+    "description": "Turn a dataset into a story: ordered findings, each with its chart, figure and query. Relato con los datos.\nOnly findings that clear a stated minimum of support enter (trend, group difference, outlier, concentration, change between periods); nothing is invented. rewrite=true asks the model to reword the sentences, and a sentence whose numbers are not the finding's own is discarded.\nSinónimos: relato, historia con los datos, hallazgos, contar lo que dicen los datos, narrativa, story, findings, narrative.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "description": "The dataset to read (its current version).",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "rewrite": {
+          "default": false,
+          "description": "Ask the family's model to reword each sentence. A sentence whose numbers are not the finding's own is discarded and the template stays.",
+          "title": "Rewrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "StoryBuildArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "story_get",
+    "description": "One saved story with its findings, sentences, figures, charts and queries. Leer un relato.\nSinónimos: ver relato, abrir historia, hallazgos guardados, story.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "story_id": {
+          "description": "The story (from story_build or story_list).",
+          "minimum": 1,
+          "title": "Story Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "story_id"
+      ],
+      "title": "StoryGetArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "story_list",
+    "description": "List the saved stories with their dataset and number of findings. Listar relatos.\nSinónimos: relatos guardados, historias, stories.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the stories of this dataset.",
+          "title": "Dataset"
+        }
+      },
+      "title": "StoryListArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "story_update",
+    "description": "Reorder or drop findings of a story, or edit one sentence. Editar un relato.\nA sentence with a number that is not one of the finding's figures is rejected and the template stays.\nSinónimos: reordenar hallazgos, quitar hallazgo, editar frase, cambiar el texto del relato.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "story_id": {
+          "minimum": 1,
+          "title": "Story Id",
+          "type": "integer"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Every finding id, in the new order.",
+          "title": "Order"
+        },
+        "remove": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Finding ids to drop.",
+          "title": "Remove"
+        },
+        "statements": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{finding id: sentence}; an empty sentence restores the template. A sentence with a number that is not one of the finding's figures is rejected and the template stays.",
+          "title": "Statements"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "New story title.",
+          "title": "Title"
+        }
+      },
+      "required": [
+        "story_id"
+      ],
+      "title": "StoryUpdateArgs",
+      "type": "object"
+    },
+    "module": "data"
+  },
+  {
+    "name": "story_export",
+    "description": "Export a story as one standalone HTML file, or as a presentation in Cicero's Hoard. Exportar el relato.\nThe presentation has one finding per slide and is built with Cicero's own tools through the Hub; when Cicero is not available the HTML is still written and the answer says so.\nSinónimos: exportar relato, html, presentación, diapositivas, deck, export story.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "inputSchema": {
+      "properties": {
+        "story_id": {
+          "minimum": 1,
+          "title": "Story Id",
+          "type": "integer"
+        },
+        "format": {
+          "default": "html",
+          "description": "html is one self-contained file; presentation builds one slide per finding in Cicero's Hoard through the Hub, and says so when Cicero is not available.",
+          "enum": [
+            "html",
+            "presentation"
+          ],
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "story_id"
+      ],
+      "title": "StoryExportArgs",
       "type": "object"
     },
     "module": "data"
