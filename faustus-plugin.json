@@ -96,7 +96,26 @@
     "modules": [
       "data",
       "calculation"
-    ]
+    ],
+    "production": {
+      "handoffs": [
+        {
+          "accepts": "production-brief",
+          "produces": ["data-table", "data-chart"],
+          "skill": "data-cleaning-with-lineage",
+          "requires": [
+            {"id": "data-sources", "es": "Indica de dónde salen los datos: la herramienta del Hub, la app o la carpeta, y el periodo.",
+             "en": "Name where the data comes from: the hub tool, the app or the folder, and the period."},
+            {"id": "data-questions", "es": "Enuncia las preguntas que deben responder las cifras, con su unidad.",
+             "en": "State the questions the figures must answer, with their unit."}
+          ],
+          "check": {
+            "en": "Run data_quality on the dataset, then hand the chart or table over with data_handoff and compare its version and fingerprint with data_list and data_log.",
+            "es": "Ejecuta data_quality sobre el conjunto de datos, pasa el gráfico o la tabla con data_handoff y coteja su versión y su huella con data_list y data_log."
+          }
+        }
+      ]
+    }
   },
   "provides": {
     "skills": {"slugs": ["data-cleaning-with-lineage", "measured-improvement", "verification-loop"], "limit": 3}
