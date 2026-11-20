@@ -310,11 +310,15 @@ class WorkbookUpdateArgs(BaseModel):
 class ExportArgs(BaseModel):
     dataset: str
     format: Literal["csv", "xlsx", "parquet", "json"] = "csv"
-    path: Optional[str] = Field(None, description="Filename inside the app's exports folder; derived if omitted.")
+    path: Optional[str] = Field(None, description="Absolute output file or existing directory, or a filename relative to exports.")
     mode: Literal["flat", "preserve_workbook", "inventory"] = Field(
         "flat", description="'flat' makes the usual single-table export. 'inventory' reads the linked workbook snapshot. 'preserve_workbook' is .xlsx-only: patch the selected imported sheet's tabular cells in a copy of its original workbook, preserving untouched package parts.")
     version: Optional[int] = Field(None, ge=0, description="Dataset version to export; defaults to the current version.")
     workbook_updates: Optional[list[WorkbookUpdateArgs]] = Field(None, description="Additional dataset/version pairs from the same source workbook; all selected sheets are preflighted and written into the same .xlsx copy.")
+
+
+class ExportUndoArgs(BaseModel):
+    token: str = Field(..., description="Token returned by data_export.")
 
 
 class HandoffArgs(BaseModel):
@@ -426,7 +430,8 @@ def _run_quality(s: Services, a: QualityArgs) -> dict:
     if a.action == "define":
         if not (a.dataset and a.name and a.kind):
             raise ValueError("define needs dataset, name and kind")
-        return s.quality_define(a.dataset, a.name, a.kind, a.params, source="agent")
+        result = s.quality_define(a.dataset, a.name, a.kind, a.params, source="agent")
+        return {**result, "undo": {"tool": "data_quality", "arguments": {"action": "delete", "rule_id": result["rule_id"]}}}
     if a.action == "run":
         if not a.dataset:
             raise ValueError("run needs dataset")
@@ -1243,7 +1248,9 @@ TOOLS: list[Tool] = [
          "Sinónimos: consulta sql, ejecutar select, preguntar con sql.",
          QueryArgs, _ann(True), _run_query),
     Tool("data_quality", "Define, run or report data-quality rules on a dataset. Reglas de calidad, validar datos.\n"
-         "Rule kinds: not_null/unique/range/regex/row_count/freshness/referential/custom_sql (write on define/delete).\nSinónimos: reglas de calidad, validar datos, comprobar datos.",
+         "not_null accepts one or more columns and fails each row that has a null in any selected column. "
+         "Other kinds: unique/accepted_values/range/regex/row_count/freshness/referential/custom_sql. Define returns undo.\n"
+         "Sinónimos: reglas de calidad, validar datos, comprobar datos.",
          QualityArgs, _ann(False, False, False), _run_quality),
     Tool("data_chart", "Create a chart, or read a saved chart by ID; image=true returns its native PNG.\n"
          "action=create (default) saves a new SQL-aggregated chart. action=get needs chart_id, creates nothing and uses the dataset's current version. With get/image=true, MCP returns complete PNG ImageContent and JSON metadata; lang=es/en selects PNG number formatting. The native PNG may differ from the interactive view and is not a historical screenshot or every dataset row.\n"
@@ -1280,8 +1287,13 @@ TOOLS: list[Tool] = [
          ForecastArgs, _ann(False, False, False), _run_forecast),
     Tool("data_export", "Export a dataset as CSV, XLSX, Parquet or JSON. (write)\n"
          "mode='flat' creates the usual single-sheet export. mode='inventory' reads the linked source workbook snapshot (sheet names, table ranges, package-part hashes). mode='preserve_workbook' patches same-sized data cells in a copy of an imported .xlsx, retains untouched OOXML parts, and writes a lineage receipt. Select version to export a specific dataset version. Optional workbook_updates adds other dataset/version pairs from the same original workbook to this one copy; every sheet is validated before publishing. Overwriting formula cells, changed row/column shapes and .xlsm are refused.\n"
+         "Use an absolute path to export elsewhere. Writes return undo.\n"
          "Sinónimos: exportar datos, descargar csv, guardar excel.",
          ExportArgs, _ann(False, False, False), _run_export),
+    Tool("data_export_undo", "Undo a file export. Deshace una exportación.\n"
+         "Restores replaced files or removes newly created files while their exported revision still matches.\n"
+         "Sinónimos: deshacer exportación, restaurar archivo exportado.",
+         ExportUndoArgs, _ann(False, False, False), lambda s, a: s.export_undo(a.token)),
     Tool("data_handoff", "Hand a chart's figures or a dataset table to another station, with its provenance.\n"
          "Returns columns, rows, CSV and where they come from (dataset, version, query, source, fingerprint). Cicero "
          "(dataset_connect kind=nightingale) and Writer (wh_import_evidence nightingale) call it through the hub, so no "
