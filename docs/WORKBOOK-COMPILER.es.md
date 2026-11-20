@@ -40,7 +40,7 @@ Límites: no se comprueban unidades dentro de búsquedas, funciones de texto ni 
 
 ## Límites
 
-`TEXTO` usa separadores en inglés (el Excel de Luis en español mostraría `1.234,57`). Las funciones de búsqueda sobre datos sin ordenar imitan a Excel pero Excel no documenta ese caso. Sin cálculo iterativo, sin tablas de datos de hipótesis ni matrices dinámicas.
+`TEXTO` usa separadores en inglés (Excel configurado en español mostraría `1.234,57`). Las funciones de búsqueda sobre datos sin ordenar imitan a Excel pero Excel no documenta ese caso. Sin cálculo iterativo, sin tablas de datos de hipótesis ni matrices dinámicas.
 
 La revisión2 de2006 corrige también el selector de fecha de la página: toma el sistema del libro al mostrar y editar parámetros. Los resúmenes antiguos sin sistema de fechas se recalculan al leer desde el original retenido, sin reescribir su metadata histórica. Prueba de UI1904:2026-11-03 se edita a2026-11-10 y el resultado del día siguiente es2026-11-11.
 
