@@ -16,9 +16,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from nightingale.config import Config
 from fusion.app import create_app
+from mcp_server import catalog
 with TestClient(create_app(Config(data_dir=Path(tempfile.mkdtemp()))),base_url='http://127.0.0.1:5189') as client:
     assert all(not m['enabled'] for m in client.get('/api/modules').json()['modules'])
-    assert len(client.get('/api/agent/tools').json()['tools']) >= 33
+    listed = client.get('/api/agent/tools').json()['tools']
+    assert sorted(t['name'] for t in listed) == sorted(t['name'] for t in catalog())
     assert 'nightingale.services' not in sys.modules
     assert 'laplaces_hoard.api' not in sys.modules
     assert 'duckdb' not in sys.modules

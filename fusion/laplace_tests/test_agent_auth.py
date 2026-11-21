@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import agent_headers
+from fusion.laplace_tests.conftest import agent_headers
 from laplaces_hoard import backend as backend_mod
 from laplaces_hoard import db
 from laplaces_hoard.api import create_app
@@ -27,7 +27,13 @@ def anonymous(app):
 
 def test_agent_tool_routes_refuse_a_missing_or_wrong_token(anonymous):
     tools = [t["name"] for t in anonymous.get("/api/agent/tools").json()["tools"]]
-    assert len(tools) == 20
+    registered = {
+        route.path.rsplit("/", 1)[-1] for route in anonymous.app.routes
+        if getattr(route, "path", "").startswith("/api/agent/") and "POST" in (getattr(route, "methods", None) or ())
+        and route.path not in {"/api/agent/call", "/api/agent/undo", "/api/agent/tokens"}
+        and "{" not in route.path
+    }
+    assert sorted(tools) == sorted(registered)
     for name in tools:
         r = anonymous.post(f"/api/agent/{name}", json={})
         assert r.status_code == 401, name
