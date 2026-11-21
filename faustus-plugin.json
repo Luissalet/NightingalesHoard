@@ -83,6 +83,10 @@
   },
   "notes": "Start explicitly from Hoard Hub. Data and Calculation default OFF. MCP discovery reads the static catalog without starting the server or engines. Full native tools and data remain available after explicit activation.",
   "x-family": {
+    "isolated_instance": {
+      "data_env": "NIGHTINGALE_DATA_DIR",
+      "port_env": "NIGHTINGALE_PORT"
+    },
     "copilot": {
       "contract_version": "1.0",
       "info": "/api/copilot/info",
