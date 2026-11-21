@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 from nightingale.agent_tools import call_tool, tool_catalog
 
@@ -49,9 +50,12 @@ def test_http_agent_full_page_and_static_catalog(client):
     assert native == response.json() and native["rows"][0]["value"] == long and native["next_offset"] == 1
     assert client.get("/api/datasets/api/frequencies",params={"column":"missing"}).status_code == 400
     assert client.get("/api/datasets/api/frequencies",params={"column":"valor","version":99}).status_code == 404
-    catalog = json.loads((__import__('pathlib').Path(__file__).parents[1]/'fusion/catalog.json').read_text(encoding='utf8'))
-    frozen = next(t for t in catalog if t['name']=='data_profile')
-    live = next(t for t in tool_catalog() if t['name']=='data_profile')
-    assert frozen['inputSchema'] == live['inputSchema']
-    assert len(catalog) == 56
-    assert {t['name'] for t in tool_catalog()} <= {t['name'] for t in catalog}  # the shipped catalog has every data tool
+    catalog_path = Path(__file__).parents[1] / 'fusion' / 'catalog.json'
+    catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
+    frozen_data = [
+        {key: value for key, value in tool.items() if key != 'module'}
+        for tool in catalog if tool['module'] == 'data'
+    ]
+    live_data = tool_catalog()
+    assert frozen_data == live_data
+    assert len(catalog) == len(live_data) + 20  # Calculation tools shipped alongside Data.

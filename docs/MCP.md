@@ -2,13 +2,13 @@
 
 `mcp_server.py` is a stdio bridge. Discovery reads the shipped static catalog without starting a server or engine. Calls proxy to `POST /api/agent/call` on the explicitly started app with the bearer token from `<DATA_DIR>/mcp-token`; the bridge never opens the database directly.
 
-Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The combined catalog includes 35 Data tools, 20 Calculation tools and two module controls (57 tools).
+Environment: `NIGHTINGALE_URL` (default `http://127.0.0.1:5189`), `NIGHTINGALE_DATA_DIR` (default `./data`), and optional `NIGHTINGALE_TOKEN_FILE` to select the token file. The static catalog exposes 37 Data tools, 20 Calculation tools and two module controls (59 tools). The stdio bridge also exposes four skill tools when a local skill shelf is available.
 
 Analysis operations are recorded in the analysis log with `source: "agent"` and an id like
 `N-000123`, exactly like a UI action would be. The read-only `data_transform(op="help")`
 parameter lookup and `data_join_preview` coverage calculation do not create a version or analysis-log entry. The existing agent call event remains independent of the analysis log.
 
-35 Data tools. The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
+The Lab package (EDA/quality/drift, the model registry, diagnostics, tuning, explanations, optimization/Pareto, PDF reports and visual pipeline graph — see `docs/LAB.md`) is reached through modes on `data_profile` and actions on `data_model`.
 
 | Tool | Kind | What it does |
 | --- | --- | --- |
