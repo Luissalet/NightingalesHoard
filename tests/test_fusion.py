@@ -115,6 +115,11 @@ def test_stdio_discovery_works_with_no_server_or_data(tmp_path):
     from mcp.client.session import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
     root = Path(__file__).parents[1]
+    catalog = json.loads((root / 'fusion' / 'catalog.json').read_text(encoding='utf-8'))
+    schemas = {tool['name']: tool['inputSchema'] for tool in catalog}
+    controls = {'nightingale_modules', 'nightingale_set_module'}
+    assert len(schemas) == len(catalog)
+
     async def discover():
         params = StdioServerParameters(command=sys.executable, args=[str(root/'mcp_server.py')],
             env={**os.environ, 'NIGHTINGALE_URL': 'http://127.0.0.1:1', 'NIGHTINGALE_DATA_DIR': str(tmp_path/'no-data')})
@@ -122,7 +127,9 @@ def test_stdio_discovery_works_with_no_server_or_data(tmp_path):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert len(tools.tools) == 52
+                assert len(tools.tools) == len(catalog) + len(controls)
+                assert {tool.name for tool in tools.tools} == schemas.keys() | controls
+                assert {tool.name: tool.inputSchema for tool in tools.tools if tool.name not in controls} == schemas
                 assert {'calc', 'data_ingest', 'laplace_data_query', 'data_join_preview'} <= {tool.name for tool in tools.tools}
     asyncio.run(discover())
     assert not (tmp_path/'no-data').exists()
