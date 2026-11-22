@@ -49,6 +49,13 @@ fichero. Su deshacer restaura el archivo previo o retira el archivo creado
 si sigue siendo la misma exportación. En el modo de conservar libro, el
 deshacer abarca también el recibo.
 
+`data_export` con `mode="sheets"` escribe un libro `.xlsx` nuevo con una hoja
+por versión de conjunto (`dataset` es la primera; `extra_sheets`, el resto;
+`sheet_name` y `totals` por hoja). Cabecera en negrita e inmovilizada y, con
+`totals`, una última fila «Totales» con la suma de cada columna numérica. El
+nombre de hoja elegido se usa tal cual o se rechaza si Excel lo rechazaría. El
+deshacer retira el libro o restaura el que sustituyó.
+
 ## App Dock
 
 El servidor fusionado se puede enmarcar dentro del App Dock de Faustus: una navegación enmarcada (`iframe`/`frame`, solo GET) pasa la guarda cuando la página que la abre es un origen de Faustus conocido (el configurado o el que el Hub publica en su colocación). Los orígenes ajenos y los marcos `embed`/`object` se siguen rechazando. Lo cubre `tests/test_fusion.py::test_dock_frames_from_a_known_faustus_origin_only`.

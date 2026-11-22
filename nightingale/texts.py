@@ -2382,3 +2382,8 @@ register({
         "en": "Rewrite each sentence in {lang} so it reads naturally, using only the figures given. Do not add, round differently or invent any number, name or date. Answer with one line per finding: the id, a tab, the sentence.",
         "es": "Reescribe cada frase en {lang} para que se lea con naturalidad, usando solo las cifras dadas. No añadas, redondees de otra forma ni inventes ninguna cifra, nombre o fecha. Responde una línea por hallazgo: el id, un tabulador y la frase."},
 })
+
+# ======================================================================= multi-sheet export (export.*)
+register({
+    "export.totals": {"en": "Totals", "es": "Totales"},
+})

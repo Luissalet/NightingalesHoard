@@ -65,6 +65,31 @@ columnas, si faltan filas originales o si el archivo es `.xlsm`. Esta ruta
 conserva rangos de igual tamaño; no amplía tablas ni recoloca objetos. La
 exportación plana sigue disponible para generar un archivo de datos nuevo.
 
+## Un libro nuevo con una hoja por conjunto
+
+`data_export` con `mode="sheets"` y `format="xlsx"` escribe un libro nuevo (no
+una copia de uno importado) con una hoja por versión de conjunto. La petición
+nombra la primera hoja con `dataset`, `version`, `sheet_name` y `totals`, y las
+demás en `extra_sheets`:
+
+```json
+{"dataset":"produccion","format":"xlsx","mode":"sheets","sheet_name":"Producción","totals":true,
+ "extra_sheets":[{"dataset":"personal","version":1,"sheet_name":"Personal"},{"dataset":"notas"}]}
+```
+
+Cada hoja lleva la cabecera en negrita e inmovilizada bajo el borde superior.
+Con `totals: true` la hoja termina en una fila marcada «Totales» (en el idioma
+de la petición o de la aplicación) con la suma de cada columna numérica, en
+negrita, con borde superior y relleno; una columna con un número no finito no
+lleva suma. El `sheet_name` elegido se usa tal cual y se rechaza si Excel lo
+rechazaría (más de 31 caracteres, `[ ] : * ? / \`, apóstrofo al principio o al
+final, `History`, vacío o igual a otra hoja sin distinguir mayúsculas); sin él,
+la hoja toma el nombre del conjunto, luego `nombre_v<versión>` y luego un
+número. Todo se valida antes de escribir, el libro se publica de una vez y el
+resultado lista cada hoja, conjunto, versión, número de filas y totales.
+`data_export_undo` lo retira o restaura el fichero que sustituyó. Los valores
+que una hoja no admite (NaN, infinitos, objetos) se escriben como texto.
+
 Es una ruta de preservación acotada, no un editor general de Excel ni un
 sustituto de GridCraft. No afirma soporte de macros, recálculo ni fidelidad
 completa de Excel. Consulta [la guía en inglés](WORKBOOK-EXPORT.md).

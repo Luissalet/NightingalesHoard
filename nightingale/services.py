@@ -52,7 +52,7 @@ from .workbench.engine import DataError, Engine, MAX_CELL_CHARS, q, slugify_name
 from .workbench import models as model_engine
 from .workbench.quality import QualityError, RULE_KINDS, build_check
 from .workbench.steps import StepError, STEP_KINDS, step_parameter_catalog
-from . import workbook_export
+from . import multisheet_export, workbook_export
 from . import story as story_mod
 from . import applang, story_export
 
@@ -1548,14 +1548,19 @@ class Services:
 
     def export(self, dataset_name: str, fmt: str = "csv", path: Optional[str] = None, source: str = "ui",
                mode: str = "flat", version: Optional[int] = None,
-               workbook_updates: Optional[list[dict[str, Any]]] = None) -> dict:
+               workbook_updates: Optional[list[dict[str, Any]]] = None, sheet_name: Optional[str] = None,
+               totals: bool = False, extra_sheets: Optional[list[dict[str, Any]]] = None) -> dict:
         if mode == "inventory":
             if workbook_updates is not None:
                 raise DataError("workbook_updates cannot be used with mode='inventory'")
             return self.workbook_inventory(dataset_name, source=source)
         dataset_row = self._dataset_row(dataset_name)
+        first_sheet_name = sheet_name  # `do` assigns its own `sheet_name` in the preserve branch
+        totals_label = t("export.totals", request_lang() or applang.current())  # read here: `do` runs in a worker thread
 
         def do(v, fmt_l, out_path, staged):
+            if mode == "sheets":
+                return self._export_sheets(dataset_row, v, first_sheet_name, totals, extra_sheets, totals_label, out_path, staged)
             if mode == "preserve_workbook":
                 import json as _json
 
@@ -1647,6 +1652,8 @@ class Services:
                      "_log_summary": f"exported {dataset_row['name']!r} to {out_path.name}"}
 
         log_input = {"format": fmt, "mode": mode, "version": version, "workbook_updates": workbook_updates or []}
+        if mode == "sheets":
+            log_input.update({"sheet_name": sheet_name, "totals": totals, "extra_sheets": extra_sheets or []})
 
         def write(started):
             v = self._version_row(dataset_row, version)
@@ -1654,8 +1661,12 @@ class Services:
             preserve = mode == "preserve_workbook"
             if fmt_l not in ("csv", "xlsx", "parquet", "json"):
                 raise DataError(f"unsupported export format: {fmt}; choose csv/xlsx/parquet/json")
-            if mode not in ("flat", "preserve_workbook"):
-                raise DataError("export mode must be 'flat' or 'preserve_workbook'")
+            if mode not in ("flat", "preserve_workbook", "sheets"):
+                raise DataError("export mode must be 'flat', 'preserve_workbook' or 'sheets'")
+            if mode != "sheets" and (sheet_name is not None or totals or extra_sheets is not None):
+                raise DataError("sheet_name, totals and extra_sheets require mode='sheets'")
+            if mode == "sheets" and fmt_l != "xlsx":
+                raise DataError("sheets mode requires format='xlsx'")
             if workbook_updates is not None and not preserve:
                 raise DataError("workbook_updates requires mode='preserve_workbook' and format='xlsx'")
             if workbook_updates == []:
@@ -1663,6 +1674,8 @@ class Services:
             if preserve and fmt_l != "xlsx":
                 raise DataError("preserve_workbook mode requires format='xlsx'")
             default_name = f"{dataset_row['name']}_v{v['version']}_workbook.xlsx" if preserve else f"{dataset_row['name']}.{fmt_l}"
+            if mode == "sheets":
+                default_name = f"{dataset_row['name']}_sheets.xlsx"
             destination = Path(hl_paths.clean_user_path(path)).expanduser() if path else Path(default_name)
             out_path = (self.config.exports_dir / destination).resolve()
             if not hl_paths.is_inside(out_path, self.config.exports_dir):
@@ -1672,8 +1685,8 @@ class Services:
                     raise DataError("Use an absolute path outside exports / Usa una ruta absoluta fuera de exportaciones")
             if out_path.is_dir():
                 out_path = out_path / default_name
-            if preserve and out_path.suffix.lower() != ".xlsx":
-                raise DataError("preserving workbook output path must end in .xlsx")
+            if (preserve or mode == "sheets") and out_path.suffix.lower() != ".xlsx":
+                raise DataError("workbook output path must end in .xlsx")
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with TemporaryDirectory(prefix=".export-", dir=out_path.parent) as tmp:
                 stage = Path(tmp)
@@ -1708,6 +1721,37 @@ class Services:
                 raise
 
         return self.run_heavy(logged_write, timeout=MAX_INGEST_TIMEOUT_S)
+
+    def _export_sheets(self, first_row, first_version, first_name: Optional[str], first_totals: bool,
+                       extra_sheets: Optional[list[dict[str, Any]]], totals_label: str, out_path: Path, staged: Path) -> dict:
+        """One new workbook, a sheet per dataset version; every name and version is checked before anything is written."""
+        requested = [(first_row, first_version, first_name, bool(first_totals))]
+        for item in extra_sheets or []:
+            row = self._dataset_row(item["dataset"])
+            requested.append((row, self._version_row(row, item.get("version")), item.get("sheet_name"),
+                              bool(item.get("totals"))))
+        chosen = [multisheet_export.check_sheet_name(name) for _, _, name, _ in requested if name is not None]
+        taken = {name.lower() for name in chosen}
+        if len(taken) != len(chosen):
+            raise DataError("two sheets have the same name; sheet names are not case sensitive")
+        sheets = []
+        with self.engine.lock() as conn:
+            for row, version_row, name, with_totals in requested:
+                if name is None:
+                    name = multisheet_export.default_sheet_name(row["name"], version_row["version"], taken)
+                    taken.add(name.lower())
+                cursor = conn.execute(f'SELECT * FROM "{version_row["table_name"]}"')
+                sheets.append({"name": name, "dataset": row["name"], "version": version_row["version"],
+                               "columns": [item[0] for item in cursor.description], "rows": cursor.fetchall(),
+                               "totals": with_totals})
+        written = multisheet_export.write_sheets(staged, sheets, totals_label)
+        for sheet, item in zip(sheets, written):
+            item.update({"dataset": sheet["dataset"], "dataset_version": sheet["version"], "columns": sheet["columns"]})
+        names = ", ".join(f"{item['sheet']} ({item['dataset']} v{item['dataset_version']})" for item in written)
+        return {"path": str(out_path), "format": "xlsx", "mode": "sheets", "sheets": written,
+                "row_count": sum(item["row_count"] for item in written), "dataset": first_row["name"],
+                "dataset_version": first_version["version"], "sha256": workbook_export.sha256_file(staged),
+                "_log_summary": f"exported sheets {names}"}
 
     def export_undo(self, token: str, source: str = "agent") -> dict:
         return self._log("export_undo", source, None, {},

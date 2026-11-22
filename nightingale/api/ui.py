@@ -488,6 +488,13 @@ class WorkbookUpdateBody(BaseModel):
     version: Optional[int] = Field(None, ge=0)
 
 
+class SheetBody(BaseModel):
+    dataset: str
+    version: Optional[int] = Field(None, ge=0)
+    sheet_name: Optional[str] = None
+    totals: bool = False
+
+
 class ExportBody(BaseModel):
     dataset: str
     format: str = "csv"
@@ -495,14 +502,19 @@ class ExportBody(BaseModel):
     mode: str = "flat"
     version: Optional[int] = Field(None, ge=0)
     workbook_updates: Optional[list[WorkbookUpdateBody]] = None
+    sheet_name: Optional[str] = None
+    totals: bool = False
+    extra_sheets: Optional[list[SheetBody]] = None
 
 
 @router.post("/export")
 @api_errors
 def export(request: Request, body: ExportBody):
     updates = [item.model_dump(exclude_none=True) for item in body.workbook_updates] if body.workbook_updates is not None else None
+    extra = [item.model_dump(exclude_none=True) for item in body.extra_sheets] if body.extra_sheets is not None else None
     return services(request).export(body.dataset, body.format, body.path, mode=body.mode,
-                                    version=body.version, workbook_updates=updates)
+                                    version=body.version, workbook_updates=updates, sheet_name=body.sheet_name,
+                                    totals=body.totals, extra_sheets=extra)
 
 
 class ExportDownloadBody(BaseModel):

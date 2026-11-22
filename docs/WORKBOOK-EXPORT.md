@@ -67,6 +67,31 @@ columns, missing source rows, and `.xlsm`. It preserves a same-sized tabular
 range; it does not resize tables or reflow workbook objects.
 The flat export remains available for deliberately generated one-sheet data.
 
+## One new workbook with a sheet per dataset
+
+`data_export` with `mode="sheets"` and `format="xlsx"` writes a new workbook
+(not a copy of an imported one) with one sheet per dataset version. The
+request names the first sheet with `dataset`, `version`, `sheet_name` and
+`totals`, and the others in `extra_sheets`:
+
+```json
+{"dataset":"production","format":"xlsx","mode":"sheets","sheet_name":"Production","totals":true,
+ "extra_sheets":[{"dataset":"staff","version":1,"sheet_name":"Staff"},{"dataset":"notes"}]}
+```
+
+Each sheet has a bold header row frozen under the top edge. With `totals: true`
+the sheet ends in a row marked "Totals" (in the language of the request or the
+app) with the sum of every numeric column, in bold with a top border and a
+fill; a column with a non-finite number gets no sum. A chosen `sheet_name` is
+used as given and refused when Excel would refuse it (over 31 characters,
+`[ ] : * ? / \`, apostrophe at either end, `History`, empty, or the same name
+as another sheet ignoring case); without one the sheet takes the dataset name,
+then `name_v<version>`, then a number. Everything is validated before the file
+is written, the workbook is published atomically and the result lists each
+sheet, dataset, version, row count and totals. `data_export_undo` removes it
+or restores the file it replaced. Values a worksheet cannot hold (NaN,
+infinities, objects) are written as text.
+
 This is a bounded preservation path, not a general Excel editor or a GridCraft
 replacement. It makes no macro, formula-recalculation or complete Excel fidelity
 claim. See [Spanish guide](WORKBOOK-EXPORT.es.md).
