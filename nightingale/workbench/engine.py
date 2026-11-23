@@ -625,13 +625,35 @@ class Engine:
                             "use a pattern for one kind: '*.csv', '*.tsv', '*.json', '*.jsonl' or '*.parquet'")
         fn = kinds.pop()
         glob_path = str(folder / glob)
-        select_sql = f"SELECT * FROM {fn}('{_esc(glob_path)}', union_by_name=true, filename=true)"
-        if source_col:
-            select_sql = f"SELECT * EXCLUDE (filename), filename AS {q(source_col)} FROM ({select_sql}) __t"
+
+        def build(relaxed: bool) -> str:
+            sql = (f"SELECT * FROM {fn}('{_esc(glob_path)}', union_by_name=true, filename=true"
+                   f"{', strict_mode=false' if relaxed else ''})")
+            if source_col:
+                sql = f"SELECT * EXCLUDE (filename), filename AS {q(source_col)} FROM ({sql}) __t"
+            return sql
+
+        extra = {"files": len(files), "columns_by_name": True}
+        select_sql = build(False)
         tmp = _temp_table_name()
-        row_count, columns = self.materialize(tmp, select_sql)
-        return IngestResult(select_sql=select_sql, columns=columns, row_count=row_count,
-                             extra={"files": len(files), "columns_by_name": True}, table_name=tmp)
+        try:
+            row_count, columns = self.materialize(tmp, select_sql)
+        except DataError as exc:
+            # As for a single file (ingest_delimited): lines ending in different ways make DuckDB's dialect detection give
+            # up although every row is well formed. Read the folder again without the strict check, content untouched,
+            # and say which files mix their endings.
+            mixed = {}
+            if fn == "read_csv_auto" and "error when sniffing" in str(exc).lower():
+                for f in sorted(files):
+                    endings = _line_endings(f)
+                    if endings and sum(1 for n in endings.values() if n) > 1:
+                        mixed[f.name] = endings
+            if not mixed:
+                raise
+            select_sql = build(True)
+            row_count, columns = self.materialize(tmp, select_sql)
+            extra["mixed_line_endings"] = mixed
+        return IngestResult(select_sql=select_sql, columns=columns, row_count=row_count, extra=extra, table_name=tmp)
 
     def ingest_json(self, path: Path, options: dict) -> IngestResult:
         flatten = bool(options.get("flatten"))
