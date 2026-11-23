@@ -542,8 +542,10 @@ class Engine:
         if isinstance(text_cols, str):
             text_cols = [c.strip() for c in text_cols.split(",") if c.strip()]
 
-        def build(enc: Optional[str]) -> str:
+        def build(enc: Optional[str], relaxed: bool = False) -> str:
             args = [f"'{_esc(str(path))}'", f"header={str(bool(header)).lower()}"]
+            if relaxed:
+                args.append("strict_mode=false")
             if delim:
                 args.append(f"delim='{_esc(str(delim))}'")
             elif path.suffix.lower() == ".tsv":
@@ -559,17 +561,29 @@ class Engine:
 
         candidates = [encoding] if encoding else [None, *_CSV_ENCODING_FALLBACKS]
         last_exc = None
+        endings: Optional[dict] = None  # line-ending counts, measured only once the strict reader has failed
         for enc in candidates:
-            select_sql = build(enc)
-            try:
-                with self._lock:
-                    self._conn.execute(f"SELECT COUNT(*) FROM ({select_sql}) LIMIT 0")
-                return select_sql, {"encoding_detected": enc} if (enc and not encoding) else {}
-            except duckdb.Error as exc:
-                if encoding or "not utf-8 encoded" not in str(exc).lower() and "invalid unicode" not in str(exc).lower():
-                    raise DataError(f"could not read {path.name}: {_first_lines(str(exc))}") from exc
-                last_exc = exc
-                continue
+            for relaxed in (False, True):
+                select_sql = build(enc, relaxed)
+                try:
+                    with self._lock:
+                        self._conn.execute(f"SELECT COUNT(*) FROM ({select_sql}) LIMIT 0")
+                    extra = {"encoding_detected": enc} if (enc and not encoding) else {}
+                    if relaxed:
+                        extra["mixed_line_endings"] = endings
+                    return select_sql, extra
+                except duckdb.Error as exc:
+                    message = str(exc).lower()
+                    if not relaxed and "error when sniffing" in message:
+                        # Lines ending in different ways (LF, CRLF, CR) make DuckDB's dialect detection give up although
+                        # every row is well formed: read the file again without the strict check, content untouched.
+                        endings = endings or _line_endings(path, str(enc or encoding or "utf-8"))
+                        if endings and sum(1 for n in endings.values() if n) > 1:
+                            continue
+                    if encoding or "not utf-8 encoded" not in message and "invalid unicode" not in message:
+                        raise DataError(f"could not read {path.name}: {_first_lines(str(exc))}") from exc
+                    last_exc = exc
+                    break
         raise DataError(
             f"could not read {path.name}: not valid UTF-8 and latin-1 did not work either; "
             f"pass options.encoding explicitly ({_first_lines(str(last_exc))})"
@@ -739,6 +753,31 @@ class Engine:
 # ---------------------------------------------------------------------------
 
 _DATE_TOKEN_RE = re.compile(r"^(\d{1,2})([/-])(\d{1,2})\2(\d{2}|\d{4})$")
+
+
+def _line_endings(path: Path, encoding: str = "utf-8") -> Optional[dict]:
+    """How many lines of a text file end in LF, CRLF and a lone CR (``None`` for UTF-16 or an unreadable file)."""
+    if encoding.lower().replace("-", "") == "utf16":
+        return None
+    lf = crlf = cr = 0
+    carry = b""  # a CR that ends a chunk: whether it is a CRLF depends on the first byte of the next one
+    try:
+        with path.open("rb") as fh:
+            while True:
+                chunk = fh.read(1 << 20)
+                data = carry + chunk
+                carry = b"\r" if chunk and data.endswith(b"\r") else b""
+                if carry:
+                    data = data[:-1]
+                both = data.count(b"\r\n")
+                crlf += both
+                cr += data.count(b"\r") - both
+                lf += data.count(b"\n") - both
+                if not chunk:
+                    break
+    except OSError:
+        return None
+    return {"lf": lf, "crlf": crlf, "cr": cr}
 
 
 def _sniff_dayfirst_format(p: Path, delimiter: Optional[str], header: bool, encoding: str = "utf-8") -> Optional[str]:

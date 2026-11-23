@@ -19,7 +19,7 @@ The app also bundles two switchable modules, Data and Calculation. Both are off 
 ## What it does
 
 ### Ingest
-- CSV/TSV (including semicolon-delimited and comma-decimal Spanish formats), Excel, Parquet, JSON/NDJSON, SQLite, a folder glob (files whose columns differ are stacked by column name), a URL or pasted text.
+- CSV/TSV (including semicolon-delimited and comma-decimal Spanish formats, a leading BOM, and lines ending in a mix of LF and CRLF), Excel, Parquet, JSON/NDJSON, SQLite, a folder glob (files whose columns differ are stacked by column name), a URL or pasted text.
 - Records returned by another Hoard app or by Hoard Hub itself (its tasks, feed or order receipts), flattened to one row per record, with presets such as ledger transactions.
 - Refresh re-ingests a changed source and replays the recipe, then runs the saved quality rules.
 - Deleting a dataset cascades to its rules, charts and models, after listing what depends on it.
