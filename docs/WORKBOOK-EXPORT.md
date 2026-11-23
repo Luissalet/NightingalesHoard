@@ -80,8 +80,8 @@ request names the first sheet with `dataset`, `version`, `sheet_name` and
 ```
 
 Each sheet has a bold header row frozen under the top edge. With `totals: true`
-the sheet ends in a row marked "Totals" (in the language of the request or the
-app) with the sum of every numeric column, in bold with a top border and a
+the sheet ends in a row marked "Totals" (in the language of the request, the
+`lang` argument of the tool, or the app) with the sum of every numeric column, in bold with a top border and a
 fill; a column with a non-finite number gets no sum. A chosen `sheet_name` is
 used as given and refused when Excel would refuse it (over 31 characters,
 `[ ] : * ? / \`, apostrophe at either end, `History`, empty, or the same name
@@ -89,7 +89,9 @@ as another sheet ignoring case); without one the sheet takes the dataset name,
 then `name_v<version>`, then a number. Everything is validated before the file
 is written, the workbook is published atomically and the result lists each
 sheet, dataset, version, row count and totals. `data_export_undo` removes it
-or restores the file it replaced. Values a worksheet cannot hold (NaN,
+or restores the file it replaced. A dataset name that does not exist is answered
+with that name only, never with the list of registered datasets; `data_list`
+shows what can be used. Values a worksheet cannot hold (NaN,
 infinities, objects) are written as text.
 
 This is a bounded preservation path, not a general Excel editor or a GridCraft

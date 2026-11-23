@@ -160,6 +160,7 @@ def test_reference_and_validation_errors(dash):
     with pytest.raises(ActionError) as err:
         s.dashboard_apply(d, {"type": "add_item", "item": {"type": "kpi", "dataset": "nope", "expr": "1"}})
     assert err.value.code == "unknown_dataset"
+    assert "'nope'" in str(err.value) and "'d'" not in str(err.value)  # the host's other datasets are not named
     with pytest.raises(LookupError):
         s.dashboard_apply(404, {"type": "set_layout", "columns": 2})
     assert s.dashboard_history(d)["total"] == 0, "rejected actions leave no trace in the log"

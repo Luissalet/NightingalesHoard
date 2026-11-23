@@ -30,7 +30,7 @@ from .hoard_link import paths as hl_paths
 from .hoard_link.tokens import read_or_create_token
 from .config import Config
 from .export_files import ExportFiles
-from .texts import get_lang, request_lang, t
+from .texts import get_lang, request_lang, t, use_lang
 from .dac import render as dac_render
 from .dac import semantic as dac_semantic
 from .dac import spec as dac_spec
@@ -213,8 +213,8 @@ class Services:
         if row is None and str(name_or_id).isdigit():
             row = self.meta.get_dataset_by_id(int(name_or_id))
         if row is None:
-            names = [d["name"] for d in self.meta.list_datasets()]
-            raise NotFoundError(f"unknown dataset: {name_or_id!r}. Registered datasets: {names}")
+            # Only the name the caller sent: listing the registered datasets would show a confined worker the host's own.
+            raise NotFoundError(t("dataset.unknown", None, name=repr(name_or_id)))
         return row
 
     def _version_row(self, dataset_row: sqlite3.Row, version: Optional[int] = None) -> sqlite3.Row:
@@ -1114,8 +1114,7 @@ class Services:
             raise dash_actions.ActionError("unknown_chart", f"chart {item['chart_id']} does not exist "
                                            f"(saved charts: {[c['id'] for c in self.meta.list_charts()]})", "chart_id")
         if item["type"] == "kpi" and self.meta.get_dataset(item["dataset"]) is None:
-            names = [d["name"] for d in self.meta.list_datasets()]
-            raise dash_actions.ActionError("unknown_dataset", f"dataset {item['dataset']!r} does not exist (registered: {names})", "dataset")
+            raise dash_actions.ActionError("unknown_dataset", f"dataset {item['dataset']!r} does not exist", "dataset")
 
     def _dash_flags(self, dashboard_id: int) -> dict:
         rows = self.meta.list_dashboard_actions(dashboard_id)
@@ -1556,11 +1555,12 @@ class Services:
             return self.workbook_inventory(dataset_name, source=source)
         dataset_row = self._dataset_row(dataset_name)
         first_sheet_name = sheet_name  # `do` assigns its own `sheet_name` in the preserve branch
-        totals_label = t("export.totals", request_lang() or applang.current())  # read here: `do` runs in a worker thread
+        asked_lang = request_lang()  # read here: `do` runs in a worker thread, which does not inherit the request's language
+        totals_label = t("export.totals", asked_lang or applang.current())
 
         def do(v, fmt_l, out_path, staged):
             if mode == "sheets":
-                return self._export_sheets(dataset_row, v, first_sheet_name, totals, extra_sheets, totals_label, out_path, staged)
+                return self._export_sheets(dataset_row, v, first_sheet_name, totals, extra_sheets, totals_label, out_path, staged, asked_lang)
             if mode == "preserve_workbook":
                 import json as _json
 
@@ -1723,13 +1723,15 @@ class Services:
         return self.run_heavy(logged_write, timeout=MAX_INGEST_TIMEOUT_S)
 
     def _export_sheets(self, first_row, first_version, first_name: Optional[str], first_totals: bool,
-                       extra_sheets: Optional[list[dict[str, Any]]], totals_label: str, out_path: Path, staged: Path) -> dict:
+                       extra_sheets: Optional[list[dict[str, Any]]], totals_label: str, out_path: Path, staged: Path,
+                       lang: Optional[str] = None) -> dict:
         """One new workbook, a sheet per dataset version; every name and version is checked before anything is written."""
         requested = [(first_row, first_version, first_name, bool(first_totals))]
         for item in extra_sheets or []:
-            row = self._dataset_row(item["dataset"])
-            requested.append((row, self._version_row(row, item.get("version")), item.get("sheet_name"),
-                              bool(item.get("totals"))))
+            with use_lang(lang):  # an unknown dataset answers in the language the caller asked for
+                row = self._dataset_row(item["dataset"])
+                requested.append((row, self._version_row(row, item.get("version")), item.get("sheet_name"),
+                                  bool(item.get("totals"))))
         chosen = [multisheet_export.check_sheet_name(name) for _, _, name, _ in requested if name is not None]
         taken = {name.lower() for name in chosen}
         if len(taken) != len(chosen):

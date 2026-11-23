@@ -6,7 +6,8 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from nightingale.agent_tools import call_tool, tool_catalog
+from nightingale.agent_tools import call_tool, call_tool_sync, tool_catalog
+from nightingale.services import NotFoundError
 from nightingale.workbench.engine import DataError
 
 
@@ -79,6 +80,41 @@ def test_totals_label_follows_the_request_language(client, tmp_path, lang, label
     reply = client.post("/api/export", params={"lang": lang}, json=body)
     assert reply.status_code == 200
     assert [c.value for c in _open(reply.json()["path"])["t"][4]] == [label, 3]
+
+
+@pytest.mark.parametrize("lang,label", [("en", "Totals"), ("es", "Totales")])
+def test_data_export_tool_lang_argument_picks_the_totals_label(trio, tmp_path, lang, label):
+    out = tmp_path / "out" / f"{lang}.xlsx"
+    args = {"dataset": "ventas", "format": "xlsx", "mode": "sheets", "totals": True, "path": str(out), "lang": lang}
+    result = call_tool_sync(trio, "data_export", args)
+    assert result["sheets"][0]["totals"]["sums"] == {"importe": 35.0, "unidades": 6}
+    assert _open(out)["ventas"].cell(5, 1).value == label
+    assert "lang" in tool_catalog()[[t["name"] for t in tool_catalog()].index("data_export")]["inputSchema"]["properties"]
+
+
+def test_unknown_dataset_error_does_not_list_the_other_datasets(trio, tmp_path):
+    """A confined worker must not learn the names of datasets outside its brief from a 404."""
+    for kwargs in ({"extra_sheets": [{"dataset": "hosttable"}]}, {"dataset": "hosttable"}):
+        for lang, hint in (("en", "unknown dataset: 'hosttable'"), ("es", "conjunto de datos desconocido: 'hosttable'")):
+            args = {"dataset": "ventas", "format": "xlsx", "mode": "sheets", "path": str(tmp_path / "x.xlsx"), "lang": lang, **kwargs}
+            with pytest.raises(NotFoundError) as caught:
+                call_tool_sync(trio, "data_export", args)
+            message = str(caught.value)
+            assert hint in message and "data_list" in message
+            assert not {"ventas", "personal", "notas"} & set(message.replace("'", " ").replace(".", " ").split())
+    assert not (tmp_path / "x.xlsx").exists()
+
+
+def test_unknown_dataset_404_over_the_agent_route_and_rest_lists_nothing(client, tmp_path):
+    path = tmp_path / "t.csv"
+    path.write_text("a,b\nx,1\n", encoding="utf-8")
+    client.services.ingest_file(str(path), "secreto_del_anfitrion")
+    headers = {"Authorization": "Bearer " + client.services.token}
+    reply = client.post("/api/agent/call", headers=headers, json={"name": "data_export", "arguments": {
+        "dataset": "t", "format": "xlsx", "mode": "sheets", "path": str(tmp_path / "y.xlsx")}})
+    assert reply.status_code == 404 and "secreto_del_anfitrion" not in reply.text
+    rest = client.post("/api/export", json={"dataset": "otro", "format": "csv"})
+    assert rest.status_code == 404 and "secreto_del_anfitrion" not in rest.text
 
 
 def test_all_numeric_sheet_still_gets_a_label_in_the_first_column(services, tmp_path):

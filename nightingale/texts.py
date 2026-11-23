@@ -2386,4 +2386,6 @@ register({
 # ======================================================================= multi-sheet export (export.*)
 register({
     "export.totals": {"en": "Totals", "es": "Totales"},
+    "dataset.unknown": {"en": "unknown dataset: {name}. Use data_list to see the datasets you can use.",
+                        "es": "conjunto de datos desconocido: {name}. Usa data_list para ver los conjuntos que puedes usar."},
 })
