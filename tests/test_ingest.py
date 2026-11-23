@@ -162,6 +162,33 @@ def test_ingest_folder_glob_adds_source_file_column(services, tmp_path):
     assert "_source_file" in names
 
 
+def test_ingest_folder_reads_csv_files_with_mixed_line_endings(services, tmp_path):
+    """The folder reader gets the same retry as a single file, and names which files mix their endings."""
+    folder = tmp_path / "mezcla"
+    folder.mkdir()
+    rows = _mixed_endings_rows()
+    mixed = "﻿intento,puesto,nota,falta,fuente\n" + "\n".join(rows[:-1]) + "\n" + rows[-1] + "\r\n"
+    (folder / "mixto.csv").write_bytes(mixed.encode("utf-8"))
+    (folder / "limpio.csv").write_bytes(b"intento,puesto,nota,falta,fuente\r\nR99,puesto 0,9,no,otra.md\r\n")
+    result = services.ingest_folder(str(folder), "mezcla", "*.csv")
+    assert result["row_count"] == len(rows) + 1 and result["files"] == 2
+    assert result["mixed_line_endings"] == {"mixto.csv": {"lf": len(rows), "crlf": 1, "cr": 0}}
+    assert [c["name"] for c in result["columns"]] == ["intento", "puesto", "nota", "falta", "fuente", "_source_file"]
+    got = services.preview("mezcla", limit=50)["rows"]
+    assert sorted(r["intento"] for r in got) == sorted([r.split(",")[0] for r in rows] + ["R99"])
+    assert {r["_source_file"].replace("\\", "/").rsplit("/", 1)[-1] for r in got} == {"mixto.csv", "limpio.csv"}
+    assert {r["fuente"] for r in got if r["intento"] != "R99"} == {"nota.md"}  # no CR leaked into the last cell
+
+
+def test_ingest_folder_of_clean_csv_files_has_no_mixed_note(services, tmp_path):
+    folder = tmp_path / "limpios"
+    folder.mkdir()
+    (folder / "a.csv").write_bytes(b"x\r\n1\r\n2\r\n")
+    (folder / "b.csv").write_bytes(b"x\n3\n")
+    result = services.ingest_folder(str(folder), "limpios", "*.csv")
+    assert result["row_count"] == 3 and "mixed_line_endings" not in result
+
+
 def test_ingest_pasted_text(services):
     result = services.ingest_text("a,b\n1,2\n3,4\n", "pasted", "csv")
     assert result["row_count"] == 2
