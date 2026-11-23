@@ -36,6 +36,61 @@ def test_ingest_csv_default_utf8_and_dedup_source(services, tmp_path):
     assert result["current_version"] == 0
 
 
+def _mixed_endings_rows(n=13):
+    return [f"R{i},puesto {i % 3},{i % 10},{'si' if i % 4 == 0 else 'no'},nota.md" for i in range(1, n + 1)]
+
+
+def test_ingest_csv_with_bom_and_mixed_line_endings(services, tmp_path):
+    """The DuckDB sniffer refuses a file whose lines end with LF except the last (CRLF); we read it as written."""
+    rows = _mixed_endings_rows()
+    text = "﻿intento,puesto,nota,falta,fuente\n" + "\n".join(rows[:-1]) + "\n" + rows[-1] + "\r\n"
+    path = write(tmp_path, "mixto.csv", text)
+    assert path.read_bytes()[:3] == b"\xef\xbb\xbf" and path.read_bytes().count(b"\r") == 1
+    result = services.ingest_file(str(path), "mixto")
+    assert result["row_count"] == len(rows)
+    assert [c["name"] for c in result["columns"]] == ["intento", "puesto", "nota", "falta", "fuente"]  # BOM not in the name
+    assert result["mixed_line_endings"] == {"lf": len(rows), "crlf": 1, "cr": 0}
+    got = services.preview("mixto", limit=50)["rows"]
+    assert [tuple(r.values()) for r in got] == [tuple(int(v) if v.isdigit() else v for v in row.split(",")) for row in rows]
+    assert got[-1]["fuente"] == "nota.md"  # the CR of the last line did not leak into the last cell
+
+
+def test_ingest_csv_mixed_line_endings_with_delimiter_and_header_set(services, tmp_path):
+    rows = _mixed_endings_rows(8)
+    text = "a,b,c,d,e\r\n" + "\n".join(rows[:4]) + "\r\n" + "\n".join(rows[4:]) + "\n"
+    path = write(tmp_path, "mixto2.csv", text)
+    result = services.ingest_file(str(path), "mixto2", {"delimiter": ",", "header": True})
+    assert result["row_count"] == 8
+    assert result["mixed_line_endings"] == {"lf": 7, "crlf": 2, "cr": 0}
+
+
+def test_ingest_csv_mixed_line_endings_in_latin1(services, tmp_path):
+    rows = [f"R{i};nota número {i};{i},5" for i in range(1, 14)]
+    text = "id;comentario;importe\n" + "\n".join(rows[:-1]) + "\n" + rows[-1] + "\r\n"
+    path = write(tmp_path, "mixto3.csv", text, encoding="cp1252")
+    result = services.ingest_file(str(path), "mixto3")
+    assert result["row_count"] == 13 and result["encoding_detected"] == "latin-1"
+    assert result["mixed_line_endings"]["crlf"] == 1
+    assert services.preview("mixto3", limit=1)["rows"][0]["comentario"] == "nota número 1"
+
+
+def test_line_endings_counter_handles_a_crlf_split_between_two_blocks(tmp_path):
+    from nightingale.workbench.engine import _line_endings
+
+    block = 1 << 20
+    path = tmp_path / "limite.csv"
+    path.write_bytes(b"a\n" * ((block - 1) // 2) + b"x" + b"\r\n" + b"b\r" + b"\n" * 2 + b"c\r")
+    assert path.read_bytes()[block - 1:block + 1] == b"\r\n"  # the CR is the last byte of the first block
+    assert _line_endings(path) == {"lf": (block - 1) // 2 + 1, "crlf": 2, "cr": 1}
+    assert _line_endings(path, "utf-16") is None
+
+
+def test_ingest_csv_with_one_line_ending_has_no_mixed_note(services, tmp_path):
+    path = write(tmp_path, "limpio.csv", "﻿a,b\r\n1,2\r\n3,4\r\n")
+    result = services.ingest_file(str(path), "limpio")
+    assert result["row_count"] == 2 and "mixed_line_endings" not in result
+
+
 def test_ingest_tsv(services, tmp_path):
     path = write(tmp_path, "data.tsv", "a\tb\n1\t2\n")
     result = services.ingest_file(str(path), "tsvtest")

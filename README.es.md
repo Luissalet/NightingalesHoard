@@ -19,7 +19,7 @@ La app incluye además dos módulos activables, Datos y Cálculo. Ambos están d
 ## Qué hace
 
 ### Ingesta
-- CSV/TSV (incluidos los separados por punto y coma y con coma decimal), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta (los archivos con columnas distintas se apilan por nombre de columna), una URL o texto pegado.
+- CSV/TSV (incluidos los separados por punto y coma y con coma decimal, con BOM inicial y con finales de línea mezclados LF y CRLF), Excel, Parquet, JSON/NDJSON, SQLite, un patrón de carpeta (los archivos con columnas distintas se apilan por nombre de columna), una URL o texto pegado.
 - Registros que devuelve otra app Hoard o el propio Hoard Hub (sus tareas, su actividad o los recibos de una orden), aplanados a una fila por registro, con preajustes como los movimientos de Ledger.
 - Actualizar reingiere una fuente que cambió, reproduce la receta y ejecuta las reglas de calidad guardadas.
 - Borrar un conjunto de datos arrastra sus reglas, gráficos y modelos, tras listar lo que depende de él.
