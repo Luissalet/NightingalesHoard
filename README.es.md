@@ -32,7 +32,7 @@ La app incluye además dos módulos activables, Datos y Cálculo. Ambos están d
 - Comparación de dos versiones por perfil de columnas o por filas (solo en A / solo en B, contando filas repetidas).
 - Frecuencias por columna con recuentos y porcentajes exactos, paginadas.
 - Rejilla de datos formateada según el tipo de columna y el idioma de la interfaz, con el valor original a un paso con el ratón.
-- Exportación de una versión a CSV, JSON, Parquet o XLSX; exportación a una copia del libro original cambiando solo las celdas modificadas (una o varias hojas).
+- Exportación de una versión a CSV, JSON, Parquet o XLSX; varios conjuntos como hojas de un XLSX nuevo, con fila de totales opcional; exportación a una copia del libro original cambiando solo las celdas modificadas (una o varias hojas).
 
 ### Reglas de calidad
 - Nueve tipos de regla: no nulo, único, valores aceptados, rango, expresión regular, número de filas, frescura, integridad referencial y SQL personalizado.

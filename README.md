@@ -32,7 +32,7 @@ The app also bundles two switchable modules, Data and Calculation. Both are off 
 - Compare two versions by column profile, or by rows (only A / only B, with repeated rows counted).
 - Column frequencies with exact counts and percentages, paged.
 - Data grid formatted by column type and interface language, with the raw value one hover away.
-- Export a version as CSV, JSON, Parquet or XLSX; export back into a copy of the original workbook, changing only the cells that changed (single or several sheets).
+- Export a version as CSV, JSON, Parquet or XLSX; several datasets as the sheets of one new XLSX, with an optional totals row; export back into a copy of the original workbook, changing only the cells that changed (single or several sheets).
 
 ### Quality rules
 - Nine rule kinds: not null, unique, accepted values, range, regex, row count, freshness, referential integrity and custom SQL.

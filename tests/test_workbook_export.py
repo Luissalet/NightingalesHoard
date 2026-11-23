@@ -226,7 +226,7 @@ def test_api_mcp_version_selection_and_undo_are_logged(client, tmp_path):
     dataset = _ingest_target(client.services, source)
     client.services.transform_apply(dataset, "replace", {"column": "categoria", "pattern": "café", "replacement": "té"})
     schema = next(item for item in tool_catalog() if item["name"] == "data_export")["inputSchema"]
-    assert schema["properties"]["mode"]["enum"] == ["flat", "preserve_workbook", "inventory"]
+    assert schema["properties"]["mode"]["enum"] == ["flat", "preserve_workbook", "inventory", "sheets"]
     inventory_response = client.get(f"/api/workbooks/{dataset}")
     assert inventory_response.status_code == 200
     inventory_body = inventory_response.json()

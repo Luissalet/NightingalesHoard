@@ -307,14 +307,24 @@ class WorkbookUpdateArgs(BaseModel):
     version: Optional[int] = Field(None, ge=0)
 
 
+class SheetArgs(BaseModel):
+    dataset: str
+    version: Optional[int] = Field(None, ge=0, description="Dataset version for this sheet; defaults to its current version.")
+    sheet_name: Optional[str] = Field(None, description="Sheet name, up to 31 characters without [ ] : * ? / and backslash; defaults to the dataset name.")
+    totals: bool = Field(False, description="Add a last row marked 'Totals' with the sum of every numeric column.")
+
+
 class ExportArgs(BaseModel):
     dataset: str
     format: Literal["csv", "xlsx", "parquet", "json"] = "csv"
     path: Optional[str] = Field(None, description="Absolute output file or existing directory, or a filename relative to exports.")
-    mode: Literal["flat", "preserve_workbook", "inventory"] = Field(
-        "flat", description="'flat' makes the usual single-table export. 'inventory' reads the linked workbook snapshot. 'preserve_workbook' is .xlsx-only: patch the selected imported sheet's tabular cells in a copy of its original workbook, preserving untouched package parts.")
+    mode: Literal["flat", "preserve_workbook", "inventory", "sheets"] = Field(
+        "flat", description="'flat' makes the usual single-table export. 'inventory' reads the linked workbook snapshot. 'preserve_workbook' is .xlsx-only: patch the selected imported sheet's tabular cells in a copy of its original workbook, preserving untouched package parts. 'sheets' is .xlsx-only: write a new workbook with one sheet per dataset (this one first, then extra_sheets).")
     version: Optional[int] = Field(None, ge=0, description="Dataset version to export; defaults to the current version.")
     workbook_updates: Optional[list[WorkbookUpdateArgs]] = Field(None, description="Additional dataset/version pairs from the same source workbook; all selected sheets are preflighted and written into the same .xlsx copy.")
+    sheet_name: Optional[str] = Field(None, description="mode='sheets': name of this dataset's sheet; defaults to the dataset name.")
+    totals: bool = Field(False, description="mode='sheets': add a last row marked 'Totals' with the sum of every numeric column of this dataset's sheet.")
+    extra_sheets: Optional[list[SheetArgs]] = Field(None, description="mode='sheets': more datasets (and versions), one sheet each, after this dataset's sheet.")
 
 
 class ExportUndoArgs(BaseModel):
@@ -607,8 +617,9 @@ def _run_forecast(s: Services, a: ForecastArgs) -> dict:
 
 def _run_export(s: Services, a: ExportArgs) -> dict:
     updates = [item.model_dump(exclude_none=True) for item in a.workbook_updates] if a.workbook_updates is not None else None
+    extra = [item.model_dump(exclude_none=True) for item in a.extra_sheets] if a.extra_sheets is not None else None
     return s.export(a.dataset, a.format, a.path, source="agent", mode=a.mode, version=a.version,
-                    workbook_updates=updates)
+                    workbook_updates=updates, sheet_name=a.sheet_name, totals=a.totals, extra_sheets=extra)
 
 
 def _run_handoff(s: Services, a: HandoffArgs) -> dict:
