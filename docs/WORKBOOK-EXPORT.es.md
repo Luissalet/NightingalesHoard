@@ -79,7 +79,7 @@ demás en `extra_sheets`:
 
 Cada hoja lleva la cabecera en negrita e inmovilizada bajo el borde superior.
 Con `totals: true` la hoja termina en una fila marcada «Totales» (en el idioma
-de la petición o de la aplicación) con la suma de cada columna numérica, en
+de la petición, del argumento `lang` de la herramienta o de la aplicación) con la suma de cada columna numérica, en
 negrita, con borde superior y relleno; una columna con un número no finito no
 lleva suma. El `sheet_name` elegido se usa tal cual y se rechaza si Excel lo
 rechazaría (más de 31 caracteres, `[ ] : * ? / \`, apóstrofo al principio o al
@@ -87,7 +87,9 @@ final, `History`, vacío o igual a otra hoja sin distinguir mayúsculas); sin é
 la hoja toma el nombre del conjunto, luego `nombre_v<versión>` y luego un
 número. Todo se valida antes de escribir, el libro se publica de una vez y el
 resultado lista cada hoja, conjunto, versión, número de filas y totales.
-`data_export_undo` lo retira o restaura el fichero que sustituyó. Los valores
+`data_export_undo` lo retira o restaura el fichero que sustituyó. Un conjunto que no existe se contesta solo
+con su nombre, nunca con la lista de los registrados; `data_list` dice cuáles se
+pueden usar. Los valores
 que una hoja no admite (NaN, infinitos, objetos) se escriben como texto.
 
 Es una ruta de preservación acotada, no un editor general de Excel ni un

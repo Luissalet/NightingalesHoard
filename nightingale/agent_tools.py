@@ -325,6 +325,7 @@ class ExportArgs(BaseModel):
     sheet_name: Optional[str] = Field(None, description="mode='sheets': name of this dataset's sheet; defaults to the dataset name.")
     totals: bool = Field(False, description="mode='sheets': add a last row marked 'Totals' with the sum of every numeric column of this dataset's sheet.")
     extra_sheets: Optional[list[SheetArgs]] = Field(None, description="mode='sheets': more datasets (and versions), one sheet each, after this dataset's sheet.")
+    lang: Optional[str] = Field(None, description="es or en: language of the totals row label and of the error messages. Omitted: the totals label follows the app language and messages are in English.")
 
 
 class ExportUndoArgs(BaseModel):
@@ -1458,7 +1459,7 @@ def tool_catalog() -> list[dict]:
 
 
 #: tools whose human-readable messages can be asked for in Spanish with an extra `lang` argument
-LANG_TOOLS = frozenset({"data_workbook", "data_reconcile", "data_scenario", "data_migrate", "data_process", "data_twin",
+LANG_TOOLS = frozenset({"data_export", "data_workbook", "data_reconcile", "data_scenario", "data_migrate", "data_process", "data_twin",
                         "data_experiment", "data_effect", "data_fabquote"})
 
 
