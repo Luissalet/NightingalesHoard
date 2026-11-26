@@ -786,6 +786,26 @@ class Services:
     def query(self, sql: str, limit: int = 200, source: str = "ui") -> dict:
         return self._log("query", source, None, {"sql": sql[:500]}, lambda: self._run_query(sql, limit))
 
+    def query_ingested(self, dataset_id: int, name: str, sql: str, limit: int) -> dict:
+        from .sqlgate import gate_sql
+
+        def run():
+            gate_sql(sql)
+            with self._dataset_lock(dataset_id):
+                dataset = self.meta.get_dataset_by_id(dataset_id)
+                version = self.meta.get_version(dataset_id, 0)
+                if dataset is None or dataset["name"] != name or version is None:
+                    raise DataError("The ingested dataset is unavailable. / El conjunto ingerido no está disponible.")
+                snapshot = self.engine.query_snapshot(version["table_name"])
+            try:
+                return self.engine.query_snapshot_rows(snapshot, sql, limit)
+            except DataError as exc:
+                raise DataError("Query only the selected dataset as 'dataset'. "
+                                "/ Consulta solo el conjunto seleccionado, con el nombre 'dataset'. "
+                                f"{exc}") from exc
+
+        return self._log("query", "agent", name, {"sql": sql[:500], "version": 0}, run)
+
     def _run_query(self, sql: str, limit: int) -> dict:
         from .sqlgate import gate_sql
 

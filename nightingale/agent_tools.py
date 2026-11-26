@@ -146,8 +146,16 @@ class RecipeArgs(BaseModel):
     action: Literal["show", "export", "replay"] = "show"
 
 
+class DatasetQuery(BaseModel):
+    dataset_id: int = Field(..., strict=True, ge=1)
+    name: str
+    statement: str
+
+
 class QueryArgs(BaseModel):
-    sql: str = Field(..., description="One read-only SELECT/WITH/DESCRIBE/SUMMARIZE statement over dataset names.")
+    sql: str | DatasetQuery = Field(
+        ..., description="One read-only SQL statement over registered names, or an object with dataset_id, name "
+        "and statement to query only that dataset's ingested version as the table 'dataset'.")
     limit: int = Field(200, ge=1, le=5000)
 
 
@@ -434,6 +442,8 @@ def _run_recipe(s: Services, a: RecipeArgs) -> dict:
 
 
 def _run_query(s: Services, a: QueryArgs) -> dict:
+    if isinstance(a.sql, DatasetQuery):
+        return s.query_ingested(a.sql.dataset_id, a.sql.name, a.sql.statement, a.limit)
     return s.query(a.sql, a.limit, source="agent")
 
 
