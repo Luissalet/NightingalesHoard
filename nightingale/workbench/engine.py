@@ -497,27 +497,49 @@ class Engine:
 
     def query(self, sql: str, limit: int = 200, timeout_s: int = DEFAULT_QUERY_TIMEOUT_S,
               cell_cap: Optional[int] = MAX_CELL_CHARS) -> dict:
-        limit = max(1, min(int(limit), MAX_QUERY_LIMIT))
         with self._lock:
-            conn = self._conn
-            timer = threading.Timer(timeout_s, conn.interrupt)
-            timer.daemon = True
-            start = time.monotonic()
-            timer.start()
-            try:
-                rel = conn.execute(sql)
-                if rel.description is None:
-                    raise DataError("the statement returned no result set")
-                columns = [{"name": d[0], "type": str(d[1])} for d in rel.description]
-                rows = rel.fetchmany(limit + 1)
-                del rel
-            except duckdb.InterruptException as exc:
-                raise DataError(f"query exceeded {timeout_s}s and was stopped") from exc
-            except duckdb.Error as exc:
-                raise DataError(f"SQL error: {_first_lines(str(exc))}") from exc
-            finally:
-                timer.cancel()
-            elapsed_ms = (time.monotonic() - start) * 1000
+            return self._query_rows(self._conn, sql, limit, timeout_s, cell_cap)
+
+    def query_snapshot(self, table_name: str):
+        with self._lock:
+            return self._conn.execute(f"SELECT * FROM {q(table_name)}").fetch_arrow_table()
+
+    def query_snapshot_rows(self, snapshot, sql: str, limit: int) -> dict:
+        # Worker SQL sees only the snapshot. No attached databases, file access,
+        # extension loading or implicit lookup of Python objects is available.
+        with duckdb.connect(config={
+            "enable_external_access": False,
+            "autoload_known_extensions": False,
+            "autoinstall_known_extensions": False,
+            "python_enable_replacements": False,
+            "temp_directory": "",
+            "lock_configuration": True,
+        }) as conn:
+            conn.register("dataset", snapshot)
+            return self._query_rows(conn, sql, limit)
+
+    @staticmethod
+    def _query_rows(conn, sql: str, limit: int, timeout_s: int = DEFAULT_QUERY_TIMEOUT_S,
+                    cell_cap: Optional[int] = MAX_CELL_CHARS) -> dict:
+        limit = max(1, min(int(limit), MAX_QUERY_LIMIT))
+        timer = threading.Timer(timeout_s, conn.interrupt)
+        timer.daemon = True
+        start = time.monotonic()
+        timer.start()
+        try:
+            rel = conn.execute(sql)
+            if rel.description is None:
+                raise DataError("the statement returned no result set")
+            columns = [{"name": d[0], "type": str(d[1])} for d in rel.description]
+            rows = rel.fetchmany(limit + 1)
+            del rel
+        except duckdb.InterruptException as exc:
+            raise DataError(f"query exceeded {timeout_s}s and was stopped") from exc
+        except duckdb.Error as exc:
+            raise DataError(f"SQL error: {_first_lines(str(exc))}") from exc
+        finally:
+            timer.cancel()
+        elapsed_ms = (time.monotonic() - start) * 1000
         truncated = len(rows) > limit
         rows = rows[:limit]
         col_names = [c["name"] for c in columns]

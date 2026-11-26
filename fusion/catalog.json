@@ -729,11 +729,44 @@
       "openWorldHint": false
     },
     "inputSchema": {
+      "$defs": {
+        "DatasetQuery": {
+          "properties": {
+            "dataset_id": {
+              "minimum": 1,
+              "title": "Dataset Id",
+              "type": "integer"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "statement": {
+              "title": "Statement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dataset_id",
+            "name",
+            "statement"
+          ],
+          "title": "DatasetQuery",
+          "type": "object"
+        }
+      },
       "properties": {
         "sql": {
-          "description": "One read-only SELECT/WITH/DESCRIBE/SUMMARIZE statement over dataset names.",
-          "title": "Sql",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/DatasetQuery"
+            }
+          ],
+          "description": "One read-only SQL statement over registered names, or an object with dataset_id, name and statement to query only that dataset's ingested version as the table 'dataset'.",
+          "title": "Sql"
         },
         "limit": {
           "default": 200,
